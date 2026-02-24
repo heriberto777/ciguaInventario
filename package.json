@@ -1,0 +1,15 @@
+{
+  "name": "cigua-inv",
+  "version": "1.0.0",
+  "description": "Monorepo for physical inventory management with ERP mapping",
+  "private": true,
+  "packageManager": "pnpm@9.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm -r --parallel run dev",
+    "build": "pnpm -r run build",
+    "lint": "pnpm -r run lint",
+    "type-check": "pnpm -r run type-check"
+  },
+  "devDependencies": {}
+}

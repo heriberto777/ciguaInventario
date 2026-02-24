@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "Cigua Inventory Mobile",
+    "slug": "cigua-inventory-mobile",
+    "version": "1.0.0",
+    "sdkVersion": "54.0.0",
+    "scheme": "ciguainv",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTabletMode": true,
+      "bundleIdentifier": "com.ciguainv.mobile"
+    },
+    "android": {
+      "package": "com.ciguainv.mobile"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-sqlite"
+    ]
+  }
+}
