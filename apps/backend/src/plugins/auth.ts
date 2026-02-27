@@ -14,7 +14,13 @@ export default fp(async (fastify: FastifyInstance) => {
     },
   });
 
-  fastify.decorate('generateTokens', (payload: { userId: string; email: string; companyId: string }) => {
+  fastify.decorate('generateTokens', (payload: {
+    userId: string;
+    email: string;
+    companyId: string;
+    roles?: string[];
+    permissions?: string[];
+  }) => {
     const accessToken = fastify.jwt.sign(
       { ...payload, type: 'access' },
       { expiresIn: fastify.config.JWT_ACCESS_EXPIRY }
@@ -35,9 +41,24 @@ declare module 'fastify' {
       userId: string;
       email: string;
       companyId: string;
+      roles?: string[];
+      permissions?: string[];
     }) => {
       accessToken: string;
       refreshToken: string;
+    };
+  }
+}
+
+declare module '@fastify/jwt' {
+  interface FastifyJWT {
+    payload: {
+      userId: string;
+      email: string;
+      companyId: string;
+      roles?: string[];
+      permissions?: string[];
+      type: 'access' | 'refresh';
     };
   }
 }

@@ -1,14 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getApiClient } from '@/services/api';
-import { MappingConfig, TestMappingRequest } from '@shared/schemas/api';
+import { TestMappingRequest } from '@shared/schemas/api';
 
-const apiClient = getApiClient();
+// getApiClient() se llama dentro de cada hook intencionalmente:
+// si se llamara a nivel de módulo, podría ejecutarse antes de que
+// initializeApiClient() sea invocado en App.tsx, devolviendo undefined.
 
 export function useMappingConfigs(datasetType?: string) {
   return useQuery({
     queryKey: ['mappings', datasetType],
     queryFn: async () => {
-      const response = await apiClient.get('/config/mapping', {
+      const response = await getApiClient().get('/config/mapping', {
         params: { ...(datasetType && { datasetType }) },
       });
       return response.data.data;
@@ -22,7 +24,7 @@ export function useMappingConfig(mappingId: string) {
   return useQuery({
     queryKey: ['mapping', mappingId],
     queryFn: async () => {
-      const response = await apiClient.get(`/config/mapping/${mappingId}`);
+      const response = await getApiClient().get(`/config/mapping/${mappingId}`);
       return response.data.data;
     },
     enabled: !!mappingId,
@@ -35,7 +37,7 @@ export function useCreateMapping() {
 
   return useMutation({
     mutationFn: async (data: any) => {
-      const response = await apiClient.post('/config/mapping', data);
+      const response = await getApiClient().post('/config/mapping', data);
       return response.data.data;
     },
     onSuccess: () => {
@@ -47,7 +49,7 @@ export function useCreateMapping() {
 export function useTestMapping() {
   return useMutation({
     mutationFn: async (data: TestMappingRequest) => {
-      const response = await apiClient.post('/config/mapping/test', data);
+      const response = await getApiClient().post('/config/mapping/test', data);
       return response.data.data;
     },
   });
@@ -56,7 +58,7 @@ export function useTestMapping() {
 export function useLogin() {
   return useMutation({
     mutationFn: async (credentials: { email: string; password: string }) => {
-      const response = await apiClient.post('/auth/login', credentials);
+      const response = await getApiClient().post('/auth/login', credentials);
       return response.data.data;
     },
   });
@@ -67,7 +69,7 @@ export function useLogout() {
 
   return useMutation({
     mutationFn: async () => {
-      await apiClient.post('/auth/logout');
+      await getApiClient().post('/auth/logout');
     },
     onSuccess: () => {
       queryClient.clear();

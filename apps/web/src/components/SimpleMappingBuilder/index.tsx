@@ -28,7 +28,7 @@ export interface FieldMapping {
 export interface MappingConfig {
   id?: string;
   connectionId: string;
-  datasetType: 'ITEMS' | 'STOCK' | 'PRICES' | 'COST';
+  datasetType: 'ITEMS' | 'STOCK' | 'PRICES' | 'COST' | 'DESTINATION';
   mainTable: string;
   mainTableAlias?: string; // Alias de la tabla principal (ej: 'a', 'c')
   joins: TableJoin[];
@@ -43,7 +43,7 @@ export interface MappingConfig {
 
 interface SimpleMappingBuilderProps {
   connectionId: string;
-  datasetType: 'ITEMS' | 'STOCK' | 'PRICES' | 'COST';
+  datasetType: 'ITEMS' | 'STOCK' | 'PRICES' | 'COST' | 'DESTINATION';
   onSave: (config: MappingConfig) => Promise<void>;
   initialConfig?: Partial<MappingConfig>;
 }
@@ -66,15 +66,35 @@ export const SimpleMappingBuilder: React.FC<SimpleMappingBuilderProps> = ({
   initialConfig,
 }) => {
   const [step, setStep] = useState<Step>(1);
+  // Normalizar initialConfig: cuando viene de la BD los campos que deben ser arrays
+  // pueden llegar como objetos JSON. Garantizamos que siempre sean arrays.
+  function normalizeArrayField<T>(value: any, fallback: T[]): T[] {
+    if (Array.isArray(value)) return value;
+    if (value && typeof value === 'object') {
+      // Puede ser un objeto JSON con índices numéricos como {"0": {...}, "1": {...} }
+      const values = Object.values(value);
+      return values.length > 0 ? (values as T[]) : fallback;
+    }
+    return fallback;
+  }
+
   const [config, setConfig] = useState<MappingConfig>({
     connectionId,
     datasetType,
     mainTable: initialConfig?.mainTable || '',
-    joins: initialConfig?.joins || [],
-    filters: initialConfig?.filters || [],
-    selectedColumns: initialConfig?.selectedColumns || [],
-    fieldMappings: initialConfig?.fieldMappings || [],
-    ...initialConfig,
+    mainTableAlias: initialConfig?.mainTableAlias || '',
+    joins: normalizeArrayField(initialConfig?.joins, []),
+    filters: normalizeArrayField(initialConfig?.filters, []),
+    selectedColumns: normalizeArrayField(initialConfig?.selectedColumns, []),
+    fieldMappings: normalizeArrayField(initialConfig?.fieldMappings, []),
+    // Resto de campos escalares de initialConfig (sin pisar los arrays ya normalizados)
+    ...(initialConfig && {
+      id: initialConfig.id,
+      isActive: initialConfig.isActive,
+      version: initialConfig.version,
+      createdAt: initialConfig.createdAt,
+      updatedAt: initialConfig.updatedAt,
+    }),
   });
 
   const [loading, setLoading] = useState(false);

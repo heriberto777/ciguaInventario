@@ -6,7 +6,7 @@ export const CreateUserSchema = z.object({
   password: z.string().min(8, 'Password must be at least 8 characters'),
   firstName: z.string().min(1, 'First name is required'),
   lastName: z.string().min(1, 'Last name is required'),
-  roleId: z.string().uuid('Invalid role ID'),
+  roleId: z.string().min(1, 'Invalid role ID'),
 });
 
 export const UpdateUserSchema = z.object({
@@ -14,16 +14,16 @@ export const UpdateUserSchema = z.object({
   firstName: z.string().min(1).optional(),
   lastName: z.string().min(1).optional(),
   isActive: z.boolean().optional(),
-  roleId: z.string().uuid('Invalid role ID').optional(),
+  roleId: z.string().min(1, 'Invalid role ID').optional(),
+  password: z.string().min(8).optional(),
 });
 
 export const UserResponseSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string(),
   email: z.string().email(),
-  firstName: z.string(),
-  lastName: z.string(),
-  companyId: z.string().uuid(),
-  roleId: z.string().uuid(),
+  firstName: z.string().nullable(),
+  lastName: z.string().nullable(),
+  companyId: z.string(),
   isActive: z.boolean(),
   createdAt: z.date(),
   updatedAt: z.date(),
@@ -44,11 +44,11 @@ export const ListUsersResponseSchema = z.object({
 });
 
 export const GetUserSchema = z.object({
-  id: z.string().uuid('Invalid user ID'),
+  id: z.string().min(1, 'Invalid user ID'),
 });
 
 export const DeleteUserSchema = z.object({
-  id: z.string().uuid('Invalid user ID'),
+  id: z.string().min(1, 'Invalid user ID'),
 });
 
 // Type exports for frontend

@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { CreateInventoryCountDTO, AddCountItemDTO, UpdateCountItemDTO } from './schema';
 
 export class InventoryCountRepository {
-  constructor(private fastify: FastifyInstance) {}
+  constructor(private fastify: FastifyInstance) { }
 
   async createCount(companyId: string, warehouseId: string, description?: string) {
     const countNumber = await this.getNextCountNumber(companyId);
@@ -101,7 +101,8 @@ export class InventoryCountRepository {
   }
 
   async addCountItem(countId: string, data: AddCountItemDTO) {
-    const variance = data.countedQty - data.systemQty;
+    const countedQty = data.countedQty ?? 0;           // aún no contado → 0 por defecto
+    const variance = countedQty - data.systemQty;
     const variancePercent = data.systemQty > 0 ? (variance / data.systemQty) * 100 : 0;
 
     console.log('[addCountItem] Creating item with data:', {
@@ -109,7 +110,7 @@ export class InventoryCountRepository {
       itemCode: data.itemCode,
       locationId: data.locationId,
       systemQty: data.systemQty,
-      countedQty: data.countedQty,
+      countedQty,
     });
 
     const countItem = await this.fastify.prisma.inventoryCount_Item.create({
@@ -119,12 +120,20 @@ export class InventoryCountRepository {
         itemCode: data.itemCode,
         itemName: data.itemName,
         uom: data.uom,
-        baseUom: data.baseUom || 'PZ',
+        baseUom: data.baseUom ?? 'PZ',
+        packQty: data.packQty ?? 1,
         systemQty: data.systemQty,
-        countedQty: data.countedQty,
+        countedQty: countedQty,
         version: 1,
         status: 'PENDING',
         notes: data.notes,
+        ...(data.costPrice != null && { costPrice: data.costPrice }),
+        ...(data.salePrice != null && { salePrice: data.salePrice }),
+        ...(data.barCodeInv && { barCodeInv: data.barCodeInv }),
+        ...(data.barCodeVt && { barCodeVt: data.barCodeVt }),
+        ...(data.brand && { brand: data.brand }),
+        ...(data.category && { category: data.category }),
+        ...(data.subcategory && { subcategory: data.subcategory }),
       },
     });
 
@@ -142,7 +151,7 @@ export class InventoryCountRepository {
           itemCode: data.itemCode,
           itemName: data.itemName,
           systemQty: data.systemQty,
-          countedQty: data.countedQty,
+          countedQty: countedQty,       // valor numérico resuelto, nunca undefined
           difference: variance,
           variancePercent,
           version: 1,
@@ -266,18 +275,25 @@ export class InventoryCountRepository {
         locationId,
         itemCode: data.itemCode,
         itemName: data.itemName,
-        packQty: data.packQty || 1,
-        uom: data.uom,
-        baseUom: data.baseUom || 'PZ',
-        systemQty: data.systemQty,
-        countedQty: data.countedQty || 0,
-        costPrice: data.costPrice,
-        salePrice: data.salePrice,
+        packQty: data.packQty ?? 1,
+        uom: data.uom ?? 'PZ',
+        baseUom: data.baseUom ?? 'PZ',
+        systemQty: data.systemQty ?? 0,
+        countedQty: null,           // El operario lo llenará en el conteo físico
+        status: 'PENDING',
         notes: data.notes,
-        countedAt: new Date(),
+        // Campos enriquecidos — solo se insertan si el mapping los incluye
+        ...(data.costPrice != null && { costPrice: data.costPrice }),
+        ...(data.salePrice != null && { salePrice: data.salePrice }),
+        ...(data.barCodeInv && { barCodeInv: data.barCodeInv }),
+        ...(data.barCodeVt && { barCodeVt: data.barCodeVt }),
+        ...(data.brand && { brand: data.brand }),
+        ...(data.category && { category: data.category }),
+        ...(data.subcategory && { subcategory: data.subcategory }),
       },
     });
   }
+
 
   async getCountItemByCode(countId: string, itemCode: string) {
     return this.fastify.prisma.inventoryCount_Item.findFirst({
@@ -288,12 +304,40 @@ export class InventoryCountRepository {
     });
   }
 
+  async updateCountStatus(countId: string, status: string) {
+    return this.fastify.prisma.inventoryCount.update({
+      where: { id: countId },
+      data: {
+        status,
+        ...(status === 'COMPLETED' && { completedAt: new Date() }),
+      },
+    });
+  }
+
+  async findWarehouseById(id: string, companyId: string) {
+    return this.fastify.prisma.warehouse.findFirst({
+      where: { id, companyId, isActive: true },
+    });
+  }
+
+  async findLocationById(id: string) {
+    return this.fastify.prisma.warehouse_Location.findFirst({
+      where: { id, isActive: true },
+    });
+  }
+
+  async findActiveERPConnection(companyId: string) {
+    return this.fastify.prisma.eRPConnection.findFirst({
+      where: { companyId, isActive: true },
+    });
+  }
+
   // Función para mapear la respuesta y convertir Decimals a números
   private mapCountItem(item: any) {
     return {
       ...item,
       systemQty: typeof item.systemQty === 'object' ? item.systemQty.toNumber() : Number(item.systemQty),
-      countedQty: item.countedQty ? (typeof item.countedQty === 'object' ? item.countedQty.toNumber() : Number(item.countedQty)) : undefined,
+      countedQty: (item.countedQty !== null && item.countedQty !== undefined) ? (typeof item.countedQty === 'object' ? item.countedQty.toNumber() : Number(item.countedQty)) : undefined,
       packQty: typeof item.packQty === 'object' ? item.packQty.toNumber() : Number(item.packQty),
       costPrice: item.costPrice ? (typeof item.costPrice === 'object' ? item.costPrice.toNumber() : Number(item.costPrice)) : undefined,
       salePrice: item.salePrice ? (typeof item.salePrice === 'object' ? item.salePrice.toNumber() : Number(item.salePrice)) : undefined,

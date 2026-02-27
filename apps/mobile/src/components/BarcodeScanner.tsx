@@ -68,12 +68,14 @@ export default function BarcodeScanner({
             'aztec',
             'ean13',
             'ean8',
-            'upce',
+            'upc_e',
+            'upc_a',
             'code39',
             'code93',
             'code128',
             'codabar',
             'datamatrix',
+            'itf14',
           ],
         }}
       />

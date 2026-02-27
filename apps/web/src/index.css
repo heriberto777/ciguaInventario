@@ -1,3 +1,257 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ─────────────────────────────────────────────────────────────────
+   TOKEN SYSTEM — Cigua Inventory Design System
+   Usa estas variables en lugar de colores hardcodeados.
+   Light mode: default | Dark mode: activado por la clase .dark en <html>
+───────────────────────────────────────────────────────────────── */
+:root {
+  /* Superficies */
+  --bg-app:        #f1f5f9;
+  --bg-sidebar:    #1e293b;
+  --bg-card:       #ffffff;
+  --bg-input:      #ffffff;
+  --bg-hover:      #f8fafc;
+  --bg-active:     #eff6ff;
+
+  /* Textos */
+  --text-primary:   #0f172a;
+  --text-secondary: #64748b;
+  --text-muted:     #94a3b8;
+  --text-sidebar:   #cbd5e1;
+  --text-sidebar-active: #ffffff;
+
+  /* Bordes */
+  --border-default: #e2e8f0;
+  --border-focus:   #6366f1;
+
+  /* Acentos de marca */
+  --accent-primary:   #6366f1;   /* indigo */
+  --accent-hover:     #4f46e5;
+  --accent-light:     #eff0ff;
+  --accent-secondary: #8b5cf6;   /* violet */
+
+  /* Semánticos */
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-danger:  #ef4444;
+  --color-info:    #3b82f6;
+
+  /* Sombras */
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.10);
+  --shadow-lg: 0 10px 30px rgba(0,0,0,0.15);
+
+  /* Sidebar */
+  --sidebar-width: 240px;
+}
+
+/* ─── Dark Mode ─────────────────────────────────────────────────── */
+.dark {
+  --bg-app:        #0f172a;
+  --bg-sidebar:    #0a0f1e;
+  --bg-card:       #1e293b;
+  --bg-input:      #1e293b;
+  --bg-hover:      #1e2d3d;
+  --bg-active:     #1a2540;
+
+  --text-primary:   #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted:     #64748b;
+  --text-sidebar:   #94a3b8;
+  --text-sidebar-active: #ffffff;
+
+  --border-default: #334155;
+  --border-focus:   #818cf8;
+
+  --accent-primary:   #818cf8;
+  --accent-hover:     #6366f1;
+  --accent-light:     #1e1e3a;
+  --accent-secondary: #a78bfa;
+
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.4);
+  --shadow-lg: 0 10px 30px rgba(0,0,0,0.5);
+}
+
+/* ─── Global Reset ──────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+  transition: background-color 0.2s ease, color 0.2s ease;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ─── App Shell ─────────────────────────────────────────────────── */
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* ─── Sidebar ───────────────────────────────────────────────────── */
+.sidebar {
+  width: var(--sidebar-width);
+  background: var(--bg-sidebar);
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+  z-index: 40;
+  overflow-y: auto;
+  overflow-x: hidden;
+  box-shadow: var(--shadow-md);
+  transition: width 0.2s ease, transform 0.2s ease;
+}
+
+.sidebar-logo {
+  padding: 20px 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sidebar-section-label {
+  padding: 14px 16px 6px;
+  text-transform: uppercase;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  color: #475569;
+}
+
+.sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  margin: 2px 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-sidebar);
+  text-decoration: none;
+  cursor: pointer;
+  background: none;
+  border: none;
+  width: calc(100% - 16px);
+  text-align: left;
+  transition: background 0.15s, color 0.15s;
+}
+.sidebar-link:hover {
+  background: rgba(255,255,255,0.07);
+  color: var(--text-sidebar-active);
+}
+.sidebar-link.active {
+  background: var(--accent-primary);
+  color: white;
+  box-shadow: 0 2px 8px rgba(99,102,241,0.4);
+}
+
+/* ─── Top Bar ───────────────────────────────────────────────────── */
+.topbar {
+  position: fixed;
+  top: 0;
+  left: var(--sidebar-width);
+  right: 0;
+  height: 56px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border-default);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  z-index: 30;
+  box-shadow: var(--shadow-sm);
+  transition: background 0.2s, border-color 0.2s, left 0.2s;
+}
+
+/* ─── Main Content ──────────────────────────────────────────────── */
+.main-content {
+  margin-left: var(--sidebar-width);
+  margin-top: 56px;
+  flex: 1;
+  padding: 24px;
+  min-height: calc(100vh - 56px);
+  transition: margin-left 0.2s;
+}
+
+/* ─── Utility Cards ─────────────────────────────────────────────── */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: var(--shadow-sm);
+  transition: background 0.2s, border-color 0.2s;
+}
+
+/* ─── Scrollbar ─────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* ─── Animations ────────────────────────────────────────────────── */
+@keyframes spin { to { transform: rotate(360deg); } }
+.animate-spin { animation: spin 1s linear infinite; }
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-in { animation: fadeIn 0.3s ease; }
+
+/* ─── Theme Toggle ──────────────────────────────────────────────── */
+.theme-toggle {
+  width: 40px; height: 22px;
+  background: var(--border-default);
+  border-radius: 11px;
+  position: relative;
+  cursor: pointer;
+  border: none;
+  transition: background 0.2s;
+  padding: 0;
+}
+.theme-toggle.on { background: var(--accent-primary); }
+.theme-toggle::after {
+  content: '';
+  position: absolute;
+  width: 16px; height: 16px;
+  background: white;
+  border-radius: 50%;
+  top: 3px; left: 3px;
+  transition: left 0.2s;
+  box-shadow: var(--shadow-sm);
+}
+.theme-toggle.on::after { left: 21px; }
+
+/* ─── Status Badge ──────────────────────────────────────────────── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 50px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.badge-success { background: rgba(16,185,129,0.12); color: #059669; }
+.badge-warning { background: rgba(245,158,11,0.12); color: #d97706; }
+.badge-danger  { background: rgba(239,68,68,0.12);  color: #dc2626; }
+.badge-info    { background: rgba(59,130,246,0.12);  color: #2563eb; }
+.badge-gray    { background: rgba(100,116,139,0.12); color: #475569; }
+
+.dark .badge-success { background: rgba(16,185,129,0.2);  color: #34d399; }
+.dark .badge-warning { background: rgba(245,158,11,0.2);  color: #fbbf24; }
+.dark .badge-danger  { background: rgba(239,68,68,0.2);   color: #f87171; }
+.dark .badge-info    { background: rgba(59,130,246,0.2);  color: #60a5fa; }
+.dark .badge-gray    { background: rgba(100,116,139,0.2); color: #94a3b8; }

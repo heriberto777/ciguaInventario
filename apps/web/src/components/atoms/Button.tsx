@@ -2,7 +2,7 @@ import { ReactNode, ButtonHTMLAttributes } from 'react';
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   children: ReactNode;
-  variant?: 'primary' | 'secondary' | 'danger';
+  variant?: 'primary' | 'secondary' | 'danger' | 'success';
   size?: 'sm' | 'md' | 'lg';
 }
 
@@ -17,9 +17,10 @@ export function Button({
     'font-semibold rounded transition-colors duration-200 disabled:opacity-50';
 
   const variantStyles = {
-    primary: 'bg-blue-600 text-white hover:bg-blue-700',
-    secondary: 'bg-gray-200 text-gray-800 hover:bg-gray-300',
-    danger: 'bg-red-600 text-white hover:bg-red-700',
+    primary: 'bg-blue-600 text-white hover:bg-blue-700 font-bold shadow-sm',
+    secondary: 'bg-gray-200 text-gray-800 hover:bg-gray-300 font-bold shadow-sm',
+    danger: 'bg-red-600 text-white hover:bg-red-700 font-bold shadow-sm',
+    success: 'bg-green-600 text-white hover:bg-green-700 font-bold shadow-sm',
   };
 
   const sizeStyles = {

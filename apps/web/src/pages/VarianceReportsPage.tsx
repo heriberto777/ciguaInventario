@@ -3,13 +3,31 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { AdminLayout } from '@/components/templates/AdminLayout';
 import { Button, VarianceTable } from '../components/inventory';
 import { getApiClient } from '@/services/api';
+import { useAuthStore } from '@/store/auth';
 
 const VarianceReportsPage: React.FC = () => {
   const apiClient = getApiClient();
+  const user = useAuthStore((state) => state.user);
+  const permissions = user?.permissions || [];
+  const roles = user?.roles || [];
+  const isSuperAdmin = roles.includes('SuperAdmin');
+  const hasSystemView = isSuperAdmin || permissions.includes('inventory:view_qty');
 
   const [selectedCount, setSelectedCount] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
+
+  if (!hasSystemView) {
+    return (
+      <AdminLayout title="Acceso Denegado">
+        <div className="max-w-4xl mx-auto mt-12 text-center p-8 bg-white rounded-lg shadow">
+          <div className="text-6xl mb-4">🚫</div>
+          <h2 className="text-2xl font-bold text-gray-800 mb-2">Acceso Restringido</h2>
+          <p className="text-gray-600">No tienes permisos para ver los reportes de varianza o existencias del sistema.</p>
+        </div>
+      </AdminLayout>
+    );
+  }
 
   // Fetch inventory counts
   const { data: counts } = useQuery({
@@ -108,7 +126,7 @@ const VarianceReportsPage: React.FC = () => {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg"
               >
                 <option value="">Todos los conteos</option>
-                {counts?.map(count => (
+                {counts?.map((count: any) => (
                   <option key={count.id} value={count.id}>
                     {count.code} - {count.warehouse?.name}
                   </option>

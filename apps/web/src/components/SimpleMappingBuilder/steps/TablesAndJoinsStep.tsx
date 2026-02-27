@@ -48,9 +48,9 @@ export const TablesAndJoinsStep: React.FC<TablesAndJoinsStepProps> = ({
       setAvailableTables(response.data.tables || []);
     } catch (err: any) {
       const errorMessage = err.response?.data?.error?.message ||
-                          err.response?.data?.message ||
-                          err.message ||
-                          'Error desconocido al cargar tablas';
+        err.response?.data?.message ||
+        err.message ||
+        'Error desconocido al cargar tablas';
 
       // Proporcionar contexto adicional según el tipo de error
       let userFriendlyMessage = `❌ Error cargando tablas: ${errorMessage}`;
@@ -144,6 +144,21 @@ Error: ${errorMessage}`;
     return null;
   };
 
+  const [mainTableSearch, setMainTableSearch] = useState('');
+  const [joinSearchTerms, setJoinSearchTerms] = useState<string[]>(config.joins.map(() => ''));
+
+  // Sincronizar búsqueda de joins si el número de joins cambia
+  useEffect(() => {
+    if (joinSearchTerms.length !== config.joins.length) {
+      setJoinSearchTerms(config.joins.map((_, i) => joinSearchTerms[i] || ''));
+    }
+  }, [config.joins.length]);
+
+  const filteredMainTables = availableTables.filter(t =>
+    t.name.toLowerCase().includes(mainTableSearch.toLowerCase()) ||
+    (t.label && t.label.toLowerCase().includes(mainTableSearch.toLowerCase()))
+  );
+
   if (loading) {
     return (
       <div className="text-center py-8">
@@ -169,46 +184,60 @@ Error: ${errorMessage}`;
       )}
 
       {/* Tabla Principal */}
-      <div>
-        <h3 className="text-lg font-semibold mb-3">📊 Tabla Principal</h3>
+      <div className="bg-white p-4 border border-gray-200 rounded-lg shadow-sm">
+        <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+          <span className="text-xl">📊</span> Tabla Principal
+        </h3>
 
-        {availableTables.length === 0 && !error && (
-          <p className="text-sm text-gray-600 mb-3">Cargando tablas disponibles...</p>
-        )}
-
-        {error && (
-          <div className="mb-3 p-3 bg-yellow-50 border border-yellow-400 rounded text-sm">
-            <p className="text-yellow-800 mb-2">💡 Como alternativa, puedes escribir el nombre de la tabla manualmente:</p>
+        {availableTables.length > 0 ? (
+          <div className="space-y-3">
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
+              <input
+                type="text"
+                placeholder="Buscar tabla..."
+                value={mainTableSearch}
+                onChange={(e) => setMainTableSearch(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              />
+            </div>
+            <select
+              value={config.mainTable}
+              size={5}
+              onChange={(e) => handleSelectMainTable(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white text-sm focus:ring-2 focus:ring-blue-500 outline-none min-h-[120px]"
+            >
+              <option value="">-- Selecciona una tabla --</option>
+              {filteredMainTables.slice(0, 100).map((table) => (
+                <option key={table.name} value={table.name}>
+                  {table.label || table.name} ({table.columnCount} cols)
+                </option>
+              ))}
+              {filteredMainTables.length > 100 && (
+                <option disabled>... y {filteredMainTables.length - 100} más (usa el buscador)</option>
+              )}
+            </select>
+            {filteredMainTables.length === 0 && mainTableSearch && (
+              <p className="text-xs text-orange-600">No se encontraron tablas que coincidan con "{mainTableSearch}"</p>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {!error && <p className="text-sm text-gray-600 animate-pulse">Cargando tablas disponibles...</p>}
+            <input
+              type="text"
+              value={config.mainTable}
+              onChange={(e) => handleSelectMainTable(e.target.value)}
+              placeholder="Ej: ARTICULO, dbo.ITEMS, etc."
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+            />
           </div>
         )}
 
-        {availableTables.length > 0 ? (
-          <select
-            value={config.mainTable}
-            onChange={(e) => handleSelectMainTable(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded bg-white"
-          >
-            <option value="">-- Selecciona una tabla --</option>
-            {availableTables.map((table) => (
-              <option key={table.name} value={table.name}>
-                {table.label || table.name} ({table.columnCount} columnas)
-              </option>
-            ))}
-          </select>
-        ) : (
-          <input
-            type="text"
-            value={config.mainTable}
-            onChange={(e) => handleSelectMainTable(e.target.value)}
-            placeholder="Ej: ARTICULO, dbo.ITEMS, etc."
-            className="w-full px-4 py-2 border border-gray-300 rounded bg-white"
-          />
-        )}
-
         {config.mainTable && (
-          <p className="text-sm text-gray-600 mt-2">
-            ✓ Tabla seleccionada: <strong>{config.mainTable}</strong>
-          </p>
+          <div className="inline-flex items-center gap-2 mt-3 px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-semibold">
+            <span>✓</span> {config.mainTable}
+          </div>
         )}
       </div>
 
@@ -271,22 +300,43 @@ Error: ${errorMessage}`;
                         Tabla
                       </label>
                       {availableTables.length > 0 ? (
-                        <select
-                          value={join.table}
-                          onChange={(e) =>
-                            handleUpdateJoin(index, { table: e.target.value })
-                          }
-                          className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
-                        >
-                          <option value="">-- Selecciona tabla --</option>
-                          {availableTables
-                            .filter((t) => t.name !== config.mainTable)
-                            .map((table) => (
-                              <option key={table.name} value={table.name}>
-                                {table.label || table.name}
-                              </option>
-                            ))}
-                        </select>
+                        <div className="space-y-2">
+                          <div className="relative">
+                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">🔍</span>
+                            <input
+                              type="text"
+                              placeholder="Filtrar..."
+                              value={joinSearchTerms[index] || ''}
+                              onChange={(e) => {
+                                const newTerms = [...joinSearchTerms];
+                                newTerms[index] = e.target.value;
+                                setJoinSearchTerms(newTerms);
+                              }}
+                              className="w-full pl-7 pr-4 py-1 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-blue-500 outline-none"
+                            />
+                          </div>
+                          <select
+                            value={join.table}
+                            onChange={(e) =>
+                              handleUpdateJoin(index, { table: e.target.value })
+                            }
+                            className="w-full px-3 py-2 border border-gray-300 rounded text-sm bg-white"
+                          >
+                            <option value="">-- Selecciona tabla --</option>
+                            {availableTables
+                              .filter((t) => t.name !== config.mainTable)
+                              .filter((t) => {
+                                const term = (joinSearchTerms[index] || '').toLowerCase();
+                                return t.name.toLowerCase().includes(term) || (t.label && t.label.toLowerCase().includes(term));
+                              })
+                              .slice(0, 50)
+                              .map((table) => (
+                                <option key={table.name} value={table.name}>
+                                  {table.label || table.name}
+                                </option>
+                              ))}
+                          </select>
+                        </div>
                       ) : (
                         <input
                           type="text"
@@ -373,14 +423,13 @@ Error: ${errorMessage}`;
                 // Usar el alias definido por el usuario, o sugerir uno
                 const mainTableAlias = config.mainTableAlias || config.mainTable.charAt(0).toLowerCase();
 
-                return `SELECT *\nFROM ${config.mainTable} ${mainTableAlias}${
-                  config.joins
-                    .map(
-                      (j) =>
-                        `\n${j.joinType} JOIN ${j.table} ${j.alias}\n  ON ${j.joinCondition}`
-                    )
-                    .join('')
-                }`;
+                return `SELECT *\nFROM ${config.mainTable} ${mainTableAlias}${config.joins
+                  .map(
+                    (j) =>
+                      `\n${j.joinType} JOIN ${j.table} ${j.alias}\n  ON ${j.joinCondition}`
+                  )
+                  .join('')
+                  }`;
               })()}
             </pre>
           </div>

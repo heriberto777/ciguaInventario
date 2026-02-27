@@ -8,6 +8,12 @@ interface Role {
   permissionCount: number;
   isActive: boolean;
   createdAt: string;
+  rolePermissions?: Array<{
+    permission: {
+      id: string;
+      name: string;
+    };
+  }>;
 }
 
 interface RolesTableProps {
@@ -67,11 +73,10 @@ export const RolesTable: React.FC<RolesTableProps> = ({
               </td>
               <td className="px-4 py-3">
                 <span
-                  className={`inline-block px-2 py-1 rounded text-xs font-semibold ${
-                    role.isActive
+                  className={`inline-block px-2 py-1 rounded text-xs font-semibold ${role.isActive
                       ? 'bg-green-100 text-green-800'
                       : 'bg-red-100 text-red-800'
-                  }`}
+                    }`}
                 >
                   {role.isActive ? 'Active' : 'Inactive'}
                 </span>

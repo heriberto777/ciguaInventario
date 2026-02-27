@@ -4,9 +4,11 @@ import { InventoryCount, CountItem } from '@/hooks/useInventory';
 
 const DB_NAME = 'cigua_inventory.db';
 
+export type SyncType = 'update-item' | 'complete-count' | 'add-item' | 'delete-item';
+
 interface PendingSync {
   id: string;
-  type: 'update-item' | 'complete-count';
+  type: SyncType;
   countId: string;
   itemId?: string;
   data: any;
@@ -16,41 +18,71 @@ interface PendingSync {
 
 class OfflineSync {
   private db: SQLite.SQLiteDatabase | null = null;
+  private initPromise: Promise<void> | null = null;
 
   async initDB() {
-    try {
-      this.db = await SQLite.openDatabaseAsync(DB_NAME);
+    // Si ya se está inicializando o ya terminó, devolver el proceso existente
+    if (this.initPromise) return this.initPromise;
 
-      // Crear tabla de sincronización pendiente
-      await this.db.execAsync(`
-        CREATE TABLE IF NOT EXISTS pending_sync (
-          id TEXT PRIMARY KEY,
-          type TEXT NOT NULL,
-          countId TEXT NOT NULL,
-          itemId TEXT,
-          data TEXT NOT NULL,
-          timestamp INTEGER NOT NULL,
-          retries INTEGER DEFAULT 0
-        );
+    this.initPromise = (async () => {
+      try {
+        this.db = await SQLite.openDatabaseAsync(DB_NAME);
 
-        CREATE TABLE IF NOT EXISTS cached_counts (
-          id TEXT PRIMARY KEY,
-          data TEXT NOT NULL,
-          timestamp INTEGER NOT NULL
-        );
-      `);
+        // Crear tablas si no existen
+        await this.db.execAsync(`
+          CREATE TABLE IF NOT EXISTS pending_sync (
+            id TEXT PRIMARY KEY,
+            type TEXT NOT NULL,
+            countId TEXT NOT NULL,
+            itemId TEXT,
+            data TEXT NOT NULL,
+            timestamp INTEGER NOT NULL,
+            retries INTEGER DEFAULT 0
+          );
 
-      console.log('Database initialized');
-    } catch (error) {
-      console.error('Error initializing database:', error);
+          CREATE TABLE IF NOT EXISTS cached_counts (
+            id TEXT PRIMARY KEY,
+            data TEXT NOT NULL,
+            timestamp INTEGER NOT NULL
+          );
+
+          CREATE TABLE IF NOT EXISTS classifications (
+            id TEXT PRIMARY KEY,
+            companyId TEXT NOT NULL,
+            code TEXT NOT NULL,
+            description TEXT NOT NULL,
+            groupType TEXT NOT NULL,
+            groupNumber INTEGER NOT NULL,
+            timestamp INTEGER NOT NULL
+          );
+        `);
+
+        console.log('📦 Database initialized successfully');
+      } catch (error) {
+        console.error('❌ Error initializing database:', error);
+        this.initPromise = null; // Permitir reintento si falló
+        throw error;
+      }
+    })();
+
+    return this.initPromise;
+  }
+
+  private async ensureDB(): Promise<SQLite.SQLiteDatabase> {
+    if (!this.db) {
+      // Intentar inicializar si se llama a una operación y no está lista
+      await this.initDB();
     }
+    if (!this.db) {
+      throw new Error('Database not available');
+    }
+    return this.db;
   }
 
   async cacheCount(count: InventoryCount) {
-    if (!this.db) return;
-
     try {
-      await this.db.runAsync(
+      const db = await this.ensureDB();
+      await db.runAsync(
         'INSERT OR REPLACE INTO cached_counts (id, data, timestamp) VALUES (?, ?, ?)',
         [count.id, JSON.stringify(count), Date.now()]
       );
@@ -59,11 +91,19 @@ class OfflineSync {
     }
   }
 
-  async getCachedCount(countId: string): Promise<InventoryCount | null> {
-    if (!this.db) return null;
-
+  async clearCachedCount(countId: string) {
     try {
-      const result = await this.db.getFirstAsync<{ data: string }>(
+      const db = await this.ensureDB();
+      await db.runAsync('DELETE FROM cached_counts WHERE id = ?', [countId]);
+    } catch (error) {
+      console.error('Error clearing cached count:', error);
+    }
+  }
+
+  async getCachedCount(countId: string): Promise<InventoryCount | null> {
+    try {
+      const db = await this.ensureDB();
+      const result = await db.getFirstAsync<{ data: string }>(
         'SELECT data FROM cached_counts WHERE id = ?',
         [countId]
       );
@@ -78,18 +118,68 @@ class OfflineSync {
     return null;
   }
 
+  async cacheClassifications(classifications: any[]) {
+    try {
+      const db = await this.ensureDB();
+      // Usar transacción para rapidez
+      await db.withTransactionAsync(async () => {
+        // Limpiamos la tabla antes de insertar las nuevas
+        await db.runAsync('DELETE FROM classifications');
+
+        for (const c of classifications) {
+          await db.runAsync(
+            `INSERT INTO classifications (id, companyId, code, description, groupType, groupNumber, timestamp)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [c.id, c.companyId, c.code, c.description, c.groupType, c.groupNumber, Date.now()]
+          );
+        }
+      });
+      console.log('Classifications cached:', classifications.length);
+    } catch (error) {
+      console.error('Error caching classifications:', error);
+    }
+  }
+
+  async getClassifications(groupType?: string): Promise<any[]> {
+    try {
+      const db = await this.ensureDB();
+      const query = groupType
+        ? 'SELECT * FROM classifications WHERE groupType = ? ORDER BY description ASC'
+        : 'SELECT * FROM classifications ORDER BY description ASC';
+      const args = groupType ? [groupType] : [];
+
+      const results = await db.getAllAsync<any>(query, args);
+      return results;
+    } catch (error) {
+      console.error('Error getting classifications:', error);
+      return [];
+    }
+  }
+
+  async syncGlobalClassifications() {
+    try {
+      const apiClient = getApiClient();
+      const response = await apiClient.get('/item-classifications');
+      const data = response.data?.data || response.data || [];
+      if (Array.isArray(data)) {
+        await this.cacheClassifications(data);
+      }
+    } catch (error) {
+      console.warn('Could not sync global classifications (offline mode?):', error);
+    }
+  }
+
   async addPendingSync(
-    type: 'update-item' | 'complete-count',
+    type: SyncType,
     countId: string,
     data: any,
     itemId?: string
   ) {
-    if (!this.db) return;
-
     const id = `${type}-${countId}-${itemId || 'general'}-${Date.now()}`;
 
     try {
-      await this.db.runAsync(
+      const db = await this.ensureDB();
+      await db.runAsync(
         `INSERT INTO pending_sync (id, type, countId, itemId, data, timestamp, retries)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [
@@ -110,10 +200,9 @@ class OfflineSync {
   }
 
   async getPendingSyncs(): Promise<PendingSync[]> {
-    if (!this.db) return [];
-
     try {
-      const results = await this.db.getAllAsync<any>(
+      const db = await this.ensureDB();
+      const results = await db.getAllAsync<any>(
         'SELECT * FROM pending_sync ORDER BY timestamp ASC LIMIT 50'
       );
 
@@ -133,20 +222,18 @@ class OfflineSync {
   }
 
   async removePendingSync(id: string) {
-    if (!this.db) return;
-
     try {
-      await this.db.runAsync('DELETE FROM pending_sync WHERE id = ?', [id]);
+      const db = await this.ensureDB();
+      await db.runAsync('DELETE FROM pending_sync WHERE id = ?', [id]);
     } catch (error) {
       console.error('Error removing pending sync:', error);
     }
   }
 
   async incrementRetries(id: string) {
-    if (!this.db) return;
-
     try {
-      await this.db.runAsync(
+      const db = await this.ensureDB();
+      await db.runAsync(
         'UPDATE pending_sync SET retries = retries + 1 WHERE id = ?',
         [id]
       );
@@ -171,24 +258,45 @@ class OfflineSync {
       }
 
       try {
-        if (sync.type === 'update-item') {
-          await apiClient.patch(
-            `/inventory-counts/${sync.countId}/items/${sync.itemId}`,
-            sync.data
-          );
-        } else if (sync.type === 'complete-count') {
-          await apiClient.patch(
-            `/inventory-counts/${sync.countId}/complete`,
-            sync.data
-          );
+        switch (sync.type) {
+          case 'update-item':
+            await apiClient.patch(
+              `/inventory-counts/${sync.countId}/items/${sync.itemId}`,
+              sync.data
+            );
+            break;
+          case 'complete-count':
+            await apiClient.post(
+              `/inventory-counts/${sync.countId}/complete`,
+              sync.data
+            );
+            break;
+          case 'add-item':
+            await apiClient.post(
+              `/inventory-counts/${sync.countId}/items`,
+              sync.data
+            );
+            break;
+          case 'delete-item':
+            await apiClient.delete(
+              `/inventory-counts/${sync.countId}/items/${sync.itemId}`
+            );
+            break;
         }
 
         await this.removePendingSync(sync.id);
         success++;
-      } catch (error) {
+      } catch (error: any) {
         console.error(`Error syncing ${sync.id}:`, error);
-        await this.incrementRetries(sync.id);
-        failed++;
+
+        // Si es un error 4xx no reintentable (ej: item ya no existe), remover
+        if (error.response?.status >= 400 && error.response?.status < 500) {
+          await this.removePendingSync(sync.id);
+          failed++;
+        } else {
+          await this.incrementRetries(sync.id);
+          failed++;
+        }
       }
     }
 
@@ -196,11 +304,10 @@ class OfflineSync {
   }
 
   async clearOldCache(olderThanHours: number = 24) {
-    if (!this.db) return;
-
     try {
+      const db = await this.ensureDB();
       const cutoff = Date.now() - olderThanHours * 60 * 60 * 1000;
-      await this.db.runAsync('DELETE FROM cached_counts WHERE timestamp < ?', [
+      await db.runAsync('DELETE FROM cached_counts WHERE timestamp < ?', [
         cutoff,
       ]);
     } catch (error) {

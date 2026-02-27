@@ -54,17 +54,6 @@ export class ERPIntrospectionService {
         FROM INFORMATION_SCHEMA.COLUMNS
         WHERE TABLE_CATALOG = DB_NAME()
           AND TABLE_SCHEMA NOT IN ('sys', 'information_schema')
-          -- Filtrar solo tablas relevantes para inventario
-          AND (
-            TABLE_NAME LIKE '%articulo%'
-            OR TABLE_NAME LIKE '%producto%'
-            OR TABLE_NAME LIKE '%stock%'
-            OR TABLE_NAME LIKE '%existencia%'
-            OR TABLE_NAME LIKE '%bodega%'
-            OR TABLE_NAME LIKE '%almacen%'
-            OR TABLE_NAME LIKE '%precio%'
-            OR TABLE_NAME LIKE '%costo%'
-          )
         GROUP BY TABLE_SCHEMA, TABLE_NAME
         ORDER BY TABLE_SCHEMA, TABLE_NAME
       `;

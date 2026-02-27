@@ -14,7 +14,7 @@ export class DynamicQueryBuilder {
   private parameters: Record<string, any> = {};
   private paramCounter = 0;
 
-  constructor(private mapping: CreateMappingConfigDTO) {}
+  constructor(private mapping: CreateMappingConfigDTO) { }
 
   /**
    * Construye la query SQL completa
@@ -46,17 +46,30 @@ export class DynamicQueryBuilder {
    * SELECT a.codigo AS itemCode, a.descripcion AS itemName, ...
    */
   private buildSelectClause(): void {
-    const selectParts = this.mapping.fieldMappings.map((mapping) => {
-      const sourceField = mapping.sourceField; // "articulo.codigo"
-      const targetAlias = mapping.targetField; // "itemCode"
+    const selectParts = this.mapping.fieldMappings.map((mapping: any, index: number) => {
+      const source = mapping.source || mapping.sourceField;
+      const target = mapping.target || mapping.targetField;
 
-      if (mapping.transformation) {
-        // Aplicar transformación: UPPER(a.codigo) AS itemCode
-        const transformed = mapping.transformation.replace('{}', sourceField);
-        return `${transformed} AS ${targetAlias}`;
+      const transformation = mapping.transformation;
+
+      if (transformation === 'CONSTANT') {
+        // SELECT '01' AS branch
+        return `'${source}' AS ${target}`;
       }
 
-      return `${sourceField} AS ${targetAlias}`;
+      if (transformation === 'AUTO_GENERATE') {
+        if (source === 'NOW') return `GETDATE() AS ${target}`;
+        if (source === 'USER') return `'system' AS ${target}`; // Placeholder, actual user resolved elsewhere if needed
+        return `NULL AS ${target}`;
+      }
+
+      if (transformation && transformation.includes('{}')) {
+        // Aplicar transformación personalizada: UPPER(a.codigo) AS itemCode
+        const transformed = transformation.replace('{}', source);
+        return `${transformed} AS ${target}`;
+      }
+
+      return `${source} AS ${target}`;
     });
 
     this.query = `SELECT ${selectParts.join(', ')}\n`;
@@ -69,11 +82,12 @@ export class DynamicQueryBuilder {
    */
   private buildFromClause(): void {
     const mainTable = this.mapping.mainTable;
-    this.query += `FROM ${mainTable.name} ${mainTable.alias}\n`;
+    const mainTableAlias = (this.mapping as any).mainTableAlias || '';
+    this.query += `FROM ${mainTable} ${mainTableAlias}\n`;
 
     if (this.mapping.joins && this.mapping.joins.length > 0) {
       for (const join of this.mapping.joins) {
-        this.query += `${join.joinType} JOIN ${join.name} ${join.alias} ON ${join.joinCondition}\n`;
+        this.query += `${join.joinType} JOIN ${join.table} ${join.alias} ON ${join.joinCondition}\n`;
       }
     }
   }
@@ -184,11 +198,11 @@ export class DynamicQueryBuilder {
 
     // Validar que los fieldMappings apunten a campos válidos
     for (const mapping_item of mapping.fieldMappings || []) {
-      if (!mapping_item.sourceField) {
-        errors.push(`FieldMapping missing sourceField`);
+      if (!mapping_item.source) {
+        errors.push(`FieldMapping missing source`);
       }
-      if (!mapping_item.targetField) {
-        errors.push(`FieldMapping missing targetField`);
+      if (!mapping_item.target) {
+        errors.push(`FieldMapping missing target`);
       }
       if (!mapping_item.dataType) {
         errors.push(`FieldMapping missing dataType`);

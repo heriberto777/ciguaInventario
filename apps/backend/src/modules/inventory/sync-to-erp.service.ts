@@ -29,7 +29,7 @@ interface SyncResult {
 }
 
 export class SyncToERPService {
-  constructor(private fastify: any) {}
+  constructor(private fastify: any) { }
 
   /**
    * Obtener items pendientes de sincronización para un conteo
@@ -41,10 +41,8 @@ export class SyncToERPService {
         where: { id: countId },
         include: {
           warehouse: true,
-          mapping: true,
-          items: {
-            where: { variance: { not: 0 } }, // Solo items con varianza
-            include: { item: true },
+          countItems: {
+            where: { hasVariance: true }, // Versión del esquema: hasVariance: true
           },
         },
       })) as any;
@@ -58,37 +56,38 @@ export class SyncToERPService {
       }
 
       // Verificar que el conteo pertenece a la compañía del usuario
-      const countOwnership = await (this.fastify.prisma as any).inventoryCount.findFirst({
-        where: { id: countId, companyId },
-      });
-
-      if (!countOwnership) {
+      if (count.companyId !== companyId) {
         throw new AppError(403, 'Access denied to this count');
       }
 
-      const items: SyncItem[] = count.items.map((countItem: any) => ({
-        itemId: countItem.itemId,
-        itemCode: countItem.item.code,
-        itemName: countItem.item.name,
-        systemQty: countItem.systemQty,
-        countedQty: countItem.countedQty,
-        variance: countItem.variance,
-        variancePercent: countItem.variancePercent,
-      }));
+      const items: SyncItem[] = count.countItems.map((countItem: any) => {
+        const systemQty = Number(countItem.systemQty);
+        const countedQty = Number(countItem.countedQty || 0);
+        const variance = countedQty - systemQty;
+
+        return {
+          itemId: countItem.id,
+          itemCode: countItem.itemCode,
+          itemName: countItem.itemName,
+          systemQty,
+          countedQty,
+          variance: variance,
+          variancePercent: systemQty !== 0 ? (variance / systemQty) * 100 : 0,
+        };
+      });
 
       return {
         countId: count.id,
-        countCode: count.countCode,
+        countCode: count.code,
         warehouseId: count.warehouseId,
         warehouseName: count.warehouse.name,
-        erpTableName: count.mapping.erpTableName,
-        quantityField: count.mapping.quantityField,
         itemsToSync: items,
         totalVariance: items.reduce((sum, item) => sum + item.variance, 0),
         totalItems: items.length,
       };
     } catch (error: any) {
       if (error.statusCode) throw error;
+      console.error('Error in getSyncableItems:', error);
       throw new AppError(500, 'Failed to get syncable items');
     }
   }
@@ -97,7 +96,11 @@ export class SyncToERPService {
    * Sincronizar varianzas al ERP
    * Actualiza las cantidades en Catelli según las diferencias encontradas
    */
-  async syncToERP(countId: string, companyId: string, input: { updateStrategy: 'REPLACE' | 'ADD' }): Promise<SyncResult> {
+  async syncToERP(
+    countId: string,
+    companyId: string,
+    input: { updateStrategy: 'REPLACE' | 'ADD'; mappingId?: string; userEmail?: string }
+  ): Promise<SyncResult> {
     const startTime = Date.now();
 
     try {
@@ -106,11 +109,8 @@ export class SyncToERPService {
         where: { id: countId },
         include: {
           warehouse: true,
-          connection: true,
-          mapping: true,
-          items: {
-            where: { variance: { not: 0 } },
-            include: { item: true },
+          countItems: {
+            where: { hasVariance: true },
           },
         },
       })) as any;
@@ -119,73 +119,103 @@ export class SyncToERPService {
         throw new AppError(404, 'Count not found');
       }
 
-      if (count.status !== 'COMPLETED') {
-        throw new AppError(409, 'Count must be completed before syncing to ERP');
-      }
-
-      // Verificar acceso a compañía
-      const countOwnership = await (this.fastify.prisma as any).inventoryCount.findFirst({
-        where: { id: countId, companyId },
+      // Buscar conexión ERP attiva para la compañía
+      const connection = await (this.fastify.prisma as any).eRPConnection.findFirst({
+        where: { companyId, isActive: true },
       });
 
-      if (!countOwnership) {
-        throw new AppError(403, 'Access denied to this count');
+      if (!connection) {
+        throw new AppError(400, 'ERP connection not found or inactive for this company');
       }
 
-      if (!count.connection) {
-        throw new AppError(400, 'ERP connection not found for this count');
+      // 1. Obtener mapping de exportación
+      let exportMapping: any = null;
+      if (input.mappingId) {
+        exportMapping = await (this.fastify.prisma as any).mappingConfig.findUnique({
+          where: { id: input.mappingId, companyId },
+        });
+      } else {
+        // Buscar el primer mapping de tipo DESTINATION para esta compañía
+        exportMapping = await (this.fastify.prisma as any).mappingConfig.findFirst({
+          where: { companyId, datasetType: 'DESTINATION', isActive: true },
+        });
+      }
+
+      if (!exportMapping) {
+        throw new AppError(400, 'No export mapping (DESTINATION) found');
       }
 
       // Crear connector al ERP
       const connector = ERPConnectorFactory.create({
-        erpType: count.connection.type,
-        host: count.connection.server,
-        database: count.connection.database,
-        username: count.connection.username,
-        password: count.connection.password,
-        port: count.connection.port || 1433,
+        erpType: connection.erpType,
+        host: connection.host,
+        database: connection.database,
+        username: connection.username,
+        password: connection.password,
+        port: connection.port || 1433,
       });
+
+      await (connector as any).connect();
+
+      // Obtener el nombre de la tabla de destino desde el mapping
+      const erpTableName = (exportMapping.filters as any)?.mainTable || exportMapping.sourceTables?.[0];
+      if (!erpTableName) {
+        throw new AppError(400, 'Destination table not found in mapping (filters.mainTable or sourceTables[0])');
+      }
+
+      // Generar el primer correlativo para la BOLETA/LOTE en el ERP
+      let consecutiveBase = await this.generateNextConsecutive(connector, exportMapping, erpTableName);
 
       const details: SyncResult['details'] = [];
       let itemsSynced = 0;
       let itemsFailed = 0;
 
       // Sincronizar cada item
-      for (const countItem of count.items) {
+      for (const countItem of count.countItems) {
         try {
+          const sysQty = Number(countItem.systemQty);
+          const countQty = Number(countItem.countedQty || 0);
+          const variance = countQty - sysQty;
+
           const newQuantity =
-            input.updateStrategy === 'REPLACE' ? countItem.countedQty : countItem.systemQty + countItem.variance;
+            input.updateStrategy === 'REPLACE' ? countQty : sysQty + variance;
 
-          // Construir query UPDATE
-          const updateQuery = `
-            UPDATE ${count.mapping.erpTableName}
-            SET ${count.mapping.quantityField} = ${newQuantity}
-            WHERE ${count.mapping.itemCodeField} = '${countItem.item.code}'
-          `;
+          // Incrementar el correlativo para cada item si el usuario lo desea por item
+          // O mantener el mismo si es por lote. Según el feedback, parece que lo quiere por item.
+          // Para simplificar, generamos un correlativo que incremente el número final.
+          const consecutive = this.incrementConsecutive(consecutiveBase, itemsSynced + itemsFailed);
 
-          // Conectar si es necesario
-          await (connector as any).connect();
+          // FLUJO: INSERT dinámico basado en Mapping
+          const { sql, queryParams } = this.buildInsertQuery(
+            exportMapping,
+            erpTableName,
+            count,
+            countItem,
+            newQuantity,
+            consecutive,
+            input.userEmail || 'system'
+          );
 
           // Ejecutar en ERP
-          await (connector as any).executeQuery(updateQuery);
+          await (connector as any).executeQuery(sql, queryParams);
 
           itemsSynced++;
           details.push({
-            itemCode: countItem.item.code,
-            itemName: countItem.item.name,
-            systemQty: countItem.systemQty,
-            countedQty: countItem.countedQty,
-            variance: countItem.variance,
+            itemCode: countItem.itemCode,
+            itemName: countItem.itemName,
+            systemQty: sysQty,
+            countedQty: countQty,
+            variance: variance,
             status: 'SUCCESS',
           });
         } catch (error: any) {
           itemsFailed++;
           details.push({
-            itemCode: countItem.item.code,
-            itemName: countItem.item.name,
-            systemQty: countItem.systemQty,
-            countedQty: countItem.countedQty,
-            variance: countItem.variance,
+            itemCode: countItem.itemCode,
+            itemName: countItem.itemName,
+            systemQty: Number(countItem.systemQty),
+            countedQty: Number(countItem.countedQty || 0),
+            variance: Number(countItem.countedQty || 0) - Number(countItem.systemQty),
             status: 'FAILED',
             errorMessage: error.message,
           });
@@ -193,27 +223,27 @@ export class SyncToERPService {
       }
 
       // Registrar sincronización
-      const syncRecord = await (this.fastify.prisma as any).inventorySyncHistory.create({
+      await (this.fastify.prisma as any).inventorySyncHistory.create({
         data: {
           countId,
           companyId,
-          status: itemsFailed === 0 ? 'COMPLETED' : 'PARTIAL',
+          status: itemsFailed === 0 ? 'COMPLETED' : itemsSynced > 0 ? 'PARTIAL' : 'FAILED',
           itemsSynced,
           itemsFailed,
-          totalItems: count.items.length,
+          totalItems: count.countItems.length,
           strategy: input.updateStrategy,
           details: JSON.stringify(details),
-          syncedBy: 'system', // En real, obtendría del usuario
+          syncedBy: input.userEmail || 'system',
           syncedAt: new Date(),
           duration: Date.now() - startTime,
         },
       });
 
-      // Si todo fue exitoso, actualizar status del conteo a SYNCED
+      // Si todo fue exitoso, actualizar status del conteo a CLOSED
       if (itemsFailed === 0) {
         await (this.fastify.prisma as any).inventoryCount.update({
           where: { id: countId },
-          data: { status: 'SYNCED' },
+          data: { status: 'CLOSED', closedAt: new Date() },
         });
       }
 
@@ -394,5 +424,124 @@ export class SyncToERPService {
         totalVariance: 0,
       };
     }
+  }
+
+  /**
+   * Busca el máximo actual y le suma 1.
+   */
+  private async generateNextConsecutive(connector: any, mapping: any, tableName: string): Promise<string> {
+    const fieldMappings = Array.isArray(mapping.fieldMappings) ? mapping.fieldMappings : [];
+
+    // Buscar cuál es la columna de destino mapeada a CONSECUTIVE
+    const consecutiveMapping = fieldMappings.find((fm: any) =>
+      (fm.transformation || fm.sourceType) === 'AUTO_GENERATE' &&
+      (fm.sourceField || fm.source) === 'CONSECUTIVE'
+    );
+
+    let consecutiveCol = 'BOLETA';
+    if (consecutiveMapping) {
+      const target = consecutiveMapping.targetField || consecutiveMapping.target;
+      // Si el target es 'boleta.BOLETA', extraemos solo 'BOLETA'
+      consecutiveCol = target.split('.').pop() || target;
+    }
+
+    try {
+      // Intentamos buscar el máximo actual.
+      const query = `SELECT MAX(${consecutiveCol}) as last FROM ${tableName} WHERE ${consecutiveCol} LIKE 'B%'`;
+      const result = await (connector as any).executeQuery(query);
+      const last = result[0]?.last;
+
+      if (!last) return 'B0000001';
+
+      // Intentar extraer el número. Si no es numérico tras la 'B', generamos uno nuevo.
+      const match = last.match(/\d+/);
+      const currentNum = match ? parseInt(match[0]) : 0;
+      return `B${String(currentNum + 1).padStart(7, '0')}`;
+    } catch (error) {
+      // Si falla (ej: la tabla no existe o no tiene esa columna), 
+      // generamos uno basado en tiempo para no bloquear el proceso.
+      const now = new Date();
+      return `B${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    }
+  }
+
+  /**
+   * Incrementa un correlativo tipo B00000001
+   */
+  private incrementConsecutive(base: string, increment: number): string {
+    if (increment === 0) return base;
+    const match = base.match(/\d+/);
+    if (!match) return base + increment;
+
+    const numStr = match[0];
+    const prefix = base.substring(0, match.index);
+    const suffix = base.substring(match.index! + numStr.length);
+    const nextNum = parseInt(numStr) + increment;
+
+    return `${prefix}${String(nextNum).padStart(numStr.length, '0')}${suffix}`;
+  }
+
+  /**
+   * Construye la query de INSERT dinámicamente basándose en el mapping.
+   */
+  private buildInsertQuery(
+    mapping: any,
+    tableName: string,
+    count: any,
+    countItem: any,
+    newQuantity: number,
+    consecutive: string,
+    userEmail: string
+  ): { sql: string; queryParams: Record<string, any> } {
+    const fieldMappings = Array.isArray(mapping.fieldMappings) ? mapping.fieldMappings : [];
+    const columns: string[] = [];
+    const placeholders: string[] = [];
+    const queryParams: Record<string, any> = {};
+
+    fieldMappings.forEach((fm: any, index: number) => {
+      const targetRaw = fm.targetField || fm.target;
+      if (!targetRaw) return;
+
+      // Extraer solo el nombre de la columna (en caso de boleta.BOLETA)
+      const targetCol = targetRaw.split('.').pop() || targetRaw;
+
+      const sourceType = fm.transformation || fm.sourceType || 'SYSTEM_FIELD';
+      const sourceKey = fm.sourceField || fm.source;
+
+      if (!targetCol) return;
+
+      columns.push(targetCol);
+      const paramName = `p${index}`;
+      placeholders.push(`@${paramName}`);
+
+      let value: any = null;
+
+      if (sourceType === 'CONSTANT') {
+        value = sourceKey;
+      } else if (sourceType === 'AUTO_GENERATE') {
+        if (sourceKey === 'CONSECUTIVE') value = consecutive;
+        else if (sourceKey === 'NOW') value = new Date();
+        else if (sourceKey === 'USER') value = userEmail;
+      } else {
+        // SYSTEM_FIELD
+        switch (sourceKey) {
+          case 'itemCode': value = (countItem.itemCode || countItem.item?.code || '').substring(0, 20); break;
+          case 'itemName': value = (countItem.itemName || countItem.item?.name || '').substring(0, 100); break;
+          case 'countedQty': value = newQuantity; break;
+          case 'systemQty': value = (countItem as any).systemQty; break;
+          case 'variance': value = (countItem as any).variance; break;
+          case 'warehouseCode': value = (count as any).warehouse?.code?.substring(0, 10); break;
+          case 'locationCode': value = (countItem as any).location?.code?.substring(0, 20); break;
+          case 'uom': value = (countItem as any).uom?.substring(0, 10); break;
+          default: value = null;
+        }
+      }
+
+      queryParams[paramName] = value;
+    });
+
+    const sql = `INSERT INTO ${tableName} (${columns.join(', ')}) VALUES (${placeholders.join(', ')})`;
+
+    return { sql, queryParams };
   }
 }

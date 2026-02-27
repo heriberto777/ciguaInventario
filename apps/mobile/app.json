@@ -3,13 +3,12 @@
     "name": "Cigua Inventory Mobile",
     "slug": "cigua-inventory-mobile",
     "version": "1.0.0",
-    "sdkVersion": "54.0.0",
+    "sdkVersion": "52.0.0",
     "scheme": "ciguainv",
     "assetBundlePatterns": [
       "**/*"
     ],
     "ios": {
-      "supportsTabletMode": true,
       "bundleIdentifier": "com.ciguainv.mobile"
     },
     "android": {
@@ -18,6 +17,12 @@
     "plugins": [
       "expo-router",
       "expo-sqlite"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "6eb59aa0-c062-4e7e-800e-535cc262553a"
+      }
+    }
   }
 }

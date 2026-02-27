@@ -76,7 +76,7 @@ export const permissionsService = {
         search: data.name,
       });
 
-      if (existing.data.some((p) => p.name.toLowerCase() === data.name.toLowerCase())) {
+      if (existing.data.some((p) => data.name && p.name.toLowerCase() === data.name.toLowerCase())) {
         throw new AppError('Permission with this name already exists', 400);
       }
     }
@@ -129,15 +129,25 @@ export const permissionsService = {
   async getResourcesAndActions() {
     // Predefined resources and actions available in the system
     const resourcesAndActions = {
-      users: ['view', 'create', 'update', 'delete'],
-      companies: ['view', 'create', 'update', 'delete'],
-      roles: ['view', 'create', 'update', 'delete'],
-      permissions: ['view', 'create', 'update', 'delete'],
-      'erp-connections': ['view', 'create', 'update', 'delete', 'test'],
-      mappings: ['view', 'create', 'update', 'delete', 'test'],
-      sessions: ['view', 'close'],
-      'audit-logs': ['view'],
-      reports: ['view', 'export'],
+      users: ['view', 'manage'],
+      companies: ['manage'],
+      roles: ['view', 'manage'],
+      permissions: ['view', 'manage'],
+      inventory: [
+        'view',
+        'view_qty',
+        'manage',
+        'create',
+        'edit',
+        'delete',
+        'export_excel',
+        'sync_erp',
+        'reopen',
+        'edit_settings',
+        'sync',
+      ],
+      erp: ['manage'],
+      audit: ['view', 'view_history', 'view_variances'],
     };
 
     return resourcesAndActions;

@@ -38,7 +38,7 @@ export async function rolesRoutes(fastify: FastifyInstance) {
         params: {
           type: 'object',
           properties: {
-            id: { type: 'string', format: 'uuid' },
+            id: { type: 'string' },
           },
           required: ['id'],
         },
@@ -62,7 +62,7 @@ export async function rolesRoutes(fastify: FastifyInstance) {
             description: { type: 'string' },
             permissionIds: {
               type: 'array',
-              items: { type: 'string', format: 'uuid' },
+              items: { type: 'string' },
             },
           },
           required: ['name', 'permissionIds'],
@@ -83,7 +83,7 @@ export async function rolesRoutes(fastify: FastifyInstance) {
         params: {
           type: 'object',
           properties: {
-            id: { type: 'string', format: 'uuid' },
+            id: { type: 'string' },
           },
           required: ['id'],
         },
@@ -103,7 +103,7 @@ export async function rolesRoutes(fastify: FastifyInstance) {
         params: {
           type: 'object',
           properties: {
-            id: { type: 'string', format: 'uuid' },
+            id: { type: 'string' },
           },
           required: ['id'],
         },
@@ -123,7 +123,7 @@ export async function rolesRoutes(fastify: FastifyInstance) {
         params: {
           type: 'object',
           properties: {
-            id: { type: 'string', format: 'uuid' },
+            id: { type: 'string' },
           },
           required: ['id'],
         },
@@ -132,7 +132,7 @@ export async function rolesRoutes(fastify: FastifyInstance) {
           properties: {
             permissionIds: {
               type: 'array',
-              items: { type: 'string', format: 'uuid' },
+              items: { type: 'string' },
             },
           },
           required: ['permissionIds'],

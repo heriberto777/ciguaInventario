@@ -1,7 +1,6 @@
 import { CreateMappingConfigRequest, MappingConfigResponse, PreviewDataResponse } from './schemas';
 import { ConfigMappingRepository } from './repository';
-import { ERPConnectorFactory } from './erp-connector';
-import { SqlTemplateBuilder } from './sql-builder';
+import { ERPConnectorFactory } from '../erp-connections';
 import { NotFoundError, ValidationError } from '../../utils/errors';
 import { FastifyInstance } from 'fastify';
 
@@ -30,12 +29,9 @@ export class ConfigMappingService {
     companyId: string,
     data: CreateMappingConfigRequest
   ): Promise<MappingConfigResponse> {
-    // Validate metadata
     await this.validateMetadata(companyId, data);
-
     const mapping = await this.repository.create(companyId, data);
 
-    // Audit log
     await this.fastify.auditLog({
       companyId,
       action: 'CREATE',
@@ -47,6 +43,13 @@ export class ConfigMappingService {
     return mapping;
   }
 
+  /**
+   * Prueba un mapping ejecutando la query real del ERP y retornando preview.
+   *
+   * Usa LoadInventoryFromERPService.buildQueryFromMapping para que el mismo
+   * normalizer de filters (array posicional del SimpleMappingBuilder) se aplique
+   * tanto en el test como en la carga real.
+   */
   async testMapping(
     mappingId: string,
     companyId: string,
@@ -54,7 +57,6 @@ export class ConfigMappingService {
   ): Promise<PreviewDataResponse> {
     const mapping = await this.repository.getById(mappingId, companyId);
 
-    // Get ERP connection
     const erpConnection = await this.fastify.prisma.eRPConnection.findUnique({
       where: { id: mapping.erpConnectionId },
     });
@@ -64,55 +66,45 @@ export class ConfigMappingService {
     }
 
     try {
-      // Create connector
-      const connector = ERPConnectorFactory.create(
-        erpConnection.erpType,
-        erpConnection.host,
-        erpConnection.port,
-        erpConnection.database,
-        erpConnection.username,
-        erpConnection.password
-      );
+      // Importar dinámicamente para evitar dependencias circulares
+      const { LoadInventoryFromERPService } = await import('../inventory/load-from-erp.service');
+      const { ERPIntrospectionService } = await import('../erp-connections/erp-introspection');
 
+      // Construir la query REAL del mapping (normaliza el formato array del SimpleMappingBuilder)
+      const loaderService = new LoadInventoryFromERPService(this.fastify);
+      const { sql } = loaderService.buildQueryFromMapping(mapping);
+
+      // Crear conector y ejecutar preview
+      const connector = ERPConnectorFactory.create({
+        erpType: erpConnection.erpType,
+        host: erpConnection.host,
+        port: erpConnection.port,
+        database: erpConnection.database,
+        username: erpConnection.username,
+        password: erpConnection.password,
+      });
       await connector.connect();
 
-      // Build query from template
-      const templateKey = `${mapping.datasetType}_QUERY`;
-      const builder = new SqlTemplateBuilder(templateKey);
-      builder.setTableName(mapping.sourceTables[0]);
-      builder.addParameter('companyId', companyId);
-      builder.setLimit(limitRows);
-
-      const { sql, parameters } = builder.build();
-
-      // Execute preview query
+      const introspection = new ERPIntrospectionService(connector);
       const startTime = Date.now();
-      const rawData = await connector.query(sql, parameters);
+      const rawData = await introspection.previewQuery(sql, limitRows);
       const executionTimeMs = Date.now() - startTime;
-
       await connector.disconnect();
 
-      // Aplicar mapeo de campos
-      const mappedData = rawData.map((row: any) => {
-        const mappedRow: any = {};
-
-        // Mapear cada campo según fieldMappings
-        if (mapping.fieldMappings && Array.isArray(mapping.fieldMappings)) {
-          mapping.fieldMappings.forEach((fieldMapping: any) => {
-            const sourceField = fieldMapping.source || fieldMapping.sourceField;
-            const targetField = fieldMapping.target || fieldMapping.targetField;
-            if (sourceField && row.hasOwnProperty(sourceField)) {
-              mappedRow[targetField] = row[sourceField];
-            }
-          });
+      // Aplicar fieldMappings: soporta {source, target} y {sourceField, targetField}
+      const fieldMappings: any[] = Array.isArray(mapping.fieldMappings) ? mapping.fieldMappings : [];
+      const mappedData = rawData.map((row: Record<string, any>) => {
+        const mappedRow: Record<string, any> = {};
+        for (const fm of fieldMappings) {
+          const sourceField: string = fm.source || fm.sourceField;
+          const targetField: string = fm.target || fm.targetField;
+          if (!sourceField || !targetField) continue;
+          // Buscar dentro del row por el nombre de columna (parte tras el último punto)
+          const colName = sourceField.split('.').pop()!;
+          const value = row[colName] ?? row[colName.toUpperCase()] ?? row[colName.toLowerCase()] ?? row[sourceField];
+          if (value !== undefined) mappedRow[targetField] = value;
         }
-
-        // Si no hay fieldMappings, devolver los datos como están
-        if (Object.keys(mappedRow).length === 0) {
-          return row;
-        }
-
-        return mappedRow;
+        return Object.keys(mappedRow).length > 0 ? mappedRow : row;
       });
 
       return {
@@ -131,18 +123,13 @@ export class ConfigMappingService {
     companyId: string,
     data: CreateMappingConfigRequest
   ): Promise<void> {
-    // Validate field mappings are not empty
     if (!data.fieldMappings || data.fieldMappings.length === 0) {
       throw new ValidationError('Field mappings are required');
     }
-
-    // Validate source tables exist
     if (!data.sourceTables || data.sourceTables.length === 0) {
       throw new ValidationError('Source tables are required');
     }
 
-    // Stub: Validate against ERP metadata
-    // In production: query ERP for actual table/column metadata
     const validDataTypes = ['STRING', 'INT', 'DECIMAL', 'DATE', 'BOOLEAN'];
     for (const mapping of data.fieldMappings) {
       if (!validDataTypes.includes(mapping.dataType)) {

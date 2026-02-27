@@ -6,39 +6,59 @@ import { Button } from '../atoms/Button';
 import { Input } from '../atoms/Input';
 import { Label } from '../atoms/Label';
 
-const CreateUserSchema = z.object({
+const UserFormSchema = z.object({
   email: z.string().email('Invalid email'),
   firstName: z.string().min(1, 'First name required'),
   lastName: z.string().min(1, 'Last name required'),
-  password: z.string().min(8, 'Password must be 8+ characters'),
+  password: z.string().min(8, 'Password must be 8+ characters').optional().or(z.literal('')),
+  roleId: z.string().min(1, 'Role required'),
 });
 
-type CreateUserForm = z.infer<typeof CreateUserSchema>;
+type UserFormData = z.infer<typeof UserFormSchema>;
 
 interface UserFormProps {
-  onSubmit: (data: CreateUserForm) => Promise<void>;
+  onSubmit: (data: UserFormData) => Promise<void>;
   isLoading?: boolean;
   roles?: Array<{ id: string; name: string }>;
+  initialData?: Partial<UserFormData & { id: string }>;
 }
 
 export const UserForm: React.FC<UserFormProps> = ({
   onSubmit,
   isLoading = false,
   roles = [],
+  initialData,
 }) => {
+  const isEditing = !!initialData?.id;
+
   const {
     register,
     handleSubmit,
     formState: { errors },
     reset,
-  } = useForm<CreateUserForm>({
-    resolver: zodResolver(CreateUserSchema),
+  } = useForm<UserFormData>({
+    resolver: zodResolver(UserFormSchema),
+    defaultValues: initialData ? {
+      email: initialData.email,
+      firstName: initialData.firstName,
+      lastName: initialData.lastName,
+      roleId: initialData.roleId,
+      password: '',
+    } : {
+      roleId: '',
+    },
   });
 
-  const handleFormSubmit = async (data: CreateUserForm) => {
+  const handleFormSubmit = async (data: UserFormData) => {
     try {
-      await onSubmit(data);
-      reset();
+      // If editing and password is empty, remove it from payload
+      const payload = { ...data };
+      if (isEditing && !payload.password) {
+        delete payload.password;
+      }
+
+      await onSubmit(payload);
+      if (!isEditing) reset();
     } catch (error) {
       console.error('Form submission error:', error);
     }
@@ -79,7 +99,9 @@ export const UserForm: React.FC<UserFormProps> = ({
       </div>
 
       <div>
-        <Label htmlFor="password">Password</Label>
+        <Label htmlFor="password">
+          Password {isEditing && <span className="text-xs text-gray-400 font-normal">(leave blank to keep current)</span>}
+        </Label>
         <Input
           id="password"
           type="password"
@@ -89,26 +111,31 @@ export const UserForm: React.FC<UserFormProps> = ({
         />
       </div>
 
-      {roles.length > 0 && (
-        <div>
-          <Label htmlFor="role">Role</Label>
-          <select
-            id="role"
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">Select a role</option>
-            {roles.map((role) => (
-              <option key={role.id} value={role.id}>
-                {role.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
+      <div>
+        <Label htmlFor="roleId">Role</Label>
+        <select
+          id="roleId"
+          {...register('roleId')}
+          className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white ${errors.roleId ? 'border-red-500' : 'border-gray-300'
+            }`}
+        >
+          <option value="">Select a role</option>
+          {roles.map((role) => (
+            <option key={role.id} value={role.id}>
+              {role.name}
+            </option>
+          ))}
+        </select>
+        {errors.roleId && (
+          <p className="mt-1 text-sm text-red-600">{errors.roleId.message}</p>
+        )}
+      </div>
 
-      <Button type="submit" disabled={isLoading}>
-        {isLoading ? 'Creating...' : 'Create User'}
-      </Button>
+      <div className="pt-2">
+        <Button type="submit" disabled={isLoading} className="w-full">
+          {isLoading ? 'Processing...' : isEditing ? 'Update User' : 'Create User'}
+        </Button>
+      </div>
     </form>
   );
 };

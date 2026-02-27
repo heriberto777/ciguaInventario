@@ -36,7 +36,7 @@ export async function inventoryCountsRoutes(fastify: FastifyInstance) {
   // Diagnostic endpoint - Debug mapping content
   fastify.get('/inventory-counts/:countId/mapping-debug/:mappingId', { preHandler: tenantGuard }, async (request, reply) => {
     const { countId, mappingId } = request.params as { countId: string; mappingId: string };
-    const { companyId } = request.user;
+    const { companyId } = (request as any).user;
 
     try {
       const mapping = await fastify.prisma?.mappingConfig?.findUnique({
@@ -136,6 +136,11 @@ export async function inventoryCountsRoutes(fastify: FastifyInstance) {
     controller.resumeInventoryCount(request, reply)
   );
 
+  // Finalize inventory count (SUBMITTED → COMPLETED)
+  fastify.post('/inventory-counts/:id/finalize', { preHandler: tenantGuard }, (request, reply) =>
+    controller.finalizeCount(request, reply)
+  );
+
   // Close inventory count (COMPLETED → CLOSED)
   fastify.post('/inventory-counts/:countId/close', { preHandler: tenantGuard }, (request, reply) =>
     controller.closeInventoryCount(request, reply)
@@ -149,5 +154,38 @@ export async function inventoryCountsRoutes(fastify: FastifyInstance) {
   // Send to ERP (COMPLETED → CLOSED)
   fastify.post('/inventory-counts/:countId/send-to-erp', { preHandler: tenantGuard }, (request, reply) =>
     controller.sendToERP(request, reply)
+  );
+
+  // Reactivate count (CLOSED → COMPLETED)
+  fastify.post('/inventory-counts/:countId/reactivate', { preHandler: tenantGuard }, (request, reply) =>
+    controller.reactivateInventoryCount(request, reply)
+  );
+
+  // Delete count permanently
+  fastify.delete('/inventory-counts/:countId/delete', { preHandler: tenantGuard }, (request, reply) =>
+    controller.deleteInventoryCount(request, reply)
+  );
+
+  fastify.get('/inventory-counts/:id/export-excel', { preHandler: tenantGuard }, (request, reply) =>
+    controller.exportToExcel(request, reply)
+  );
+
+  // ── Excel template download
+  fastify.get('/inventory-counts/excel-template', { preHandler: tenantGuard }, (request, reply) =>
+    controller.getExcelTemplate(request, reply)
+  );
+
+  // ── Load items from Excel (multipart upload)
+  fastify.post(
+    '/inventory-counts/:countId/load-from-excel',
+    { preHandler: tenantGuard },
+    (request, reply) => controller.loadCountFromExcel(request, reply)
+  );
+
+  // ── Preview items from Excel
+  fastify.post(
+    '/inventory-counts/excel-preview',
+    { preHandler: tenantGuard },
+    (request, reply) => controller.previewExcelFile(request, reply)
   );
 }

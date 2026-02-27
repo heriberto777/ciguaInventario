@@ -5,7 +5,7 @@ export class AppError extends Error {
   public statusCode: number;
   public code: string;
 
-  constructor(statusCodeOrMessage: number | string, messageOrCode?: string, code?: string) {
+  constructor(statusCodeOrMessage: number | string, messageOrCode?: string | number, code?: string) {
     let statusCode: number;
     let message: string;
     let errorCode: string;
@@ -13,7 +13,7 @@ export class AppError extends Error {
     // Handle both AppError(statusCode, message, code) and AppError(message, statusCode)
     if (typeof statusCodeOrMessage === 'number') {
       statusCode = statusCodeOrMessage;
-      message = messageOrCode || 'Internal Server Error';
+      message = (messageOrCode as string) || 'Internal Server Error';
       errorCode = code || 'INTERNAL_ERROR';
     } else {
       // Backwards compatibility: AppError(message, statusCode)
@@ -53,11 +53,23 @@ export async function errorHandler(error: Error, request: FastifyRequest, reply:
     });
   }
 
+  // Handle Fastify/AJV validation errors
+  if ((error as any).code === 'FST_ERR_VALIDATION') {
+    logger.warn({ err: error }, 'Fastify validation error');
+    return reply.status(400).send({
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: error.message,
+        details: (error as any).validation,
+      },
+    });
+  }
+
   logger.error({ err: error }, 'Unhandled error');
-  return reply.status(500).send({
+  return reply.status((error as any).statusCode || 500).send({
     error: {
-      code: 'INTERNAL_SERVER_ERROR',
-      message: 'An unexpected error occurred',
+      code: (error as any).code || 'INTERNAL_SERVER_ERROR',
+      message: error.message || 'An unexpected error occurred',
     },
   });
 }

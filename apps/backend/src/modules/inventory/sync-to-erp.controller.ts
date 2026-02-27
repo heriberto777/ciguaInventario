@@ -6,6 +6,7 @@ const SyncToERPSchema = z.object({
   updateStrategy: z.enum(['REPLACE', 'ADD'], {
     errorMap: () => ({ message: 'updateStrategy must be REPLACE or ADD' }),
   }),
+  mappingId: z.string().cuid().optional(),
 });
 
 interface AuthenticatedRequest extends FastifyRequest {
@@ -54,6 +55,8 @@ export async function createSyncToERPController(fastify: any) {
 
         const result = await service.syncToERP(countId, authRequest.user.companyId, {
           updateStrategy: body.updateStrategy,
+          mappingId: body.mappingId,
+          userEmail: authRequest.user.email,
         });
 
         return reply.send(result);

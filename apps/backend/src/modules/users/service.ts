@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import * as bcrypt from 'bcrypt';
 import { UsersRepository } from './repository';
 import { CreateUserRequest, UpdateUserRequest } from './schemas';
 import { AppError, ValidationError } from '../../utils/errors';
@@ -7,7 +8,7 @@ export class UsersService {
   constructor(
     private repository: UsersRepository,
     private fastify: FastifyInstance
-  ) {}
+  ) { }
 
   // Create user with validation
   async createUser(companyId: string, data: CreateUserRequest) {
@@ -21,14 +22,16 @@ export class UsersService {
       throw new ValidationError('Email already exists in this company');
     }
 
-    // TODO: Hash password before saving
-    // const hashedPassword = await bcrypt.hash(data.password, 10);
+    // Hash password
+    const hashedPassword = await bcrypt.hash(data.password, 10);
 
-    const user = await this.repository.createUser(companyId, data);
+    const user = await this.repository.createUser(companyId, {
+      ...data,
+      hashedPassword,
+    });
 
     // Remove password from response
-    const { ...userWithoutPassword } = user;
-    return userWithoutPassword;
+    return this.formatUserResponse(user);
   }
 
   // Get user with all details
@@ -39,9 +42,7 @@ export class UsersService {
       throw new AppError(404, 'User not found');
     }
 
-    // Remove sensitive data
-    const { ...userSafe } = user;
-    return userSafe;
+    return this.formatUserResponse(user);
   }
 
   // List users with search and filtering
@@ -52,7 +53,12 @@ export class UsersService {
     search?: string,
     isActive?: boolean
   ) {
-    return this.repository.listUsers(companyId, skip, take, search, isActive);
+    const { data, total } = await this.repository.listUsers(companyId, skip, take, search, isActive);
+
+    return {
+      data: data.map(user => this.formatUserResponse(user)),
+      total
+    };
   }
 
   // Update user
@@ -78,11 +84,17 @@ export class UsersService {
       }
     }
 
-    const updated = await this.repository.updateUser(userId, companyId, data);
+    let hashedPassword;
+    if (data.password) {
+      hashedPassword = await bcrypt.hash(data.password, 10);
+    }
 
-    // Remove sensitive data
-    const { password, ...userSafe } = updated;
-    return userSafe;
+    const updated = await this.repository.updateUser(userId, companyId, {
+      ...data,
+      hashedPassword,
+    });
+
+    return this.formatUserResponse(updated);
   }
 
   // Delete user (soft delete)
@@ -110,5 +122,25 @@ export class UsersService {
     }
 
     return this.repository.assignRole(userId, companyId, roleId);
+  }
+
+  // Format response (remove sensitive data)
+  private formatUserResponse(user: any) {
+    const { password, ...userSafe } = user;
+
+    // Flatten role if present (return first role's ID for simplicity in forms)
+    const roleId = user.userRoles?.[0]?.roleId || user.userRoles?.[0]?.role?.id;
+    const roleName = user.userRoles?.[0]?.role?.name;
+
+    return {
+      ...userSafe,
+      roleId,
+      roleName,
+      // Simplify userRoles for the frontend
+      roles: user.userRoles?.map((ur: any) => ({
+        id: ur.role.id,
+        name: ur.role.name,
+      })) || [],
+    };
   }
 }

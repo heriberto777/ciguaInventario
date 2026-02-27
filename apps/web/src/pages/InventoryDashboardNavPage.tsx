@@ -16,57 +16,30 @@ export const InventoryDashboardNavPage: React.FC = () => {
 
   const modules: InventoryModule[] = [
     {
-      id: 'query-explorer',
-      title: '🔍 Query Explorer',
-      description: 'Explora datos del ERP sin crear mappings. Construye queries visuales y ejecuta directamente.',
-      icon: '🔍',
-      color: '#3b82f6',
-      route: '/settings?tab=query-explorer',
-      status: 'ready',
-    },
-    {
-      id: 'load-inventory',
-      title: '📥 Cargar Inventario del ERP',
-      description: 'Carga datos de artículos desde el ERP usando mappings configurados.',
-      icon: '📥',
-      color: '#10b981',
-      route: '/inventory/load-inventory',
-      status: 'ready',
-    },
-    {
       id: 'physical-count',
-      title: '📊 Conteo Físico',
-      description: 'Crea, carga datos del ERP, registra cantidades contadas y gestiona todo el ciclo de vida del conteo.',
+      title: '📊 Gestión de Conteos',
+      description: 'Crea nuevos conteos, carga datos del ERP y registra existencias físicas.',
       icon: '📊',
-      color: '#f59e0b',
+      color: '#6366f1',
       route: '/inventory/counts',
       status: 'ready',
     },
     {
-      id: 'sync-erp',
-      title: '🔄 Sincronizar al ERP',
-      description: 'Envía los resultados del conteo de vuelta al ERP con estrategias de actualización.',
-      icon: '🔄',
-      color: '#ef4444',
-      route: '/inventory/sync-to-erp',
-      status: 'ready',
-    },
-    {
       id: 'variance-reports',
-      title: '📈 Reportes de Varianza',
-      description: 'Analiza las diferencias entre cantidad teórica y contada.',
+      title: '📈 Varianzas y Análisis',
+      description: 'Analiza discrepancias entre stock teórico y físico para ajustes precisos.',
       icon: '📈',
       color: '#8b5cf6',
-      route: '/inventory/variance-reports',
+      route: '/inventory/variances',
       status: 'ready',
     },
     {
       id: 'mapping-config',
-      title: '🗺️ Configurar Mappings',
-      description: 'Define cómo mapear campos del ERP a tu sistema de inventario.',
+      title: '🗺️ Mapeo de Datos',
+      description: 'Configura la estructura de comunicación entre tu sistema y el ERP.',
       icon: '🗺️',
       color: '#06b6d4',
-      route: '/settings?tab=mapping',
+      route: '/admin/mapping',
       status: 'ready',
     },
   ];
@@ -218,19 +191,19 @@ export const InventoryDashboardNavPage: React.FC = () => {
       {/* Flujo Visual */}
       <div style={styles.flowDiagram}>
         <div style={styles.flowStep}>
-          <span>🔍 Explorar</span>
+          <span>🗺️ Mapping</span>
           <span style={styles.arrow}>→</span>
         </div>
         <div style={styles.flowStep}>
-          <span>📥 Cargar</span>
+          <span>📊 Conteo</span>
           <span style={styles.arrow}>→</span>
         </div>
         <div style={styles.flowStep}>
-          <span>📊 Contar</span>
+          <span>📈 Análisis</span>
           <span style={styles.arrow}>→</span>
         </div>
         <div style={styles.flowStep}>
-          <span>🔄 Sincronizar</span>
+          <span>🚀 Sincronización ERP</span>
         </div>
       </div>
 
@@ -262,22 +235,19 @@ export const InventoryDashboardNavPage: React.FC = () => {
 
       {/* Instrucciones */}
       <div style={styles.instructionsBox}>
-        <h3 style={styles.instructionsTitle}>📖 Flujo Recomendado</h3>
+        <h3 style={styles.instructionsTitle}>📖 Guía de Operación</h3>
         <ul style={styles.instructionsList}>
           <li style={styles.instructionsItem}>
-            <strong>1. Query Explorer:</strong> Explora las tablas del ERP y prueba queries sin comprometerte a un mapping
+            <strong>1. Mapeo:</strong> Define cómo se comunican las tablas del ERP con el sistema (Usa "Mapeo de Datos").
           </li>
           <li style={styles.instructionsItem}>
-            <strong>2. Cargar Inventario:</strong> Usa un mapping existente (o crea uno desde Query Explorer) para cargar datos del ERP
+            <strong>2. Conteo:</strong> Crea un nuevo proceso, selecciona el almacén e inicia el registro (Usa "Gestión de Conteos").
           </li>
           <li style={styles.instructionsItem}>
-            <strong>3. Conteo Físico:</strong> Registra las cantidades que observas en el almacén/bodega
+            <strong>3. Varianzas:</strong> Al finalizar el conteo, analiza automáticamente las discrepancias detectadas.
           </li>
           <li style={styles.instructionsItem}>
-            <strong>4. Sincronizar:</strong> Envía los resultados de vuelta al ERP con la estrategia de actualización elegida
-          </li>
-          <li style={styles.instructionsItem}>
-            <strong>5. Reportes:</strong> Analiza las varianzas para investigar discrepancias
+            <strong>4. Sincronizar:</strong> Envía los resultados finales al ERP una vez aprobadas las varianzas.
           </li>
         </ul>
       </div>

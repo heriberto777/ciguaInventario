@@ -2,9 +2,26 @@ import axios, { AxiosInstance } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 let apiClient: AxiosInstance | null = null;
+let logoutCallback: (() => void) | null = null;
+
+/**
+ * Registra una función a llamar cuando ocurra un error 401 (Unauthorized)
+ */
+export function onLogout(callback: () => void) {
+  logoutCallback = callback;
+}
 
 export async function initializeApiClient(baseURL: string) {
   const token = await AsyncStorage.getItem('auth_token');
+
+  // Si ya existe, solo actualizamos el baseURL y el token inicial
+  if (apiClient) {
+    apiClient.defaults.baseURL = baseURL;
+    if (token) {
+      apiClient.defaults.headers.common.Authorization = `Bearer ${token}`;
+    }
+    return apiClient;
+  }
 
   apiClient = axios.create({
     baseURL,
@@ -14,7 +31,7 @@ export async function initializeApiClient(baseURL: string) {
     },
   });
 
-  // Interceptor para agregar token a todas las requests
+  // Interceptor para asegurar que el token esté siempre fresco desde AsyncStorage en cada request
   apiClient.interceptors.request.use(async (config) => {
     const currentToken = await AsyncStorage.getItem('auth_token');
     if (currentToken) {
@@ -23,12 +40,63 @@ export async function initializeApiClient(baseURL: string) {
     return config;
   });
 
+  // Interceptor para manejar 401 globalmente con Refresh Token
+  apiClient.interceptors.response.use(
+    (response) => response,
+    async (error) => {
+      const originalRequest = error.config;
+
+      // Si es 401 y no es un reintento de refresh
+      if (error.response?.status === 401 && !originalRequest._retry) {
+        originalRequest._retry = true;
+
+        try {
+          console.log('🔄 Token expired, attempting refresh...');
+          const refreshToken = await AsyncStorage.getItem('refresh_token');
+
+          if (!refreshToken) {
+            throw new Error('No refresh token available');
+          }
+
+          // Intentar refrescar el token
+          // Nota: Usamos axios directamente para evitar el interceptor circular
+          const refreshResponse = await axios.post(`${baseURL}/auth/refresh`, {
+            refreshToken
+          });
+
+          const { accessToken: newAccessToken, refreshToken: newRefreshToken } = refreshResponse.data.data;
+
+          // Guardar nuevos tokens
+          await AsyncStorage.setItem('auth_token', newAccessToken);
+          await AsyncStorage.setItem('refresh_token', newRefreshToken);
+
+          // Actualizar request original y reintentar
+          originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
+          return axios(originalRequest);
+        } catch (refreshError) {
+          console.error('❌ Refresh token failed or expired:', refreshError);
+          // Si el refresco falla, procedemos al logout
+          if (logoutCallback) {
+            logoutCallback();
+          }
+          return Promise.reject(refreshError);
+        }
+      }
+
+      return Promise.reject(error);
+    }
+  );
+
   return apiClient;
 }
 
 export function getApiClient(): AxiosInstance {
   if (!apiClient) {
-    throw new Error('API client not initialized');
+    // Si se pide antes de init, creamos uno básico para no romper 
+    // pero idealmente siempre debe estar inicializado
+    apiClient = axios.create({
+      headers: { 'Content-Type': 'application/json' }
+    });
   }
   return apiClient;
 }

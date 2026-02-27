@@ -49,7 +49,7 @@ export async function usersRoutes(fastify: FastifyInstance) {
         params: {
           type: 'object',
           properties: {
-            id: { type: 'string', format: 'uuid' },
+            id: { type: 'string' },
           },
           required: ['id'],
         },
@@ -73,7 +73,7 @@ export async function usersRoutes(fastify: FastifyInstance) {
             password: { type: 'string', minLength: 8 },
             firstName: { type: 'string' },
             lastName: { type: 'string' },
-            roleId: { type: 'string', format: 'uuid' },
+            roleId: { type: 'string' },
           },
           required: ['email', 'password', 'firstName', 'lastName', 'roleId'],
         },
@@ -93,7 +93,7 @@ export async function usersRoutes(fastify: FastifyInstance) {
         params: {
           type: 'object',
           properties: {
-            id: { type: 'string', format: 'uuid' },
+            id: { type: 'string' },
           },
           required: ['id'],
         },
@@ -113,7 +113,7 @@ export async function usersRoutes(fastify: FastifyInstance) {
         params: {
           type: 'object',
           properties: {
-            id: { type: 'string', format: 'uuid' },
+            id: { type: 'string' },
           },
           required: ['id'],
         },
@@ -133,14 +133,14 @@ export async function usersRoutes(fastify: FastifyInstance) {
         params: {
           type: 'object',
           properties: {
-            id: { type: 'string', format: 'uuid' },
+            id: { type: 'string' },
           },
           required: ['id'],
         },
         body: {
           type: 'object',
           properties: {
-            roleId: { type: 'string', format: 'uuid' },
+            roleId: { type: 'string' },
           },
           required: ['roleId'],
         },

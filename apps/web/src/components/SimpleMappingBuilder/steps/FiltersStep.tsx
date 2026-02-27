@@ -26,6 +26,18 @@ export const FiltersStep: React.FC<FiltersStepProps> = ({
   connectionId,
   onChange,
 }) => {
+  // Guard defensivo: config.filters puede llegar como string JSON o como objeto
+  // si proviene directamente de la BD sin pasar por el normalizador del padre.
+  const safeFilters: Filter[] = (() => {
+    const raw = config.filters as any;
+    if (Array.isArray(raw)) return raw;
+    if (typeof raw === 'string') {
+      try { return JSON.parse(raw); } catch { return []; }
+    }
+    if (raw && typeof raw === 'object') return Object.values(raw) as Filter[];
+    return [];
+  })();
+
   const [availableColumns, setAvailableColumns] = useState<
     Array<{ table: string; column: ERPColumn; alias: string }>
   >([]);
@@ -88,17 +100,17 @@ export const FiltersStep: React.FC<FiltersStepProps> = ({
       value: '',
       logicalOperator: 'AND',
     };
-    onChange([...config.filters, newFilter]);
+    onChange([...safeFilters, newFilter]);
   };
 
   const handleUpdateFilter = (index: number, updatedFilter: Partial<Filter>) => {
-    const newFilters = [...config.filters];
+    const newFilters = [...safeFilters];
     newFilters[index] = { ...newFilters[index], ...updatedFilter };
     onChange(newFilters);
   };
 
   const handleRemoveFilter = (index: number) => {
-    const newFilters = config.filters.filter((_, i) => i !== index);
+    const newFilters = safeFilters.filter((_, i) => i !== index);
     onChange(newFilters);
   };
 
@@ -125,13 +137,13 @@ export const FiltersStep: React.FC<FiltersStepProps> = ({
           </button>
         </div>
 
-        {config.filters.length === 0 ? (
+        {safeFilters.length === 0 ? (
           <p className="text-gray-500 py-4">
             Sin filtros. Los datos no están filtrados. Click en "+ Agregar Filtro" para limitar.
           </p>
         ) : (
           <div className="space-y-3">
-            {config.filters.map((filter, index) => (
+            {safeFilters.map((filter, index) => (
               <div
                 key={index}
                 className="p-4 border border-gray-300 rounded bg-gray-50 flex gap-4 items-end"
@@ -234,13 +246,13 @@ export const FiltersStep: React.FC<FiltersStepProps> = ({
       </div>
 
       {/* Preview SQL */}
-      {config.filters.length > 0 && (
+      {safeFilters.length > 0 && (
         <div>
           <h3 className="text-lg font-semibold mb-3">📝 Preview SQL</h3>
           <div className="p-4 bg-gray-900 text-green-400 rounded font-mono text-sm overflow-auto">
             <pre>
               WHERE{' '}
-              {config.filters
+              {safeFilters
                 .map((f, i) => {
                   const logicalOp = i === 0 ? '' : `${f.logicalOperator} `;
                   return `${logicalOp}${f.field} ${f.operator} '${f.value}'`;

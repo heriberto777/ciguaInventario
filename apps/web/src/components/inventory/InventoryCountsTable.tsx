@@ -22,6 +22,7 @@ interface InventoryCountsTableProps {
   isLoading?: boolean;
   syncingItemIds?: Set<string>;
   syncedItemIds?: Set<string>;
+  hasSystemView?: boolean;
 }
 
 export function InventoryCountsTable({
@@ -30,6 +31,7 @@ export function InventoryCountsTable({
   isLoading = false,
   syncingItemIds = new Set(),
   syncedItemIds = new Set(),
+  hasSystemView = true,
 }: InventoryCountsTableProps) {
   const getVariance = (item: CountItem) => {
     const systemQty = typeof item.systemQty === 'string' ? parseFloat(item.systemQty) : item.systemQty;
@@ -64,9 +66,13 @@ export function InventoryCountsTable({
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Código</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Descripción</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">UOM</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Sistema</th>
+                  {hasSystemView && (
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Sistema</th>
+                  )}
                   <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Conteo</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Varianza</th>
+                  {hasSystemView && (
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Varianza</th>
+                  )}
                   <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700">Estado</th>
                 </tr>
               </thead>
@@ -85,9 +91,11 @@ export function InventoryCountsTable({
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-700">{item.itemName}</td>
                       <td className="px-4 py-3 text-right text-sm text-gray-600">{item.uom}</td>
-                      <td className="px-4 py-3 text-right text-sm font-medium text-gray-900">
-                        {(typeof item.systemQty === 'string' ? parseFloat(item.systemQty) : item.systemQty).toFixed(1)}
-                      </td>
+                      {hasSystemView && (
+                        <td className="px-4 py-3 text-right text-sm font-medium text-gray-900">
+                          {(typeof item.systemQty === 'string' ? parseFloat(item.systemQty) : item.systemQty).toFixed(1)}
+                        </td>
+                      )}
                       <td className="px-4 py-3">
                         <Input
                           type="number"
@@ -100,10 +108,12 @@ export function InventoryCountsTable({
                           disabled={isLoading}
                         />
                       </td>
-                      <td className={`px-4 py-3 text-right text-sm font-semibold ${getVarianceColor(item)}`}>
-                        {variance >= 0 ? '+' : ''}{variance.toFixed(1)} <br />
-                        <span className="text-xs text-gray-500">({percent.toFixed(1)}%)</span>
-                      </td>
+                      {hasSystemView && (
+                        <td className={`px-4 py-3 text-right text-sm font-semibold ${getVarianceColor(item)}`}>
+                          {variance >= 0 ? '+' : ''}{variance.toFixed(1)} <br />
+                          <span className="text-xs text-gray-500">({percent.toFixed(1)}%)</span>
+                        </td>
+                      )}
                       <td className="px-4 py-3 text-center">
                         {item.countedQty !== undefined && (
                           <div className="flex items-center justify-center">

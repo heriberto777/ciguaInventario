@@ -20,7 +20,22 @@ export async function loginController(
 
   const user = await fastify.prisma.user.findUnique({
     where: { email },
-    include: { company: true },
+    include: {
+      company: true,
+      userRoles: {
+        include: {
+          role: {
+            include: {
+              rolePermissions: {
+                include: {
+                  permission: true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
   });
 
   if (!user) {
@@ -28,16 +43,24 @@ export async function loginController(
   }
 
   // Verificar contraseña con bcrypt
-  const isPasswordValid = await bcrypt.compare(password, user.password);
+  const isPasswordValid = await bcrypt.compare(password, user.password || '');
   if (!isPasswordValid) {
     return reply.status(401).send({ error: { code: 'INVALID_CREDENTIALS' } });
   }
+
+  // Extraer roles y permisos
+  const roles = user.userRoles.map(ur => ur.role.name);
+  const permissions = Array.from(new Set(
+    user.userRoles.flatMap(ur => ur.role.rolePermissions.map(rp => rp.permission.name))
+  ));
 
   // Generate tokens
   const { accessToken, refreshToken } = fastify.generateTokens({
     userId: user.id,
     email: user.email,
     companyId: user.companyId,
+    roles,
+    permissions,
   });
 
   // Create a session record
@@ -64,6 +87,8 @@ export async function loginController(
         email: user.email,
         name: `${user.firstName} ${user.lastName}`.trim(),
         companyId: user.companyId,
+        roles,
+        permissions,
       },
     },
   });
@@ -78,34 +103,68 @@ export async function refreshTokenController(
 
   try {
     // Verify refresh token
-    const decoded = fastify.jwt.verify(refreshToken);
+    const decoded = fastify.jwt.verify(refreshToken) as any;
 
     if (decoded.type !== 'refresh') {
       return reply.status(401).send({ error: { code: 'INVALID_TOKEN_TYPE' } });
     }
 
+    // Re-fetch user to get current roles and permissions
+    const user = await fastify.prisma.user.findUnique({
+      where: { id: decoded.userId },
+      include: {
+        userRoles: {
+          include: {
+            role: {
+              include: {
+                rolePermissions: {
+                  include: {
+                    permission: true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!user) {
+      return reply.status(401).send({ error: { code: 'USER_NOT_FOUND' } });
+    }
+
+    const roles = user.userRoles.map(ur => ur.role.name);
+    const permissions = Array.from(new Set(
+      user.userRoles.flatMap(ur => ur.role.rolePermissions.map(rp => rp.permission.name))
+    ));
+
     // Generate new tokens
     const { accessToken: newAccessToken, refreshToken: newRefreshToken } =
       fastify.generateTokens({
-        userId: decoded.userId,
-        email: decoded.email,
-        companyId: decoded.companyId,
+        userId: user.id,
+        email: user.email,
+        companyId: user.companyId,
+        roles,
+        permissions,
       });
 
-    // Update cookies
-    reply.setCookie('accessToken', newAccessToken, {
-      httpOnly: true,
-      secure: fastify.config.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: fastify.config.JWT_ACCESS_EXPIRY,
-    });
+    // Update cookies (using as any to avoid lint if plugin is not fully typed in this context)
+    const replyAny = reply as any;
+    if (replyAny.setCookie) {
+      replyAny.setCookie('accessToken', newAccessToken, {
+        httpOnly: true,
+        secure: fastify.config.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: fastify.config.JWT_ACCESS_EXPIRY,
+      });
 
-    reply.setCookie('refreshToken', newRefreshToken, {
-      httpOnly: true,
-      secure: fastify.config.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: fastify.config.JWT_REFRESH_EXPIRY,
-    });
+      replyAny.setCookie('refreshToken', newRefreshToken, {
+        httpOnly: true,
+        secure: fastify.config.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: fastify.config.JWT_REFRESH_EXPIRY,
+      });
+    }
 
     return reply.send({
       data: {
@@ -123,8 +182,11 @@ export async function logoutController(
   request: FastifyRequest,
   reply: FastifyReply
 ) {
-  reply.clearCookie('accessToken');
-  reply.clearCookie('refreshToken');
+  const replyAny = reply as any;
+  if (replyAny.clearCookie) {
+    replyAny.clearCookie('accessToken');
+    replyAny.clearCookie('refreshToken');
+  }
 
   return reply.send({ data: { success: true } });
 }

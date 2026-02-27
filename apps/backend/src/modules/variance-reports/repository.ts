@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { ApproveVarianceDTO, RejectVarianceDTO, VarianceFilterDTO } from './schema';
 
 export class VarianceReportRepository {
-  constructor(private fastify: FastifyInstance) {}
+  constructor(private fastify: FastifyInstance) { }
 
   async getVarianceById(id: string, companyId: string) {
     return this.fastify.prisma.varianceReport.findFirst({
@@ -30,19 +30,15 @@ export class VarianceReportRepository {
 
     if (filters.countId) {
       where.countId = filters.countId;
-    }
 
-    if (filters.status) {
-      where.status = filters.status;
-    }
+      // Obtener la versión actual del conteo para filtrar
+      const count = await this.fastify.prisma.inventoryCount.findUnique({
+        where: { id: filters.countId },
+        select: { currentVersion: true }
+      });
 
-    if (filters.minVariance !== undefined || filters.maxVariance !== undefined) {
-      where.difference = {};
-      if (filters.minVariance !== undefined) {
-        where.difference.gte = filters.minVariance;
-      }
-      if (filters.maxVariance !== undefined) {
-        where.difference.lte = filters.maxVariance;
+      if (count) {
+        where.version = count.currentVersion;
       }
     }
 
@@ -76,10 +72,16 @@ export class VarianceReportRepository {
   }
 
   async getVariancesByCount(countId: string, companyId: string) {
+    const count = await this.fastify.prisma.inventoryCount.findUnique({
+      where: { id: countId },
+      select: { currentVersion: true }
+    });
+
     return this.fastify.prisma.varianceReport.findMany({
       where: {
         countId,
         companyId,
+        version: count?.currentVersion || 1,
       },
       include: {
         countItem: true,
@@ -113,7 +115,19 @@ export class VarianceReportRepository {
   }
 
   async getVarianceSummary(companyId: string, countId?: string) {
-    const where = { companyId, ...(countId && { countId }) };
+    let version = 1;
+    if (countId) {
+      const count = await this.fastify.prisma.inventoryCount.findUnique({
+        where: { id: countId },
+        select: { currentVersion: true }
+      });
+      version = count?.currentVersion || 1;
+    }
+
+    const where = {
+      companyId,
+      ...(countId && { countId, version })
+    };
 
     const [
       totalVariances,

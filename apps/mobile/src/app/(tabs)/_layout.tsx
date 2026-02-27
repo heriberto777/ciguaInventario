@@ -12,24 +12,17 @@ export default function TabsLayout() {
           paddingBottom: 5,
           paddingTop: 5,
         },
-        headerStyle: {
-          backgroundColor: '#fff',
-        },
-        headerTintColor: '#3b82f6',
-        headerTitleStyle: {
-          fontWeight: '600',
-        },
+        headerShown: false,
       }}
     >
+      {/* ─── Tabs visibles ─── */}
       <Tabs.Screen
         name="inventory-counts"
         options={{
           title: 'Conteos Físicos',
           tabBarLabel: 'Conteos',
           tabBarIcon: ({ color }) => (
-            <Text style={{ fontSize: 20, color }}>
-              📦
-            </Text>
+            <Text style={{ fontSize: 20, color }}>📦</Text>
           ),
           headerShown: false,
         }}
@@ -40,11 +33,37 @@ export default function TabsLayout() {
           title: 'Configuración',
           tabBarLabel: 'Ajustes',
           tabBarIcon: ({ color }) => (
-            <Text style={{ fontSize: 20, color }}>
-              ⚙️
-            </Text>
+            <Text style={{ fontSize: 20, color }}>⚙️</Text>
           ),
         }}
+      />
+
+      {/* ─── Rutas sin tab bar (pantallas de detalle/flujo) ─── */}
+      <Tabs.Screen
+        name="[countId]"
+        options={{
+          href: null,        // Excluye del tab bar
+          headerShown: false,
+        }}
+      />
+      <Tabs.Screen
+        name="create"
+        options={{
+          href: null,
+          headerShown: false,
+        }}
+      />
+      <Tabs.Screen
+        name="index"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="count-detail"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="create-count"
+        options={{ href: null }}
       />
     </Tabs>
   );

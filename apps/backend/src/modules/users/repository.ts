@@ -2,18 +2,29 @@ import { PrismaClient } from '@prisma/client';
 import { CreateUserRequest, UpdateUserRequest } from './schemas';
 
 export class UsersRepository {
-  constructor(private prisma: PrismaClient) {}
+  constructor(private prisma: PrismaClient) { }
 
   // Create user
-  async createUser(companyId: string, data: CreateUserRequest) {
+  async createUser(companyId: string, data: CreateUserRequest & { hashedPassword?: string }) {
     return this.prisma.user.create({
       data: {
         email: data.email,
         firstName: data.firstName,
         lastName: data.lastName,
+        password: data.hashedPassword,
         companyId,
-        // Note: Password hashing should be done in service layer
-        // This is simplified for demo
+        userRoles: {
+          create: {
+            roleId: data.roleId,
+          },
+        },
+      },
+      include: {
+        userRoles: {
+          include: {
+            role: true,
+          },
+        },
       },
     });
   }
@@ -100,20 +111,39 @@ export class UsersRepository {
   }
 
   // Update user
-  async updateUser(userId: string, companyId: string, data: UpdateUserRequest) {
-    // Verify user belongs to company
-    const user = await this.getUserById(userId, companyId);
-    if (!user) {
-      throw new Error('User not found');
+  async updateUser(userId: string, companyId: string, data: UpdateUserRequest & { hashedPassword?: string }) {
+    const updateData: any = {
+      email: data.email,
+      firstName: data.firstName,
+      lastName: data.lastName,
+      isActive: data.isActive,
+    };
+
+    if (data.hashedPassword) {
+      updateData.password = data.hashedPassword;
+    }
+
+    // Role update
+    if (data.roleId) {
+      await this.prisma.userRole.deleteMany({
+        where: { userId },
+      });
+      updateData.userRoles = {
+        create: {
+          roleId: data.roleId,
+        },
+      };
     }
 
     return this.prisma.user.update({
       where: { id: userId },
-      data: {
-        email: data.email,
-        firstName: data.firstName,
-        lastName: data.lastName,
-        isActive: data.isActive,
+      data: updateData,
+      include: {
+        userRoles: {
+          include: {
+            role: true,
+          },
+        },
       },
     });
   }

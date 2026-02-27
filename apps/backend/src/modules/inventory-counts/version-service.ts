@@ -250,11 +250,11 @@ export class InventoryVersionService {
       throw new AppError(404, 'Inventory count not found');
     }
 
-    // ✅ Aceptar COMPLETED o APPROVED
-    if (count.status !== 'COMPLETED' && count.status !== 'APPROVED') {
+    // ✅ Aceptar SUBMITTED, COMPLETED o APPROVED
+    if (count.status !== 'SUBMITTED' && count.status !== 'COMPLETED' && count.status !== 'APPROVED') {
       throw new AppError(
         400,
-        `Solo conteos COMPLETADOS o APROBADOS pueden crear versiones. Estado actual: ${count.status}`
+        `Solo conteos SOMETIDOS, COMPLETADOS o APROBADOS pueden crear versiones. Estado actual: ${count.status}`
       );
     }
 
@@ -262,30 +262,35 @@ export class InventoryVersionService {
 
     console.log(`📋 [createNewVersion] Creando versión V${newVersion} para conteo ${count.code}`);
 
-    // 🔑 CAMBIO IMPORTANTE: Obtener SOLO items con varianza
-    const itemsWithVariance = await this.fastify.prisma.inventoryCount_Item.findMany({
+    // Obtener TODOS los items de la versión actual para pasarlos a la nueva
+    const currentVersionItems = await this.fastify.prisma.inventoryCount_Item.findMany({
       where: {
         countId,
         version: count.currentVersion,
-        hasVariance: true, // ← SOLO CON VARIANZA
       },
     });
 
+    const itemsWithVariance = currentVersionItems.filter(item => item.hasVariance);
+
+    // Si ya no hay varianzas, informar éxito pero no crear versión
     if (itemsWithVariance.length === 0) {
-      throw new AppError(
-        400,
-        `✅ ¡Perfecto! No hay items con varianza en V${count.currentVersion}. Conteo completado sin problemas.`
-      );
+      return {
+        success: true,
+        countId,
+        code: count.code,
+        newVersion: null,
+        message: `✅ ¡Perfecto! No hay items con varianza en V${count.currentVersion}. No es necesario crear una nueva versión.`,
+      };
     }
 
-    console.log(`   📋 Copiando SOLO ${itemsWithVariance.length} items CON VARIANZA de V${count.currentVersion} → V${newVersion}`);
+    console.log(`   📋 Copiando ${currentVersionItems.length} items (Total) de V${count.currentVersion} → V${newVersion}`);
 
-    // CREAR nuevos registros para la nueva versión (SOLO items con varianza)
+    // CREAR registros para la nueva versión (TODOS los items)
     const newVersionItems = [];
-    for (const item of itemsWithVariance) {
-      // 🔄 LÓGICA CORRECTA:
-      // - Item con varianza: conservar el countedQty que el usuario digitó
-      // - Usuario recontas sobre esa cantidad en V2
+    for (const item of currentVersionItems) {
+      // 🔄 LÓGICA DE ESTADOS:
+      // - Si tiene varianza: PENDING (para que el móvil lo pida para recontar)
+      // - Si NO tiene varianza: COMPLETED (ya está bien, no se recontas)
       const newItem = await this.fastify.prisma.inventoryCount_Item.create({
         data: {
           countId,
@@ -300,33 +305,45 @@ export class InventoryVersionService {
           packQty: item.packQty,
           uom: item.uom,
           baseUom: item.baseUom,
-          systemQty: item.systemQty, // Copiado: cantidad en sistema (no cambia)
-          countedQty: item.countedQty, // ← CONSERVAR: cantidad que el usuario digitó
-          version: newVersion, // ← NUEVA VERSIÓN
-          status: 'PENDING',
-          hasVariance: item.hasVariance, // ← Copia el estado (true)
+          systemQty: item.systemQty,
+          // 🔄 LÓGICA DE RECONTEO:
+          // - Se preserva la cantidad previa para que sirva de referencia en el móvil
+          // - Si tiene varianza: status = PENDING (resalta en amarillo/gris para recontar)
+          // - Si NO tiene varianza: status = COMPLETED
+          countedQty: item.countedQty,
+          version: newVersion,
+          status: item.hasVariance ? 'PENDING' : 'COMPLETED',
+          hasVariance: item.hasVariance,
           costPrice: item.costPrice,
           salePrice: item.salePrice,
-          notes: `Reconteo V${newVersion} (Varianza: system=${item.systemQty} vs contado=${item.countedQty})`,
-          countedBy: null,
-          countedAt: new Date(),
+          notes: item.hasVariance
+            ? `Reconteo V${newVersion} (Varianza previa: sistema=${item.systemQty} vs contado=${item.countedQty})`
+            : `Mantenido de V${count.currentVersion} (Sin varianza)`,
+          countedBy: item.countedBy,
+          countedAt: item.countedAt,
         },
       });
       newVersionItems.push(newItem);
     }
 
     // ✅ Actualizar el InventoryCount: cambiar a ACTIVE para recontar
-    const updated = await this.fastify.prisma.inventoryCount.update({
+    await this.fastify.prisma.inventoryCount.update({
       where: { id: countId },
       data: {
         currentVersion: newVersion,
         totalVersions: newVersion,
-        status: 'ACTIVE', // ← Regresa a ACTIVE para recontar
+        status: 'ACTIVE',
+        completedAt: null,
+        completedBy: null,
+        approvedAt: null,
+        approvedBy: null,
       },
     });
 
+    const pendingCount = newVersionItems.filter(i => i.status === 'PENDING').length;
+
     console.log(
-      `✅ [createNewVersion] Nueva versión V${newVersion} creada con ${newVersionItems.length} items con varianza para revisar. Status: ACTIVE`
+      `✅ [createNewVersion] Nueva versión V${newVersion} creada con ${pendingCount} items para recontar. Status: ACTIVE`
     );
 
     return {
@@ -335,19 +352,10 @@ export class InventoryVersionService {
       code: count.code,
       newVersion,
       previousVersion: count.currentVersion,
-      itemsWithVariance: newVersionItems.length,
+      totalItemsInVersion: newVersionItems.length,
+      itemsToRecount: pendingCount,
       status: 'ACTIVE',
-      message: `✅ V${newVersion} creada con ${newVersionItems.length} items con varianza para recontar`,
-      items: newVersionItems.map((item) => ({
-        id: item.id,
-        itemCode: item.itemCode,
-        itemName: item.itemName,
-        uom: item.uom,
-        systemQty: item.systemQty,
-        countedQty: item.countedQty, // Conservado para que usuario revise
-        version: newVersion,
-        hasVariance: true,
-      })),
+      message: `✅ V${newVersion} creada con ${pendingCount} items para recontar`,
     };
   }
 

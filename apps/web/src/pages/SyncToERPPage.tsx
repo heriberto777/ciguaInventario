@@ -64,6 +64,8 @@ export function SyncToERPPage() {
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [mappings, setMappings] = useState<any[]>([]);
+  const [selectedMappingId, setSelectedMappingId] = useState<string>('');
 
   useEffect(() => {
     validateAndLoadData();
@@ -98,6 +100,15 @@ export function SyncToERPPage() {
         const historyData = await historyRes.json();
         setSyncHistory(historyData.syncs || []);
       }
+      // Cargar mapeos de destino
+      const mappingsRes = await fetch('/api/config-mapping?datasetType=DESTINATION');
+      if (mappingsRes.ok) {
+        const mappingsData = await mappingsRes.json();
+        setMappings(mappingsData.data || []);
+        if (mappingsData.data?.length > 0) {
+          setSelectedMappingId(mappingsData.data[0].id);
+        }
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load data';
       setError(message);
@@ -118,7 +129,10 @@ export function SyncToERPPage() {
       const res = await fetch(`/api/inventory/counts/${countId}/sync`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ updateStrategy }),
+        body: JSON.stringify({
+          updateStrategy,
+          mappingId: selectedMappingId || undefined
+        }),
       });
 
       if (!res.ok) throw new Error('Failed to sync to ERP');
@@ -228,6 +242,29 @@ export function SyncToERPPage() {
               </label>
               <p style={{ marginLeft: '28px', fontSize: '13px', color: '#666', marginTop: '4px' }}>
                 New Qty = System Qty + Variance
+              </p>
+            </div>
+          </div>
+
+          <div style={styles.mappingBox}>
+            <h4>Export Mapping (Destination)</h4>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <select
+                style={styles.select}
+                value={selectedMappingId}
+                onChange={e => setSelectedMappingId(e.target.value)}
+              >
+                <option value="">-- Select Mapping (Default UPDATE) --</option>
+                {mappings.map(m => (
+                  <option key={m.id} value={m.id}>
+                    {m.erpTableName} (v{m.version})
+                  </option>
+                ))}
+              </select>
+              <p style={{ fontSize: '12px', color: '#666' }}>
+                {selectedMappingId
+                  ? "Uses dynamic INSERT based on selected mapping."
+                  : "Uses standard UPDATE flow (requires default mapping)."}
               </p>
             </div>
           </div>
@@ -446,6 +483,21 @@ const styles = {
     borderRadius: '8px',
     border: '1px solid #bfdbfe',
     marginBottom: '20px',
+  } as React.CSSProperties,
+  mappingBox: {
+    marginBottom: '20px',
+    padding: '15px',
+    backgroundColor: '#fff7ed',
+    borderRadius: '6px',
+    border: '1px solid #fed7aa',
+  } as React.CSSProperties,
+  select: {
+    padding: '8px',
+    borderRadius: '4px',
+    border: '1px solid #d1d5db',
+    fontSize: '14px',
+    width: '100%',
+    backgroundColor: 'white',
   } as React.CSSProperties,
   strategyBox: {
     marginBottom: '20px',

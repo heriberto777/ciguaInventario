@@ -9,7 +9,7 @@ type MappingConfig = any;
 
 export const MappingConfigAdminPage: React.FC = () => {
   const apiClient = getApiClient();
-  const [step, setStep] = useState<'list' | 'create' | 'edit'>('list');
+  const [step, setStep] = useState<'list' | 'create' | 'edit' | 'select_type'>('list');
   const [selectedConfig, setSelectedConfig] = useState<MappingConfig | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -127,11 +127,16 @@ export const MappingConfigAdminPage: React.FC = () => {
       setSaveError('No hay conexiones ERP disponibles. Por favor, crea una primero.');
       return;
     }
+    setStep('select_type');
+  };
+
+  const handleCreateWithType = (type: 'ITEMS' | 'STOCK' | 'PRICES' | 'COST' | 'DESTINATION') => {
+    if (!connections || connections.length === 0) return;
 
     const firstConnection = connections[0].id;
     setSelectedConfig({
       connectionId: firstConnection,
-      datasetType: 'ITEMS',
+      datasetType: type,
       mainTable: '',
       joins: [],
       filters: [],
@@ -158,26 +163,41 @@ export const MappingConfigAdminPage: React.FC = () => {
           </div>
 
           <div className="grid gap-4">
+            {configs?.length === 0 && (
+              <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+                <p className="text-gray-500">No hay mappings configurados. ¡Crea el primero!</p>
+              </div>
+            )}
             {configs?.map((config: any) => (
-              <div key={config.id} className="border border-gray-300 p-4 rounded">
+              <div key={config.id} className="bg-white border border-gray-200 p-5 rounded-lg shadow-sm hover:shadow-md transition-shadow">
                 <div className="flex justify-between items-start">
                   <div>
-                    <h3 className="text-lg font-semibold">{config.datasetType}</h3>
-                    <p className="text-sm text-gray-600">
-                      Tabla: {config.mainTable?.name || config.customQuery?.substring(0, 50)}...
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${config.datasetType === 'DESTINATION' ? 'bg-purple-100 text-purple-700 border border-purple-200' :
+                        config.datasetType === 'ITEMS' ? 'bg-blue-100 text-blue-700 border border-blue-200' :
+                          'bg-gray-100 text-gray-700 border border-gray-200'
+                        }`}>
+                        {config.datasetType}
+                      </span>
+                      <h3 className="text-lg font-bold text-gray-800">{config.datasetType === 'DESTINATION' ? 'Exportación a ERP' : 'Carga desde ERP'}</h3>
+                    </div>
+                    <p className="text-sm text-gray-600 flex items-center gap-1">
+                      <span className="opacity-60">📍 Tabla:</span>
+                      <code className="bg-gray-100 px-1 rounded text-blue-700 font-mono text-xs">
+                        {config.mainTable || (config.customQuery ? 'Query Personalizada' : 'Sin definir')}
+                      </code>
                     </p>
-                    <p className="text-sm text-gray-600">
-                      Campos: {config.fieldMappings?.length || 0} mapeados
+                    <p className="text-sm text-gray-600 mt-1">
+                      <span className="opacity-60">🔗 Campos:</span> <strong>{config.fieldMappings?.length || 0}</strong> mapeados
                     </p>
                   </div>
                   <div className="flex gap-2">
                     <button
                       onClick={() => toggleMutation.mutate(config.id)}
-                      className={`px-3 py-1 rounded text-sm ${
-                        config.isActive
-                          ? 'bg-green-200 text-green-800'
-                          : 'bg-gray-200 text-gray-800'
-                      }`}
+                      className={`px-3 py-1 rounded text-sm ${config.isActive
+                        ? 'bg-green-200 text-green-800'
+                        : 'bg-gray-200 text-gray-800'
+                        }`}
                     >
                       {config.isActive ? 'Activo' : 'Inactivo'}
                     </button>
@@ -200,6 +220,53 @@ export const MappingConfigAdminPage: React.FC = () => {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {step === 'select_type' && (
+        <div className="max-w-2xl mx-auto py-12">
+          <h2 className="text-3xl font-bold mb-8 text-center text-gray-800">¿Qué tipo de mapping deseas crear?</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <button
+              onClick={() => handleCreateWithType('ITEMS')}
+              className="group p-8 border-2 border-blue-100 bg-white rounded-2xl hover:border-blue-500 hover:bg-blue-50 transition-all text-left shadow-sm"
+            >
+              <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center mb-4 group-hover:bg-blue-500 group-hover:text-white transition-colors">
+                <span className="text-2xl">📦</span>
+              </div>
+              <h3 className="text-xl font-bold mb-2 text-gray-800">Carga de Artículos</h3>
+              <p className="text-sm text-gray-600 leading-relaxed">Importa códigos, descripciones y unidades de medida desde el ERP para iniciar conteos.</p>
+            </button>
+
+            <button
+              onClick={() => handleCreateWithType('DESTINATION')}
+              className="group p-8 border-2 border-purple-100 bg-white rounded-2xl hover:border-purple-500 hover:bg-purple-50 transition-all text-left shadow-sm"
+            >
+              <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center mb-4 group-hover:bg-purple-500 group-hover:text-white transition-colors">
+                <span className="text-2xl">🚀</span>
+              </div>
+              <h3 className="text-xl font-bold mb-2 text-gray-800">Exportación (Destination)</h3>
+              <p className="text-sm text-gray-600 leading-relaxed">Envía los resultados del conteo a una tabla específica del ERP (ej: Boleta de Inventario).</p>
+            </button>
+
+            <button
+              onClick={() => handleCreateWithType('STOCK')}
+              className="group p-8 border-2 border-gray-100 bg-white rounded-2xl hover:border-blue-500 hover:bg-blue-50 transition-all text-left shadow-sm opacity-60 hover:opacity-100"
+            >
+              <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center mb-4 group-hover:bg-blue-500 group-hover:text-white transition-colors">
+                <span className="text-2xl">📊</span>
+              </div>
+              <h3 className="text-xl font-bold mb-2 text-gray-800">Carga de Existencia</h3>
+              <p className="text-sm text-gray-600 leading-relaxed">Importa el stock teórico actual desde el ERP para compararlo con el conteo físico.</p>
+            </button>
+
+            <button
+              onClick={() => setStep('list')}
+              className="col-span-full mt-4 text-center text-gray-500 hover:text-gray-800 font-medium"
+            >
+              ← Volver a la lista
+            </button>
           </div>
         </div>
       )}

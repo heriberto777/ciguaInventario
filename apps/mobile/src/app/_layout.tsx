@@ -1,67 +1,95 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { QueryClient, QueryClientProvider } from 'react-query';
 import { offlineSync } from '@/services/offline-sync';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { initializeApiClient, getApiClient } from '@/services/api';
+import { getApiBaseUrl } from '@/services/serverConfig';
+import { ThemeProvider, useTheme } from '@/theme/ThemeContext';
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: { retry: 1, staleTime: 5 * 60 * 1000 },
-    mutations: { retry: 1 },
+    mutations: { retry: 0 },
   },
 });
 
 export default function RootLayout() {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
 
-  useEffect(() => {
-    // Inicializar base de datos offline de forma asíncrona sin bloquear
-    offlineSync.initDB().catch(err => {
-      console.error('Error initializing offline sync:', err);
-      // Continuar aunque falle la inicialización
-    });
 
-    // Verificar si el usuario ya está logueado
-    checkAuthStatus();
+  // Cierra sesión: limpia token y redirige a login
+  const handleLogout = useCallback(async () => {
+    await AsyncStorage.removeItem('auth_token');
+    setIsLoggedIn(false);
+    queryClient.clear();
   }, []);
 
-  const checkAuthStatus = async () => {
-    try {
-      const token = await AsyncStorage.getItem('auth_token');
-      setIsLoggedIn(!!token);
-    } catch (err) {
-      console.error('Error checking auth status:', err);
-      setIsLoggedIn(false);
-    }
-  };
+  useEffect(() => {
+    // Inicializar DB offline sin bloquear el arranque
+    offlineSync.initDB().catch((err) => {
+      console.error('Error initializing offline sync:', err);
+    });
+
+    // Verificar token y levantar API client
+    (async () => {
+      try {
+        const backendUrl = await getApiBaseUrl();
+        const apiBaseUrl = backendUrl || 'http://localhost:3000/api';
+
+        // Inicializar cliente siempre (haya o no token inicial)
+        await initializeApiClient(apiBaseUrl);
+
+        // Registrar qué hacer cuando el API detecte un 401
+        const { onLogout } = await import('@/services/api');
+        onLogout(handleLogout);
+
+        const token = await AsyncStorage.getItem('auth_token');
+        if (token) {
+          setIsLoggedIn(true);
+
+          // Sincronización en segundo plano después de cargar
+          setTimeout(() => {
+            offlineSync.syncGlobalClassifications();
+            offlineSync.syncPending();
+          }, 2000);
+        } else {
+          setIsLoggedIn(false);
+        }
+      } catch (err) {
+        console.error('Error checking auth status:', err);
+        setIsLoggedIn(false);
+      }
+    })();
+  }, [handleLogout]);
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <Stack>
+    <ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <AppNavigator isLoggedIn={isLoggedIn} />
+      </QueryClientProvider>
+    </ThemeProvider>
+  );
+}
+
+/**
+ * Separamos el navigator para poder usar useTheme() dentro del ThemeProvider.
+ */
+function AppNavigator({ isLoggedIn }: { isLoggedIn: boolean | null }) {
+  const { isDark } = useTheme();
+  return (
+    <>
+      <Stack screenOptions={{ headerShown: false }}>
         {isLoggedIn ? (
-          // Usuario logueado - mostrar tabs
-          <Stack.Screen
-            name="(tabs)"
-            options={{
-              headerShown: false,
-            }}
-          />
+          <Stack.Screen name="(tabs)" />
         ) : (
-          // Usuario no logueado - mostrar login
-          <Stack.Screen
-            name="auth/login"
-            options={{
-              headerShown: false,
-            }}
-          />
+          <Stack.Screen name="auth/login" />
         )}
-        <Stack.Screen
-          name="index"
-          options={{ headerShown: false }}
-        />
+        <Stack.Screen name="auth/server-setup" />
+        <Stack.Screen name="index" />
       </Stack>
-      <StatusBar style="auto" />
-    </QueryClientProvider>
+      <StatusBar style={isDark ? 'light' : 'dark'} />
+    </>
   );
 }

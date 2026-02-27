@@ -64,7 +64,7 @@ export const VarianceTable: React.FC<VarianceTableProps> = ({
               <td className={`px-4 py-2 text-center font-semibold ${variance.difference > 0 ? 'text-blue-600' : 'text-red-600'}`}>
                 {variance.difference > 0 ? '+' : ''}{variance.difference}
               </td>
-              <td className="px-4 py-2 text-center">{variance.variancePercent.toFixed(1)}%</td>
+              <td className="px-4 py-2 text-center">{Number(variance.variancePercent || 0).toFixed(1)}%</td>
               <td className="px-4 py-2 text-center">
                 <span className={`px-2 py-1 rounded text-xs font-semibold ${getStatusColor(variance.status)}`}>
                   {variance.status}

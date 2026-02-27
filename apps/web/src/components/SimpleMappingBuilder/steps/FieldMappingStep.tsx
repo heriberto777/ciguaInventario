@@ -8,40 +8,50 @@ interface FieldMappingStepProps {
 }
 
 /**
- * Campos locales estándar por tipo de dataset
+ * Campos locales de InventoryCount_Item (fuente: esquema real de la BD)
+ * - Obligatorios: itemCode, itemName, uom, systemQty
+ * - Opcionales enriquecidos: costPrice, salePrice, packQty, baseUom, barCodeInv, barCodeVt, brand, category, subcategory
  */
 const STANDARD_FIELDS: Record<string, Array<{ name: string; dataType: string; required: boolean }>> = {
   ITEMS: [
-    { name: 'itemCode', dataType: 'string', required: true },
-    { name: 'itemName', dataType: 'string', required: true },
-    { name: 'description', dataType: 'string', required: false },
-    { name: 'price', dataType: 'number', required: false },
-    { name: 'cost', dataType: 'number', required: false },
-    { name: 'quantity', dataType: 'number', required: false },
-    { name: 'category', dataType: 'string', required: false },
-    { name: 'brand', dataType: 'string', required: false },
-    { name: 'subcategory', dataType: 'string', required: false },
-    { name: 'barCodeInv', dataType: 'string', required: false },
-    { name: 'barCodeVt', dataType: 'string', required: false },
-    { name: 'weight', dataType: 'number', required: false },
-    { name: 'packQty', dataType: 'number', required: false },
-    { name: 'uom', dataType: 'string', required: false },
+    { name: 'itemCode', dataType: 'string', required: true }, // a.ARTICULO
+    { name: 'itemName', dataType: 'string', required: true }, // a.DESCRIPCION
+    { name: 'uom', dataType: 'string', required: false }, // a.UNIDAD_ALMACEN
+    { name: 'baseUom', dataType: 'string', required: false }, // (alias de uom o hardcode)
+    { name: 'systemQty', dataType: 'number', required: false }, // ex.CANT_DISPONIBLE
+    { name: 'packQty', dataType: 'number', required: false }, // a.PESO_BRUTO
+    { name: 'costPrice', dataType: 'number', required: false }, // a.COSTO_ULT_LOC
+    { name: 'salePrice', dataType: 'number', required: false }, // ap.PRECIO
+    { name: 'barCodeInv', dataType: 'string', required: false }, // a.CODIGO_BARRAS_INVT
+    { name: 'barCodeVt', dataType: 'string', required: false }, // a.CODIGO_BARRAS_VENT
+    { name: 'category', dataType: 'string', required: false }, // a.CLASIFICACION_1
+    { name: 'subcategory', dataType: 'string', required: false }, // a.CLASIFICACION_2
+    { name: 'brand', dataType: 'string', required: false }, // a.CLASIFICACION_3
   ],
   STOCK: [
     { name: 'itemCode', dataType: 'string', required: true },
     { name: 'warehouseId', dataType: 'string', required: true },
-    { name: 'quantity', dataType: 'number', required: true },
+    { name: 'systemQty', dataType: 'number', required: true },
     { name: 'lastUpdate', dataType: 'date', required: false },
   ],
   PRICES: [
     { name: 'itemCode', dataType: 'string', required: true },
-    { name: 'price', dataType: 'number', required: true },
+    { name: 'salePrice', dataType: 'number', required: true },
     { name: 'currency', dataType: 'string', required: false },
   ],
   COST: [
     { name: 'itemCode', dataType: 'string', required: true },
-    { name: 'cost', dataType: 'number', required: true },
+    { name: 'costPrice', dataType: 'number', required: true },
     { name: 'currency', dataType: 'string', required: false },
+  ],
+  DESTINATION: [
+    { name: 'itemCode', dataType: 'string', required: true },
+    { name: 'countedQty', dataType: 'number', required: true },
+    { name: 'systemQty', dataType: 'number', required: false },
+    { name: 'variance', dataType: 'number', required: false },
+    { name: 'warehouseCode', dataType: 'string', required: false },
+    { name: 'locationCode', dataType: 'string', required: false },
+    { name: 'uom', dataType: 'string', required: false },
   ],
 };
 
@@ -136,19 +146,39 @@ export const FieldMappingStep: React.FC<FieldMappingStepProps> = ({
     onChange(config.fieldMappings.filter((m) => m.target !== target));
   };
 
-  const unmappedSources = getSourceFieldsNotMapped();
+  const isDestination = config.datasetType === 'DESTINATION';
+
+  const unmappedSources = isDestination
+    ? standardFields.filter(f => !config.fieldMappings.some(m => m.source === f.name))
+    : getSourceFieldsNotMapped();
+
   const mappedTargets = config.fieldMappings.map((m) => m.target);
-  const unmappedTargets = standardFields.filter((f) => !mappedTargets.includes(f.name));
+
+  const sourcesForList = isDestination ? standardFields.map(f => f.name) : config.selectedColumns;
+  const targetsForList = isDestination ? config.selectedColumns.map(col => ({ name: col, dataType: 'string', required: false })) : standardFields;
+
+  const handleAddCustomMapping = (target: string, type: 'CONSTANT' | 'AUTO_GENERATE', value: string) => {
+    const newMapping: FieldMapping = {
+      source: value,
+      target,
+      dataType: 'string',
+      transformation: type,
+    };
+    onChange([...config.fieldMappings.filter(m => m.target !== target), newMapping]);
+  };
 
   return (
     <div className="space-y-6">
-      <p className="text-gray-700">
-        Mapea los campos del ERP (izquierda) con los campos locales (derecha).
-        Puedes hacer drag & drop o usar los selectores.
-      </p>
+      <div className="bg-blue-50 p-4 border border-blue-200 rounded-lg">
+        <p className="text-blue-800 text-sm">
+          <strong>💡 Cómo mapear:</strong> {isDestination
+            ? 'Arrastra los campos locales (derecha) hacia las columnas del ERP (izquierda) o asigna valores constantes.'
+            : 'Arrastra los campos del ERP (izquierda) hacia los campos locales (derecha).'}
+        </p>
+      </div>
 
-      {/* Validación */}
-      {standardFields.filter((f) => f.required).some((f) => !mappedTargets.includes(f.name)) && (
+      {/* Validación solo para importación (ITEMS, etc) */}
+      {!isDestination && standardFields.filter((f) => f.required).some((f) => !mappedTargets.includes(f.name)) && (
         <div className="p-4 bg-yellow-50 border border-yellow-200 text-yellow-800 rounded">
           ⚠️ Campos requeridos sin mapear:
           <ul className="mt-2 ml-4">
@@ -161,30 +191,34 @@ export const FieldMappingStep: React.FC<FieldMappingStepProps> = ({
         </div>
       )}
 
-      {/* Dos columnas: ERP y Local */}
+      {/* Dos columnas: Origen y Destino */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* COLUMNA 1: Campos ERP (Fuente) */}
+        {/* COLUMNA 1: Datos de Origen */}
         <div>
-          <h3 className="text-lg font-semibold mb-3">📦 Campos ERP Catelli</h3>
-          <div className="space-y-2 p-4 bg-gray-50 rounded min-h-64">
-            {config.selectedColumns.length === 0 ? (
-              <p className="text-gray-500 text-sm">No hay columnas seleccionadas</p>
+          <h3 className="text-lg font-semibold mb-1">
+            {isDestination ? '🧩 Campos Locales (Fuente)' : '📦 Columnas ERP (Fuente)'}
+          </h3>
+          <p className="text-xs text-gray-500 mb-3">Información disponible para asignar</p>
+          <div className="space-y-2 p-4 bg-gray-50 rounded border border-gray-200 min-h-64 shadow-inner">
+            {sourcesForList.length === 0 ? (
+              <p className="text-gray-500 text-sm italic">No hay datos disponibles</p>
             ) : (
-              config.selectedColumns.map((col) => {
+              sourcesForList.map((col) => {
                 const isMapped = config.fieldMappings.some((m) => m.source === col);
                 return (
                   <div
                     key={col}
                     draggable
                     onDragStart={() => handleDragStart(col)}
-                    className={`p-3 rounded cursor-move text-sm border-2 ${
-                      isMapped
-                        ? 'bg-green-100 border-green-400 text-green-800'
-                        : 'bg-blue-100 border-blue-400 text-blue-800 hover:bg-blue-200'
-                    }`}
+                    className={`p-3 rounded cursor-move text-sm border-2 transition-all ${isMapped
+                      ? 'bg-green-100 border-green-400 text-green-800'
+                      : 'bg-blue-100 border-blue-400 text-blue-800 hover:bg-blue-200 hover:border-blue-500'
+                      }`}
                   >
-                    {col}
-                    {isMapped && ' ✓'}
+                    <div className="flex justify-between">
+                      {col}
+                      {isMapped && <span className="text-green-600 font-bold">✓</span>}
+                    </div>
                   </div>
                 );
               })
@@ -192,11 +226,14 @@ export const FieldMappingStep: React.FC<FieldMappingStepProps> = ({
           </div>
         </div>
 
-        {/* COLUMNA 2: Campos Locales (Destino) */}
+        {/* COLUMNA 2: Espacio de Destino */}
         <div>
-          <h3 className="text-lg font-semibold mb-3">🎯 Campos Locales Cigua</h3>
-          <div className="space-y-2 p-4 bg-gray-50 rounded min-h-64">
-            {standardFields.map((field) => {
+          <h3 className="text-lg font-semibold mb-1">
+            {isDestination ? '⚙️ Columnas del ERP (Destino)' : '🎯 Campos de Cigua (Destino)'}
+          </h3>
+          <p className="text-xs text-gray-500 mb-3">Donde se depositará la información</p>
+          <div className="space-y-2 p-4 bg-gray-50 rounded border border-gray-200 min-h-64 shadow-inner">
+            {targetsForList.map((field) => {
               const mapping = config.fieldMappings.find((m) => m.target === field.name);
               const isMapped = !!mapping;
 
@@ -206,51 +243,80 @@ export const FieldMappingStep: React.FC<FieldMappingStepProps> = ({
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
                   onDrop={(e) => handleDropOnTarget(field.name, e)}
-                  className={`p-3 rounded border-2 text-sm ${
-                    isMapped
-                      ? 'bg-green-100 border-green-400'
-                      : 'bg-gray-200 border-gray-400 border-dashed'
-                  }`}
+                  className={`p-3 rounded border-2 text-sm transition-all ${isMapped
+                    ? 'bg-white border-green-500 shadow-sm'
+                    : 'bg-gray-100 border-gray-300 border-dashed hover:border-blue-400'
+                    }`}
                 >
                   <div className="flex justify-between items-start">
                     <div>
-                      <div className="font-semibold">
+                      <div className="font-semibold text-gray-700">
                         {field.name}
                         {field.required && <span className="text-red-600 ml-1">*</span>}
                       </div>
-                      <div className="text-xs text-gray-600">({field.dataType})</div>
+                      <div className="text-[10px] text-gray-500 uppercase">({field.dataType})</div>
                     </div>
-                    {mapping && (
+                    {isMapped && (
                       <button
                         onClick={() => handleRemoveMapping(field.name)}
-                        className="text-red-500 hover:text-red-700"
+                        className="text-gray-400 hover:text-red-500 transition-colors"
+                        title="Quitar mapeo"
                       >
                         ✕
                       </button>
                     )}
                   </div>
 
-                  {mapping ? (
-                    <div className="mt-2 p-2 bg-white rounded text-green-700 font-semibold">
-                      {mapping.source}
+                  {isMapped ? (
+                    <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded flex justify-between items-center animate-in fade-in zoom-in duration-200">
+                      <span className="font-semibold text-green-700 truncate mr-2">
+                        {mapping.transformation === 'CONSTANT' ? `"${mapping.source}"` :
+                          mapping.transformation === 'AUTO_GENERATE' ? `⚡ ${mapping.source}` :
+                            mapping.source}
+                      </span>
+                      <span className="text-[9px] bg-green-200 text-green-800 px-1.5 py-0.5 rounded font-bold">
+                        {mapping.transformation || 'CAMPO'}
+                      </span>
                     </div>
                   ) : (
-                    <select
-                      onChange={(e) => {
-                        if (e.target.value) {
-                          handleSelectMapping(field.name, e.target.value);
-                        }
-                      }}
-                      defaultValue=""
-                      className="w-full mt-2 px-2 py-1 border border-gray-300 rounded text-sm"
-                    >
-                      <option value="">-- Selecciona campo --</option>
-                      {unmappedSources.map((col) => (
-                        <option key={col} value={col}>
-                          {col}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="space-y-2 mt-2">
+                      <select
+                        onChange={(e) => handleSelectMapping(field.name, e.target.value)}
+                        value=""
+                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:ring-1 focus:ring-blue-500 outline-none"
+                      >
+                        <option value="">-- Asignar campo --</option>
+                        {(isDestination ? sourcesForList : unmappedSources).map((col) => (
+                          <option key={col as string} value={col as string}>
+                            {col as string}
+                          </option>
+                        ))}
+                      </select>
+
+                      <div className="flex gap-1">
+                        <button
+                          className="flex-1 text-[10px] bg-gray-200 text-gray-700 px-2 py-1.5 rounded hover:bg-blue-500 hover:text-white transition-colors border border-gray-300"
+                          onClick={() => {
+                            const val = prompt(`Ingrese valor constante para "${field.name}":`);
+                            if (val !== null) handleAddCustomMapping(field.name, 'CONSTANT', val);
+                          }}
+                        >
+                          + Constante
+                        </button>
+                        <select
+                          className="flex-1 text-[10px] bg-gray-200 text-gray-700 px-1 py-1.5 rounded cursor-pointer border border-gray-300 hover:bg-blue-500 hover:text-white transition-colors"
+                          onChange={(e) => {
+                            if (e.target.value) handleAddCustomMapping(field.name, 'AUTO_GENERATE', e.target.value);
+                          }}
+                          value=""
+                        >
+                          <option value="">+ Auto</option>
+                          <option value="CONSECUTIVE">Consecutivo</option>
+                          <option value="NOW">Fecha Hoy</option>
+                          <option value="USER">Email Usuario</option>
+                        </select>
+                      </div>
+                    </div>
                   )}
                 </div>
               );
@@ -261,22 +327,28 @@ export const FieldMappingStep: React.FC<FieldMappingStepProps> = ({
 
       {/* Resumen de Mappings */}
       {config.fieldMappings.length > 0 && (
-        <div>
-          <h3 className="text-lg font-semibold mb-3">✓ Mappings Creados ({config.fieldMappings.length})</h3>
-          <div className="space-y-2">
+        <div className="mt-8 border-t pt-6">
+          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+            <span className="bg-green-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">✓</span>
+            Mapeos Definidos ({config.fieldMappings.length})
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {config.fieldMappings.map((mapping) => (
-              <div key={mapping.target} className="p-3 bg-green-50 border border-green-200 rounded flex justify-between items-center">
-                <div>
-                  <span className="font-mono text-sm text-green-800">
-                    {mapping.source} → <strong>{mapping.target}</strong>
-                  </span>
-                  <span className="text-xs text-gray-600 ml-3">({mapping.dataType})</span>
+              <div key={mapping.target} className="p-3 bg-white border border-gray-200 rounded-lg shadow-sm flex justify-between items-center group">
+                <div className="truncate pr-2">
+                  <div className="text-[10px] text-gray-500 uppercase mb-0.5">{mapping.target}</div>
+                  <div className="font-mono text-sm text-gray-800 font-semibold truncate">
+                    {mapping.transformation === 'CONSTANT' ? `"${mapping.source}"` :
+                      mapping.transformation === 'AUTO_GENERATE' ? `⚡ ${mapping.source}` :
+                        mapping.source}
+                  </div>
                 </div>
                 <button
                   onClick={() => handleRemoveMapping(mapping.target)}
-                  className="text-red-500 hover:text-red-700 text-sm"
+                  className="text-gray-300 group-hover:text-red-500 p-1 hover:bg-red-50 rounded"
+                  title="Eliminar"
                 >
-                  Eliminar
+                  ✕
                 </button>
               </div>
             ))}

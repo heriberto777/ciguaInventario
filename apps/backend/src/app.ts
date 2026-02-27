@@ -1,6 +1,7 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
+import multipart from '@fastify/multipart';
 import pino from 'pino';
 
 import envPlugin from './plugins/env';
@@ -23,6 +24,8 @@ import { warehousesRoutes } from './modules/warehouses/routes';
 import { inventoryCountsRoutes } from './modules/inventory-counts/routes';
 import { varianceReportsRoutes } from './modules/variance-reports/routes';
 import { adjustmentsRoutes } from './modules/adjustments/routes';
+import { itemClassificationsRoutes } from './modules/item-classifications/routes';
+import { reportsRoutes } from './modules/reports/routes';
 import { errorHandler } from './utils/errors';
 
 export async function createApp() {
@@ -37,11 +40,17 @@ export async function createApp() {
   });
 
   const app = Fastify({
-    logger: logger,
+    logger: logger as any,
   });
 
   // Register plugins
   await app.register(envPlugin);
+
+  // Register cookie before auth
+  await app.register(import('@fastify/cookie'), {
+    secret: (app as any).config?.JWT_SECRET || process.env.JWT_SECRET,
+  });
+
   await app.register(cors, {
     origin: process.env.NODE_ENV === 'production'
       ? process.env.FRONTEND_URL || 'https://app.cigua.com'
@@ -49,18 +58,20 @@ export async function createApp() {
     credentials: true,
   });
   await app.register(helmet);
+  await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } }); // 10 MB
   await app.register(prismaPlugin);
   await app.register(authPlugin);
   await app.register(auditPlugin);
   await app.register(loggerPlugin);
 
   // Error handler
-  app.setErrorHandler(errorHandler);
+  app.setErrorHandler(errorHandler as any);
 
-  // Health check
-  app.get('/health', async (request, reply) => {
-    return { status: 'ok', timestamp: new Date().toISOString() };
-  });
+  // Health check — disponible en /health y /api/health
+  const healthHandler = async () => ({ status: 'ok', timestamp: new Date().toISOString() });
+  app.get('/health', healthHandler);
+  app.get('/api/health', healthHandler);
+
 
   // Register routes
   await app.register(authRoutes, { prefix: '/api' });
@@ -77,6 +88,9 @@ export async function createApp() {
   await app.register(inventoryCountsRoutes, { prefix: '/api' });
   await app.register(varianceReportsRoutes, { prefix: '/api' });
   await app.register(adjustmentsRoutes, { prefix: '/api' });
+  await app.register(itemClassificationsRoutes, { prefix: '/api' });
+  await app.register(reportsRoutes, { prefix: '/api/reports' });
+
 
   // Swagger documentation
   app.get('/docs', async (request, reply) => {

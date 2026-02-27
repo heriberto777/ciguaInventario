@@ -2,7 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { CreateRoleRequest, UpdateRoleRequest } from './schemas';
 
 export class RolesRepository {
-  constructor(private prisma: PrismaClient) {}
+  constructor(private prisma: PrismaClient) { }
 
   // Create role with permissions
   async createRole(
@@ -103,9 +103,15 @@ export class RolesRepository {
         skip,
         take,
         include: {
+          rolePermissions: {
+            include: {
+              permission: true,
+            },
+          },
           _count: {
             select: {
               rolePermissions: true,
+              userRoles: true,
             },
           },
         },
@@ -125,25 +131,45 @@ export class RolesRepository {
     companyId: string,
     data: UpdateRoleRequest
   ) {
-    // Verify role belongs to company
-    const role = await this.getRoleById(roleId, companyId);
-    if (!role) {
-      throw new Error('Role not found');
-    }
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Update role details
+      const role = await tx.role.update({
+        where: { id: roleId },
+        data: {
+          name: data.name,
+          description: data.description,
+        },
+      });
 
-    return this.prisma.role.update({
-      where: { id: roleId },
-      data: {
-        name: data.name,
-        description: data.description,
-      },
-      include: {
-        rolePermissions: {
-          include: {
-            permission: true,
+      // 2. Update permissions if provided
+      if (data.permissionIds) {
+        // Remove current permissions
+        await tx.rolePermission.deleteMany({
+          where: { roleId },
+        });
+
+        // Assign new permissions
+        if (data.permissionIds.length > 0) {
+          await tx.rolePermission.createMany({
+            data: data.permissionIds.map((permissionId) => ({
+              roleId,
+              permissionId,
+            })),
+          });
+        }
+      }
+
+      // 3. Return updated role with permissions
+      return tx.role.findUnique({
+        where: { id: roleId },
+        include: {
+          rolePermissions: {
+            include: {
+              permission: true,
+            },
           },
         },
-      },
+      });
     });
   }
 

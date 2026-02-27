@@ -10,6 +10,7 @@ import { InventoryCountsTable } from '@/components/inventory/InventoryCountsTabl
 import { NewVersionModal } from '@/components/inventory/NewVersionModal';
 import { NotificationModal } from '@/components/atoms/NotificationModal';
 import { ConfirmModal } from '@/components/atoms/ConfirmModal';
+import { useAuthStore } from '@/store/auth';
 
 const apiClient = getApiClient();
 
@@ -42,6 +43,12 @@ interface CountItem {
   baseUom: string;
   costPrice?: number;
   salePrice?: number;
+  barCodeInv?: string;
+  barCodeVt?: string;
+  // Clasificación
+  category?: string;
+  subcategory?: string;
+  brand?: string;
 }
 
 interface Warehouse {
@@ -56,15 +63,26 @@ interface Location {
   description?: string;
 }
 
-interface MappingItem {
-  itemCode: string;
-  itemName: string;
-  packQty: number;
-  uom: string;
-  baseUom: string;
-  systemQty: number;
-  costPrice?: number;
-  salePrice?: number;
+interface Classification {
+  id: string;
+  code: string;
+  description: string;
+  groupType: 'CATEGORY' | 'SUBCATEGORY' | 'BRAND' | 'OTHER';
+}
+
+function useClassifications(groupType?: string) {
+  return useQuery({
+    queryKey: ['classifications', groupType || 'ALL'],
+    queryFn: async () => {
+      const url = groupType
+        ? `/item-classifications?groupType=${groupType}`
+        : '/item-classifications';
+      const res = await apiClient.get(url);
+      const data = Array.isArray(res.data) ? res.data : res.data?.data || [];
+      return data as Classification[];
+    },
+    staleTime: 5 * 60 * 1000,
+  });
 }
 
 export default function InventoryCountPage() {
@@ -79,10 +97,21 @@ export default function InventoryCountPage() {
         const value = localStorage.getItem(key);
         if (value) {
           try {
-            JSON.parse(value);
+            const parsed = JSON.parse(value);
+            if (!parsed || typeof parsed !== 'object') {
+              keysToDelete.push(key);
+            }
           } catch {
             keysToDelete.push(key);
           }
+        }
+      }
+
+      // Limpieza específica de active_count_id si parece basura
+      if (key === 'active_count_id') {
+        const val = localStorage.getItem(key);
+        if (val && (val.includes(' ') || val.includes('<') || val.length > 50)) {
+          keysToDelete.push(key);
         }
       }
     }
@@ -92,10 +121,10 @@ export default function InventoryCountPage() {
       localStorage.removeItem(key);
     });
 
-    // Si el active_count_id apunta a algo que no existe, limpiar también
+    // Si el active_count_id apunta a algo que no existe en localStorage (y no queremos trigger Sync error inmediato)
     const activeCountId = localStorage.getItem('active_count_id');
-    if (activeCountId && !localStorage.getItem(STORAGE_KEY(activeCountId))) {
-      localStorage.removeItem('active_count_id');
+    if (activeCountId && activeCountId.length > 10 && !localStorage.getItem(STORAGE_KEY(activeCountId))) {
+      // Opcional: No borrarlo aquí para dejar que fetchCountFromServer lo intente
     }
   }, []);
 
@@ -109,6 +138,21 @@ export default function InventoryCountPage() {
   const [mappingId, setMappingId] = useState('');
   const [syncingItemIds, setSyncingItemIds] = useState<Set<string>>(new Set());
   const [syncedItemIds, setSyncedItemIds] = useState<Set<string>>(new Set());
+  // Filtros de clasificación
+  const [filterCategory, setFilterCategory] = useState('');
+  const [filterSubcategory, setFilterSubcategory] = useState('');
+  const [filterBrand, setFilterBrand] = useState('');
+
+  // Estados para creación por Excel
+  const [creationMode, setCreationMode] = useState<'erp' | 'excel'>('erp');
+  const [excelFile, setExcelFile] = useState<File | null>(null);
+  const [uploadingExcel, setUploadingExcel] = useState(false);
+  const [excelPreview, setExcelPreview] = useState<{
+    total: number;
+    preview: any[];
+    errorsCount: number;
+    rowErrors: any[];
+  } | null>(null);
 
   // Modal para nueva versión
   const [showNewVersionModal, setShowNewVersionModal] = useState(false);
@@ -131,14 +175,38 @@ export default function InventoryCountPage() {
     message: '',
   });
 
+  const [error404, setError404] = useState(false);
+
   // Modal de confirmación para eliminar
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [countIdToDelete, setCountIdToDelete] = useState<string | null>(null);
+
+  // Estados para sincronización con ERP
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<'syncing' | 'closing' | 'done' | 'error'>('syncing');
+  const [syncMessage, setSyncMessage] = useState('');
+
+  // Permisos y Roles
+  const user = useAuthStore((state) => state.user);
+  const permissions = user?.permissions || [];
+  const roles = user?.roles || [];
+  const isSuperAdmin = roles.includes('SuperAdmin');
+
+  const hasSystemView = isSuperAdmin || permissions.includes('inventory:view_qty') || permissions.includes('inventory:manage');
+  const canManageUsers = isSuperAdmin || permissions.includes('users:manage');
+  const canSyncERP = isSuperAdmin || permissions.includes('inventory:sync_erp') || permissions.includes('inventory:manage') || permissions.includes('inventory:sync');
+  const canEditSettings = isSuperAdmin || permissions.includes('inventory:edit_settings') || permissions.includes('inventory:manage');
+  const canDelete = isSuperAdmin || permissions.includes('inventory:delete') || permissions.includes('inventory:manage');
+  const canExport = isSuperAdmin || permissions.includes('inventory:export_excel') || permissions.includes('inventory:manage');
+  const canReopen = isSuperAdmin || permissions.includes('inventory:reopen') || permissions.includes('inventory:manage');
+  const canCreate = isSuperAdmin || permissions.includes('inventory:create') || permissions.includes('inventory:manage');
 
   // Refs para debounce
   const debounceTimeoutRef = useRef<{ [key: string]: NodeJS.Timeout }>({});
   const pendingUpdatesRef = useRef<{ [key: string]: number }>({});
   const isInitializedRef = useRef(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const firstItemQtyRef = useRef<HTMLInputElement>(null);
 
   // Recuperar datos guardados del localStorage al cargar
   useEffect(() => {
@@ -147,28 +215,32 @@ export default function InventoryCountPage() {
 
     try {
       const savedCountId = localStorage.getItem('active_count_id');
-      if (savedCountId) {
-        // Primero, intentar recuperar del localStorage
+      // Validar que el ID parezca un UUID o un ID válido (no basura)
+      if (savedCountId && savedCountId.length > 10 && !savedCountId.includes(' ')) {
+        // Primero, intentar recuperar del localStorage para una carga instantánea
         const savedCountData = localStorage.getItem(STORAGE_KEY(savedCountId));
         if (savedCountData) {
           try {
             const parsed = JSON.parse(savedCountData);
-            console.log('Recuperando del localStorage:', {
-              count: parsed.count,
-              itemsCount: parsed.items?.length
-            });
-            setSelectedCount(parsed.count);
-            setCountItems(parsed.items || []);
-            setView('process');
+            if (parsed && parsed.count) {
+              console.log('Recuperando del localStorage (flash load):', {
+                count: parsed.count,
+                itemsCount: parsed.items?.length
+              });
+              setSelectedCount(parsed.count);
+              setCountItems(parsed.items || []);
+            }
           } catch (parseError) {
             console.error('Error parseando localStorage:', parseError);
             localStorage.removeItem(STORAGE_KEY(savedCountId));
           }
-        } else {
-          // Si no hay en localStorage, traer del servidor
-          console.log('No hay en localStorage, trayendo del servidor...');
-          fetchCountFromServer(savedCountId);
         }
+
+        // SIEMPRE traer del servidor para asegurar que tenemos lo último del móvil
+        fetchCountFromServer(savedCountId);
+      } else if (savedCountId) {
+        // Si el ID es inválido, limpiarlo
+        localStorage.removeItem('active_count_id');
       }
     } catch (error) {
       console.error('Error al recuperar datos:', error);
@@ -176,31 +248,29 @@ export default function InventoryCountPage() {
     }
   }, []);
 
-  // Función para traer el conteo del servidor
-  const fetchCountFromServer = async (countId: string) => {
+  const fetchCountFromServer = async (countId: string | null) => {
+    if (!countId || countId.includes('<') || countId.includes(' ')) return;
     try {
+      setError404(false);
       const response = await apiClient.get(`/inventory-counts/${countId}`);
       const count = response.data as InventoryCount;
-      console.log('Conteo traído del servidor:', {
-        id: count.id,
-        itemsCount: count.countItems?.length
-      });
       setSelectedCount(count);
       setCountItems(count.countItems || []);
-      setView('process');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error trayendo conteo del servidor:', error);
-      localStorage.removeItem('active_count_id');
+      if (error.response?.status === 404) {
+        setError404(true);
+        localStorage.removeItem('active_count_id');
+        localStorage.removeItem(STORAGE_KEY(countId));
+      } else {
+        showNotification('error', 'Error de conexión', 'No se pudo sincronizar el conteo con el servidor.');
+      }
     }
   };
 
   // Guardar datos cuando cambian
   useEffect(() => {
     if (selectedCount && countItems.length > 0) {
-      console.log('Guardando a localStorage:', {
-        countId: selectedCount.id,
-        itemsCount: countItems.length
-      });
       localStorage.setItem('active_count_id', selectedCount.id);
       localStorage.setItem(STORAGE_KEY(selectedCount.id), JSON.stringify({
         count: selectedCount,
@@ -209,18 +279,6 @@ export default function InventoryCountPage() {
       }));
     }
   }, [selectedCount?.id, countItems]);
-
-  // Load items cuando selectedCount cambia y countItems está vacío
-  // (solo si NO es recuperación del localStorage)
-  useEffect(() => {
-    if (selectedCount && countItems.length === 0) {
-      const stored = localStorage.getItem(STORAGE_KEY(selectedCount.id));
-      if (!stored) {
-        console.log('Cargando items desde selectedCount');
-        setCountItems(selectedCount.countItems || []);
-      }
-    }
-  }, [selectedCount?.id]);
 
   // Queries
   const { data: counts = [], refetch: refetchCounts } = useQuery({
@@ -249,52 +307,22 @@ export default function InventoryCountPage() {
     enabled: !!warehouseId,
   });
 
-  // Cargar mappings disponibles (ITEMS, STOCK, etc.)
-  const { data: availableMappings = [], isLoading: mappingsLoading, error: mappingsError } = useQuery({
+  // Cargar mappings disponibles
+  const { data: availableMappings = [], isLoading: mappingsLoading } = useQuery({
     queryKey: ['available-mappings'],
     queryFn: async () => {
       try {
         const response = await apiClient.get('/mapping-configs');
-        console.log('📊 [availableMappings] Response:', response.data);
-
-        // Retornar configuraciones únicas por datasetType
         const rawData = Array.isArray(response.data) ? response.data : response.data.data || [];
-        console.log('📊 [availableMappings] Raw data:', rawData);
-
         const uniqueMappings = Array.from(
-          new Map(
-            rawData.map((m: any) => [m.datasetType, m])
-          ).values()
+          new Map(rawData.map((m: any) => [m.datasetType, m])).values()
         );
-
-        console.log('📊 [availableMappings] Unique mappings:', uniqueMappings);
         return uniqueMappings;
-      } catch (error: any) {
-        console.error('❌ [availableMappings] Error:', error);
+      } catch (error) {
+        console.error('Error loading mappings:', error);
         return [];
       }
     },
-  });
-
-  const { data: mappingData = [] } = useQuery({
-    queryKey: ['mapping-data', mappingId],
-    queryFn: async () => {
-      if (!mappingId) return [];
-      try {
-        // Usar endpoint POST /config/mapping/test para obtener preview de datos
-        const response = await apiClient.post('/config/mapping/test', {
-          mappingId: mappingId,
-          limitRows: 1000,
-        });
-        console.log('📊 [mappingData] Response:', response.data);
-        const result = response.data?.data || response.data;
-        return Array.isArray(result) ? result : [result];
-      } catch (error: any) {
-        console.error('❌ [mappingData] Error:', error);
-        return [];
-      }
-    },
-    enabled: !!mappingId,
   });
 
   // Mutations
@@ -302,46 +330,75 @@ export default function InventoryCountPage() {
     mutationFn: async () => {
       const response = await apiClient.post('/inventory-counts', {
         warehouseId,
-        locationId,
+        locationId: locationId || undefined,
         description: `Conteo físico - ${new Date().toLocaleDateString()}`,
       });
-      return response.data as InventoryCount;
+      return response.data.count || response.data as InventoryCount;
     },
-    onSuccess: async (count) => {
-      console.log('✅ [createCountMutation] Count created:', count.id);
+    onSuccess: async (countData) => {
+      const count = (countData as any).count || countData;
 
-      // Si hay mapping seleccionado, cargar artículos desde el mapping
-      if (mappingId) {
+      if (creationMode === 'excel' && excelFile) {
         try {
-          console.log('📊 [createCountMutation] Loading items from mapping:', mappingId);
-          const loadResponse = await apiClient.post(`/inventory-counts/${count.id}/load-from-mapping`, {
+          setUploadingExcel(true);
+          const formData = new FormData();
+          formData.append('file', excelFile);
+          await apiClient.post(`/inventory-counts/${count.id}/load-from-excel`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          });
+        } catch (error: any) {
+          showNotification('error', 'Error al cargar Excel', error.response?.data?.error || 'No se pudieron cargar los artículos.');
+        } finally {
+          setUploadingExcel(false);
+        }
+      } else if (creationMode === 'erp' && mappingId) {
+        try {
+          await apiClient.post(`/inventory-counts/${count.id}/load-from-mapping`, {
             warehouseId,
             mappingId,
             locationId: locationId || undefined,
           });
-          console.log('✅ [createCountMutation] Items loaded from mapping:', loadResponse.data);
-
-          // Actualizar count con los items cargados
-          setSelectedCount(loadResponse.data);
-          setCountItems(loadResponse.data.items || []);
-        } catch (error: any) {
-          console.error('❌ [createCountMutation] Error loading from mapping:', error);
-          // Si falla la carga automática, al menos se creó el conteo
-          setSelectedCount(count);
-          setCountItems([]);
+        } catch (error) {
+          console.error('Error loading from mapping:', error);
         }
-      } else {
-        // Si no hay mapping, solo mostrar el conteo vacío
-        setSelectedCount(count);
-        setCountItems([]);
       }
 
+      const freshCount = await apiClient.get(`/inventory-counts/${count.id}`);
+      const fullCount = freshCount.data as InventoryCount;
+      setSelectedCount(fullCount);
+      setCountItems(fullCount.countItems || []);
       setView('process');
       setWarehouseId('');
       setLocationId('');
       setMappingId('');
+      setExcelFile(null);
+      setExcelPreview(null);
     },
   });
+
+  const previewExcelMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      const response = await apiClient.post('/inventory-counts/excel-preview', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      return response.data;
+    },
+    onSuccess: (data) => setExcelPreview(data),
+    onError: (error: any) => {
+      setExcelPreview(null);
+      showNotification('error', 'Error de Vista Previa', error.response?.data?.error || 'No se pudo generar la vista previa.');
+    }
+  });
+
+  useEffect(() => {
+    if (excelFile && creationMode === 'excel') {
+      previewExcelMutation.mutate(excelFile);
+    } else {
+      setExcelPreview(null);
+    }
+  }, [excelFile, creationMode]);
 
   const startCountMutation = useMutation({
     mutationFn: async (countId: string) => {
@@ -352,6 +409,7 @@ export default function InventoryCountPage() {
       setSelectedCount(count);
       setCountItems(count.countItems || []);
       setView('process');
+      refetchCounts();
     },
   });
 
@@ -363,20 +421,29 @@ export default function InventoryCountPage() {
       return response.data.count as InventoryCount;
     },
     onSuccess: (count) => {
-      // Actualizar selectedCount con el estado COMPLETED
       setSelectedCount(count);
       setCountItems(count.countItems || []);
-      // NO cambiar de vista - mantener en 'process' para ver botones nuevos
+      refetchCounts();
+    },
+  });
+
+  const finalizeCountMutation = useMutation({
+    mutationFn: async (countId: string) => {
+      const response = await apiClient.post(`/inventory-counts/${countId}/finalize`, {});
+      return response.data as InventoryCount;
+    },
+    onSuccess: (count) => {
+      setSelectedCount(count);
+      setCountItems(count.countItems || []);
+      refetchCounts();
+      showNotification('success', '✅ Finalizado', 'Conteo finalizado administrativamente.');
     },
   });
 
   const createVersionMutation = useMutation({
     mutationFn: async (countId: string) => {
-      // 1. Crear nueva versión
-      const createResponse = await apiClient.post(`/inventory-counts/${countId}/new-version`, {});
+      await apiClient.post(`/inventory-counts/${countId}/new-version`, {});
       localStorage.removeItem(STORAGE_KEY(countId));
-
-      // 2. Obtener el conteo actualizado con items de la nueva versión
       const getResponse = await apiClient.get(`/inventory-counts/${countId}`);
       return getResponse.data as InventoryCount;
     },
@@ -384,8 +451,7 @@ export default function InventoryCountPage() {
       setSelectedCount(count);
       setCountItems(count.countItems || []);
       setView('process');
-
-      // Mostrar modal en lugar de alert
+      refetchCounts();
       setNewVersionData({
         versionNumber: count.currentVersion,
         itemsCount: count.countItems?.length || 0,
@@ -397,57 +463,76 @@ export default function InventoryCountPage() {
 
   const sendToERPMutation = useMutation({
     mutationFn: async (countId: string) => {
+      setIsSyncing(true);
+      setSyncStatus('syncing');
+      setSyncMessage('Consolidando datos y preparando envío al ERP...');
       const response = await apiClient.post(`/inventory-counts/${countId}/send-to-erp`, {});
+      setSyncStatus('closing');
+      setSyncMessage('Sincronización exitosa. Actualizando estado del conteo...');
       localStorage.removeItem(STORAGE_KEY(countId));
       localStorage.removeItem('active_count_id');
       return response.data;
     },
-    onSuccess: () => {
-      setSelectedCount(null);
-      setCountItems([]);
-      setView('list');
-      showNotification('success', '✅ Éxito', 'Conteo enviado al ERP exitosamente');
+    onSuccess: (data) => {
+      setSyncStatus('done');
+      setSyncMessage('Proceso completado correctamente.');
+      setTimeout(() => {
+        setIsSyncing(false);
+        setSelectedCount(null);
+        setCountItems([]);
+        setView('list');
+        const title = data.success ? '✅ Sincronización Exitosa' : '⚠️ Sincronización Parcial';
+        const detail = data.itemsFailed > 0
+          ? `${data.itemsSynced} sincronizados, ${data.itemsFailed} errores.`
+          : `Todos los artículos (${data.itemsSynced}) fueron sincronizados correctamente.`;
+        showNotification(data.success ? 'success' : 'info', title, data.message + '. ' + detail);
+      }, 1500);
     },
+    onError: (error: any) => {
+      setSyncStatus('error');
+      setSyncMessage(error.response?.data?.error || 'Error crítico durante la sincronización.');
+    }
   });
 
-  const loadFromMappingMutation = useMutation({
-    mutationFn: async (countId: string) => {
-      await apiClient.post(`/inventory-counts/${countId}/load-from-mapping`, {});
-      const response = await apiClient.get(`/inventory-counts/${countId}`);
-      return response.data as InventoryCount;
-    },
-    onSuccess: (count) => {
-      setSelectedCount(count);
-      setCountItems(count.countItems);
-    },
-  });
-
-  const closeMutation = useMutation({
-    mutationFn: async (countId: string) => {
-      await apiClient.post(`/inventory-counts/${countId}/close`, {});
-    },
-    onSuccess: () => {
-      setView('list');
-    },
-  });
+  const handleExportExcel = async (countId: string) => {
+    try {
+      const url = `/inventory-counts/${countId}/export-excel`;
+      const response = await apiClient.get(url, { responseType: 'blob' });
+      const blob = new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.setAttribute('download', `resultado_conteo_${countId}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      showNotification('success', '📥 Exportando', 'Tu descarga debería comenzar en breve.');
+    } catch (error) {
+      console.error('Error al exportar Excel:', error);
+      showNotification('error', '❌ Error', 'No se pudo generar el archivo Excel.');
+    }
+  };
 
   const deleteMutation = useMutation({
     mutationFn: async (countId: string) => {
-      await apiClient.delete(`/inventory-counts/${countId}`);
+      await apiClient.delete(`/inventory-counts/${countId}/delete`);
     },
     onSuccess: () => {
-      // Refrescar lista y volver a la vista de lista
       refetchCounts();
-      setSelectedCount(null);
-      setCountItems([]);
       setView('list');
       setShowDeleteConfirm(false);
-      setCountIdToDelete(null);
       showNotification('success', '✅ Eliminado', 'Conteo eliminado correctamente');
     },
-    onError: (error: any) => {
-      console.error('Error al eliminar conteo:', error);
-      showNotification('error', '❌ Error', 'No se pudo eliminar el conteo. Intenta nuevamente.');
+  });
+
+  const reactivateCountMutation = useMutation({
+    mutationFn: async (countId: string) => {
+      const response = await apiClient.post(`/inventory-counts/${countId}/reactivate`, {});
+      return response.data.count as InventoryCount;
+    },
+    onSuccess: (count) => {
+      showNotification('success', '✅ Reactivado', `El conteo ${count.sequenceNumber} ha sido reactivado.`);
+      refetchCounts();
     },
   });
 
@@ -459,6 +544,7 @@ export default function InventoryCountPage() {
     onSuccess: (count) => {
       setSelectedCount(count);
       setCountItems(count.countItems || []);
+      refetchCounts();
     },
   });
 
@@ -470,6 +556,7 @@ export default function InventoryCountPage() {
     onSuccess: (count) => {
       setSelectedCount(count);
       setCountItems(count.countItems || []);
+      refetchCounts();
     },
   });
 
@@ -483,44 +570,31 @@ export default function InventoryCountPage() {
       setSelectedCount(null);
       setCountItems([]);
       setView('list');
+      refetchCounts();
     },
   });
 
-  // La sincronización de items ahora se maneja con debounce en handleItemChange
-  // en lugar de usar una mutación tradicional
-
-  // Función helper para mostrar notificaciones
   const showNotification = useCallback((
     type: 'success' | 'error' | 'warning' | 'info',
     title: string,
     message: string
   ) => {
-    setNotification({
-      isOpen: true,
-      type,
-      title,
-      message,
-    });
+    setNotification({ isOpen: true, type, title, message });
   }, []);
 
-  // Handlers
   const handleItemChange = useCallback((itemId: string, countedQty: number) => {
-    // Actualizar estado local inmediatamente (sin esperar sync)
     setCountItems((prev) => {
       const updated = prev.map((item) =>
         item.id === itemId ? { ...item, countedQty } : item
       );
-      // Guardar cantidad pendiente en ref
       pendingUpdatesRef.current[itemId] = countedQty;
       return updated;
     });
 
-    // Limpiar timeout anterior
     if (debounceTimeoutRef.current[itemId]) {
       clearTimeout(debounceTimeoutRef.current[itemId]);
     }
 
-    // Configurar nuevo timeout (500ms después de que deje de escribir)
     debounceTimeoutRef.current[itemId] = setTimeout(async () => {
       const finalCountedQty = pendingUpdatesRef.current[itemId];
       setSyncingItemIds((prev) => new Set([...prev, itemId]));
@@ -531,7 +605,6 @@ export default function InventoryCountPage() {
           { countedQty: finalCountedQty }
         );
 
-        // Actualizar con la respuesta del servidor para asegurar consistencia
         if (response.data) {
           setCountItems((prev) =>
             prev.map((item) =>
@@ -541,15 +614,8 @@ export default function InventoryCountPage() {
         }
 
         setSyncedItemIds((prev) => new Set([...prev, itemId]));
-        console.log(`Item ${itemId} sincronizado correctamente`);
       } catch (error) {
         console.error('Error syncing item:', error);
-        // Revertar el cambio local si falla
-        setCountItems((prev) =>
-          prev.map((item) =>
-            item.id === itemId ? { ...item, countedQty: undefined } : item
-          )
-        );
       } finally {
         setSyncingItemIds((prev) => {
           const newSet = new Set(prev);
@@ -558,31 +624,23 @@ export default function InventoryCountPage() {
         });
         delete debounceTimeoutRef.current[itemId];
       }
-    }, 500); // Esperar 500ms después de que deje de escribir
+    }, 500);
   }, [selectedCount?.id]);
 
-  // Fetch fresh data when entering process view
   const handleProcessCount = useCallback(async (countId: string) => {
     try {
       const response = await apiClient.get(`/inventory-counts/${countId}`);
       const freshCount = response.data as InventoryCount;
-
-      // Actualizar con datos frescos del servidor
       setSelectedCount(freshCount);
       setCountItems(freshCount.countItems || []);
-
-      // Actualizar localStorage
       localStorage.setItem('active_count_id', freshCount.id);
       localStorage.setItem(STORAGE_KEY(freshCount.id), JSON.stringify({
         count: freshCount,
         items: freshCount.countItems,
         lastSaved: new Date().toISOString(),
       }));
-
-      // Limpiar sincronización previa
       setSyncingItemIds(new Set());
       setSyncedItemIds(new Set());
-
       setView('process');
     } catch (error) {
       console.error('Error cargando conteo:', error);
@@ -591,20 +649,85 @@ export default function InventoryCountPage() {
   }, []);
 
   const filteredItems = countItems.filter((item) => {
+    const q = searchTerm.toLowerCase();
     const matchesSearch =
-      item.itemCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.itemName.toLowerCase().includes(searchTerm.toLowerCase());
+      item.itemCode.toLowerCase().includes(q) ||
+      item.itemName.toLowerCase().includes(q) ||
+      item.barCodeInv?.toLowerCase().includes(q) ||
+      item.barCodeVt?.toLowerCase().includes(q);
+
+    const matchesCategory = !filterCategory || item.category === filterCategory;
+    const matchesSubcategory = !filterSubcategory || item.subcategory === filterSubcategory;
+    const matchesBrand = !filterBrand || item.brand === filterBrand;
 
     if (filterVarianceOnly) {
       const systemQty = typeof item.systemQty === 'string' ? parseFloat(item.systemQty) : item.systemQty;
       const counted = item.countedQty ?? 0;
-      return matchesSearch && Math.round((counted - systemQty) * 10) / 10 !== 0;
+      return matchesSearch && matchesCategory && matchesSubcategory && matchesBrand &&
+        Math.round((counted - systemQty) * 10) / 10 !== 0;
     }
-
-    return matchesSearch;
+    return matchesSearch && matchesCategory && matchesSubcategory && matchesBrand;
   });
 
-  // Variance calculation
+  // Queries para clasificaciones globales
+  const { data: globalCategories = [] } = useClassifications('CATEGORY');
+  const { data: globalSubcategories = [] } = useClassifications('SUBCATEGORY');
+  const { data: globalBrands = [] } = useClassifications('BRAND');
+
+  // Si no hay datos globales todavía, usamos los locales como respaldo (para retrocompatibilidad)
+  const localCategories = [...new Set(countItems.map((i) => i.category).filter(Boolean))] as string[];
+  const localSubcategories = [...new Set(countItems.map((i) => i.subcategory).filter(Boolean))] as string[];
+  const localBrands = [...new Set(countItems.map((i) => i.brand).filter(Boolean))] as string[];
+
+  // Helpers para deduplicar opciones por descripción (evitar Warning: duplicate key)
+  const getUniqueOptions = (items: Classification[], fallbackStrings: string[]) => {
+    if (items.length > 0) {
+      // Usar Map para asegurar unicidad por descripción
+      const unique = new Map();
+      items.forEach(c => {
+        if (!unique.has(c.description)) {
+          // Usamos el CÓDIGO como valor para que coincida con lo que hay en los items
+          unique.set(c.description, { value: c.code, label: `${c.code} - ${c.description}` });
+        }
+      });
+      return Array.from(unique.values());
+    }
+    return fallbackStrings.map(s => ({ value: s, label: s }));
+  };
+
+  const categories = getUniqueOptions(globalCategories, localCategories);
+  const subcategories = getUniqueOptions(globalSubcategories, localSubcategories);
+  const brands = getUniqueOptions(globalBrands, localBrands);
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      // Si hay resultados, enfocar el campo de cantidad del primero
+      if (filteredItems.length > 0) {
+        e.preventDefault();
+        setTimeout(() => {
+          firstItemQtyRef.current?.focus();
+          firstItemQtyRef.current?.select();
+        }, 10);
+      }
+    }
+  };
+
+  const handleQtyKeyDown = (e: React.KeyboardEvent, itemId: string) => {
+    if (e.key === 'Enter') {
+      // Al presionar Enter en cantidad, volver a la búsqueda y limpiarla
+      setSearchTerm('');
+      setTimeout(() => {
+        searchInputRef.current?.focus();
+      }, 10);
+    }
+  };
+
+  const selectStyle: React.CSSProperties = {
+    padding: '6px 10px', borderRadius: 6, border: '1px solid #e5e7eb',
+    background: '#fff', color: '#374151', fontSize: '0.8rem',
+    cursor: 'pointer', minWidth: 160,
+  };
+
   const getVariance = (item: CountItem) => {
     const systemQty = typeof item.systemQty === 'string' ? parseFloat(item.systemQty) : item.systemQty;
     const counted = item.countedQty ?? 0;
@@ -616,24 +739,37 @@ export default function InventoryCountPage() {
     };
   };
 
-  const getVarianceColor = (item: CountItem) => {
-    const { variance } = getVariance(item);
-    if (variance < 0) return 'text-green-600';
-    if (variance > 0) return 'text-red-600';
-    return 'text-gray-400';
-  };
+  // 404 ERROR VIEW
+  if (error404) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] p-6 text-center">
+        <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-6">
+          <span className="text-4xl">🔍</span>
+        </div>
+        <h2 className="text-2xl font-bold text-gray-900 mb-2">Conteo no encontrado</h2>
+        <p className="text-gray-600 mb-8 max-w-md">
+          El conteo que intentas acceder no existe o ha sido eliminado.
+          Esto puede suceder si se reinició la base de datos o si el enlace es obsoleto.
+        </p>
+        <Button onClick={() => { setError404(false); setView('list'); refetchCounts(); }} variant="primary">
+          Volver al listado
+        </Button>
+      </div>
+    );
+  }
 
   // LIST VIEW
   if (view === 'list') {
     return (
-      <>
-        <div className="w-full">
-          <div className="border-b bg-white p-6">
+      <div className="w-full">
+        <div className="border-b bg-white p-6">
           <div className="flex justify-between items-center">
             <h1 className="text-3xl font-bold">Conteo Físico</h1>
-            <Button onClick={() => setView('create')} variant="primary">
-              + Nuevo Conteo
-            </Button>
+            {canCreate && (
+              <Button onClick={() => setView('create')} variant="primary">
+                + Nuevo Conteo
+              </Button>
+            )}
           </div>
         </div>
 
@@ -662,14 +798,14 @@ export default function InventoryCountPage() {
                       <td className="px-4 py-3 font-semibold text-gray-900">{count.sequenceNumber}</td>
                       <td className="px-4 py-3 text-sm text-gray-600">{count.code}</td>
                       <td className="px-4 py-3 text-center">
-                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                          count.status === 'COMPLETED' ? 'bg-green-100 text-green-700' :
-                          count.status === 'ACTIVE' ? 'bg-blue-100 text-blue-700' :
-                          count.status === 'ON_HOLD' ? 'bg-yellow-100 text-yellow-700' :
-                          count.status === 'CLOSED' ? 'bg-gray-100 text-gray-700' :
-                          count.status === 'CANCELLED' ? 'bg-red-100 text-red-700' :
-                          'bg-gray-100 text-gray-700'
-                        }`}>
+                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${count.status === 'COMPLETED' ? 'bg-green-100 text-green-700' :
+                          count.status === 'SUBMITTED' ? 'bg-purple-100 text-purple-700' :
+                            count.status === 'ACTIVE' ? 'bg-blue-100 text-blue-700' :
+                              count.status === 'ON_HOLD' ? 'bg-yellow-100 text-yellow-700' :
+                                count.status === 'CLOSED' ? 'bg-gray-100 text-gray-700' :
+                                  count.status === 'CANCELLED' ? 'bg-red-100 text-red-700' :
+                                    'bg-gray-100 text-gray-700'
+                          }`}>
                           {count.status}
                         </span>
                       </td>
@@ -677,134 +813,108 @@ export default function InventoryCountPage() {
                       <td className="px-4 py-3 text-center font-semibold">{count.countItems?.length || 0}</td>
                       <td className="px-4 py-3 text-sm text-gray-600">{new Date(count.createdAt).toLocaleDateString('es-ES')}</td>
                       <td className="px-4 py-3">
-                        <div className="flex gap-1 justify-center flex-wrap">
+                        <div className="flex gap-2 justify-center flex-wrap">
                           {/* DRAFT STATE */}
                           {count.status === 'DRAFT' && (
                             <>
-                              <Button
-                                onClick={() => handleProcessCount(count.id)}
-                                variant="primary"
-                                size="sm"
-                                title="Abrir para configurar y procesar"
-                              >
+                              <Button onClick={() => handleProcessCount(count.id)} variant="primary" size="sm">
                                 📋 Procesar
                               </Button>
-                              <Button
-                                onClick={() => {
-                                  setCountIdToDelete(count.id);
-                                  setShowDeleteConfirm(true);
-                                }}
-                                variant="danger"
-                                size="sm"
-                                title="Eliminar este conteo"
-                              >
-                                🗑 Eliminar
-                              </Button>
+                              {canDelete && (
+                                <Button onClick={() => { setCountIdToDelete(count.id); setShowDeleteConfirm(true); }} variant="danger" size="sm">
+                                  🗑 Eliminar
+                                </Button>
+                              )}
                             </>
                           )}
 
                           {/* ACTIVE STATE */}
                           {count.status === 'ACTIVE' && (
                             <>
-                              <Button
-                                onClick={() => handleProcessCount(count.id)}
-                                variant="primary"
-                                size="sm"
-                                title="Abrir para registrar cantidades"
-                              >
+                              <Button onClick={() => handleProcessCount(count.id)} variant="primary" size="sm">
                                 📝 Procesar
                               </Button>
-                              <Button
-                                onClick={() => completeCountMutation.mutate(count.id)}
-                                variant="success"
-                                size="sm"
-                                title="Finalizar este conteo"
-                              >
+                              <Button onClick={() => completeCountMutation.mutate(count.id)} variant="success" size="sm">
                                 ✓ Finalizar
                               </Button>
-                              <Button
-                                onClick={() => pauseMutation.mutate(count.id)}
-                                variant="secondary"
-                                size="sm"
-                                title="Pausar temporalmente"
-                              >
+                              <Button onClick={() => pauseMutation.mutate(count.id)} variant="secondary" size="sm">
                                 ⏸ Pausar
                               </Button>
-                              <Button
-                                onClick={() => {
-                                  setCountIdToDelete(count.id);
-                                  setShowDeleteConfirm(true);
-                                }}
-                                variant="danger"
-                                size="sm"
-                                title="Eliminar este conteo"
-                              >
-                                🗑 Eliminar
-                              </Button>
+                              {canDelete && (
+                                <Button onClick={() => { setCountIdToDelete(count.id); setShowDeleteConfirm(true); }} variant="danger" size="sm">
+                                  🗑 Eliminar
+                                </Button>
+                              )}
                             </>
                           )}
 
                           {/* ON_HOLD STATE */}
                           {count.status === 'ON_HOLD' && (
                             <>
-                              <Button
-                                onClick={() => handleProcessCount(count.id)}
-                                variant="primary"
-                                size="sm"
-                                title="Reanudar y continuar registrando"
-                              >
+                              <Button onClick={() => handleProcessCount(count.id)} variant="primary" size="sm">
                                 ▶ Continuar
                               </Button>
-                              <Button
-                                onClick={() => completeCountMutation.mutate(count.id)}
-                                variant="success"
-                                size="sm"
-                                title="Finalizar este conteo"
-                              >
+                              <Button onClick={() => completeCountMutation.mutate(count.id)} variant="success" size="sm">
                                 ✓ Finalizar
                               </Button>
+                            </>
+                          )}
+
+                          {/* SUBMITTED STATE */}
+                          {count.status === 'SUBMITTED' && (
+                            <>
+                              <Button onClick={() => handleProcessCount(count.id)} variant="primary" size="sm">
+                                👁 Ver
+                              </Button>
+                              <Button onClick={() => finalizeCountMutation.mutate(count.id)} variant="success" size="sm" disabled={finalizeCountMutation.isPending}>
+                                🏆 Finalizar
+                              </Button>
+                              {canCreate && (
+                                <Button onClick={() => createVersionMutation.mutate(count.id)} variant="secondary" size="sm" disabled={createVersionMutation.isPending}>
+                                  🔄 Versión
+                                </Button>
+                              )}
+                              {canExport && (
+                                <Button onClick={() => handleExportExcel(count.id)} variant="secondary" size="sm">
+                                  📊 Excel
+                                </Button>
+                              )}
+                              {canDelete && (
+                                <Button onClick={() => { setCountIdToDelete(count.id); setShowDeleteConfirm(true); }} variant="danger" size="sm">
+                                  🗑 Eliminar
+                                </Button>
+                              )}
                             </>
                           )}
 
                           {/* COMPLETED STATE */}
                           {count.status === 'COMPLETED' && (
                             <>
-                              <Button
-                                onClick={() => createVersionMutation.mutate(count.id)}
-                                variant="secondary"
-                                size="sm"
-                                title="Crear nueva versión para recontar"
-                              >
-                                🔄 Versión
-                              </Button>
-                              <Button
-                                onClick={() => sendToERPMutation.mutate(count.id)}
-                                variant="primary"
-                                size="sm"
-                                title="Enviar al ERP"
-                              >
-                                🚀 ERP
-                              </Button>
+                              {canCreate && (
+                                <Button onClick={() => createVersionMutation.mutate(count.id)} variant="secondary" size="sm">
+                                  🔄 Versión
+                                </Button>
+                              )}
+                              {canExport && (
+                                <Button onClick={() => handleExportExcel(count.id)} variant="secondary" size="sm">
+                                  📊 Excel
+                                </Button>
+                              )}
+                              {canSyncERP && (
+                                <Button onClick={() => sendToERPMutation.mutate(count.id)} variant="primary" size="sm">
+                                  🚀 ERP
+                                </Button>
+                              )}
                             </>
                           )}
 
                           {/* IN_PROGRESS STATE */}
                           {count.status === 'IN_PROGRESS' && (
                             <>
-                              <Button
-                                onClick={() => handleProcessCount(count.id)}
-                                variant="primary"
-                                size="sm"
-                                title="Abrir para recontar V{n}"
-                              >
+                              <Button onClick={() => handleProcessCount(count.id)} variant="primary" size="sm">
                                 📝 Recontar
                               </Button>
-                              <Button
-                                onClick={() => completeCountMutation.mutate(count.id)}
-                                variant="success"
-                                size="sm"
-                                title="Finalizar esta versión"
-                              >
+                              <Button onClick={() => completeCountMutation.mutate(count.id)} variant="success" size="sm">
                                 ✓ Finalizar
                               </Button>
                             </>
@@ -812,25 +922,29 @@ export default function InventoryCountPage() {
 
                           {/* CLOSED STATE */}
                           {count.status === 'CLOSED' && (
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              disabled
-                              title="Conteo archivado"
-                            >
-                              🔒 Archivado
-                            </Button>
+                            <>
+                              {canExport && (
+                                <Button onClick={() => handleExportExcel(count.id)} variant="secondary" size="sm">
+                                  📊 Excel
+                                </Button>
+                              )}
+                              {canReopen && (
+                                <Button onClick={() => reactivateCountMutation.mutate(count.id)} variant="secondary" size="sm">
+                                  🔓 Reactivar
+                                </Button>
+                              )}
+                              {canDelete && (
+                                <Button onClick={() => { setCountIdToDelete(count.id); setShowDeleteConfirm(true); }} variant="danger" size="sm">
+                                  🗑 Eliminar
+                                </Button>
+                              )}
+                            </>
                           )}
 
                           {/* CANCELLED STATE */}
-                          {count.status === 'CANCELLED' && (
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              disabled
-                              title="Conteo cancelado"
-                            >
-                              ❌ Cancelado
+                          {count.status === 'CANCELLED' && canDelete && (
+                            <Button onClick={() => { setCountIdToDelete(count.id); setShowDeleteConfirm(true); }} variant="danger" size="sm">
+                              🗑 Eliminar
                             </Button>
                           )}
                         </div>
@@ -842,36 +956,84 @@ export default function InventoryCountPage() {
             </div>
           )}
         </div>
-      </div>
 
-      {/* Modal de Confirmación para Eliminar */}
-      <ConfirmModal
-        isOpen={showDeleteConfirm}
-        onConfirm={() => {
-          if (countIdToDelete) {
-            setShowDeleteConfirm(false);
-            setCountIdToDelete(null);
-            deleteMutation.mutate(countIdToDelete);
-          }
-        }}
-        onCancel={() => {
-          setShowDeleteConfirm(false);
-          setCountIdToDelete(null);
-        }}
-        title="⚠️ Eliminar Conteo"
-        message="¿Estás seguro de que deseas eliminar este conteo? Se eliminarán todos sus items asociados y esta acción no se puede deshacer."
-        confirmText="Sí, Eliminar"
-        cancelText="Cancelar"
-        isDangerous={true}
-        isLoading={deleteMutation.isPending}
-      />
-    </>
+        {/* Sync Progress Modal */}
+        {isSyncing && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 flex flex-col items-center text-center animate-in fade-in zoom-in duration-300">
+              {syncStatus === 'syncing' && (
+                <>
+                  <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
+                  <h3 className="text-xl font-bold text-gray-900 mb-2">Sincronizando con ERP</h3>
+                  <p className="text-gray-600">{syncMessage}</p>
+                </>
+              )}
+              {syncStatus === 'closing' && (
+                <>
+                  <div className="w-16 h-16 border-4 border-green-500 border-t-transparent rounded-full animate-spin mb-6"></div>
+                  <h3 className="text-xl font-bold text-gray-900 mb-2">Finalizando Conteo</h3>
+                  <p className="text-gray-600">{syncMessage}</p>
+                </>
+              )}
+              {syncStatus === 'done' && (
+                <>
+                  <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-6 scale-110 animate-bounce">
+                    <span className="text-3xl">✅</span>
+                  </div>
+                  <h3 className="text-xl font-bold text-gray-900 mb-2">¡Completado!</h3>
+                  <p className="text-gray-600">{syncMessage}</p>
+                  <Button onClick={() => setIsSyncing(false)} className="mt-6">Cerrar</Button>
+                </>
+              )}
+              {syncStatus === 'error' && (
+                <>
+                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-6">
+                    <span className="text-3xl">⚠️</span>
+                  </div>
+                  <h3 className="text-xl font-bold text-red-700 mb-2">Error de Sincronización</h3>
+                  <p className="text-gray-600 mb-6">{syncMessage}</p>
+                  <Button onClick={() => setIsSyncing(false)} variant="danger">Cerrar y Revisar</Button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        <ConfirmModal
+          isOpen={showDeleteConfirm}
+          onConfirm={() => { if (countIdToDelete) deleteMutation.mutate(countIdToDelete); }}
+          onCancel={() => { setShowDeleteConfirm(false); setCountIdToDelete(null); }}
+          title="⚠️ Eliminar Conteo"
+          message="¿Estás seguro de que deseas eliminar este conteo? Esta acción no se puede deshacer."
+          isDangerous={true}
+        />
+
+        <NotificationModal
+          isOpen={notification.isOpen}
+          onClose={() => setNotification({ ...notification, isOpen: false })}
+          type={notification.type}
+          title={notification.title}
+          message={notification.message}
+        />
+      </div>
     );
   }
 
   // CREATE VIEW
   if (view === 'create') {
-    const isFormValid = warehouseId && mappingId;
+    const isFormValid = warehouseId && (creationMode === 'erp' ? mappingId : excelFile);
+    const downloadTemplate = async () => {
+      try {
+        const response = await apiClient.get('/inventory-counts/excel-template', { responseType: 'blob' });
+        const url = window.URL.createObjectURL(new Blob([response.data]));
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', 'plantilla_conteo.xlsx');
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      } catch (error) { console.error('Error downloading template:', error); }
+    };
 
     return (
       <div className="w-full h-full flex items-center justify-center p-6 bg-gradient-to-br from-gray-50 to-gray-100">
@@ -880,144 +1042,89 @@ export default function InventoryCountPage() {
           <p className="text-sm text-gray-500 mb-6">Completa todos los campos requeridos</p>
 
           <div className="space-y-4">
-            {/* Almacén */}
             <div>
-              <Label htmlFor="warehouse" className="font-semibold">
-                📦 Almacén <span className="text-red-500">*</span>
-              </Label>
+              <Label htmlFor="warehouse" className="font-semibold">📦 Almacén <span className="text-red-500">*</span></Label>
               <select
-                id="warehouse"
-                value={warehouseId}
-                onChange={(e) => {
-                  setWarehouseId(e.target.value);
-                  setLocationId('');
-                }}
-                className={`w-full mt-2 border rounded-md px-3 py-2 focus:outline-none focus:ring-2 ${
-                  warehouseId
-                    ? 'border-green-300 focus:ring-green-500 bg-green-50'
-                    : 'border-gray-300 focus:ring-blue-500'
-                }`}
+                id="warehouse" value={warehouseId}
+                onChange={(e) => { setWarehouseId(e.target.value); setLocationId(''); }}
+                className={`w-full mt-2 border rounded-md px-3 py-2 focus:outline-none focus:ring-2 ${warehouseId ? 'border-green-300 focus:ring-green-500 bg-green-50' : 'border-gray-300'}`}
               >
                 <option value="">Selecciona un almacén</option>
-                {warehouses.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.name}
-                  </option>
-                ))}
+                {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
               </select>
-              {warehouseId && (
-                <p className="text-xs text-green-600 mt-1">✓ Almacén seleccionado</p>
-              )}
             </div>
 
-            {/* Ubicación */}
-            {warehouseId && (
+            <div className="py-2">
+              <Label className="font-semibold mb-2 block">🎯 Método de Carga</Label>
+              <div className="flex gap-2">
+                <button onClick={() => setCreationMode('erp')} className={`flex-1 py-2 px-3 rounded-md border text-sm transition-all ${creationMode === 'erp' ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-700'}`}>🔗 ERP Mapping</button>
+                <button onClick={() => setCreationMode('excel')} className={`flex-1 py-2 px-3 rounded-md border text-sm transition-all ${creationMode === 'excel' ? 'bg-green-600 text-white shadow-md' : 'bg-white text-gray-700'}`}>📊 Excel File</button>
+              </div>
+            </div>
+
+            {creationMode === 'erp' && (
               <div>
-                <Label htmlFor="location">
-                  📍 Ubicación <span className="text-gray-400">(opcional)</span>
-                </Label>
+                <Label htmlFor="mapping" className="font-semibold">🔗 Mapeo de Datos <span className="text-red-500">*</span></Label>
                 <select
-                  id="location"
-                  value={locationId}
-                  onChange={(e) => setLocationId(e.target.value)}
-                  className="w-full mt-2 border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  id="mapping" value={mappingId} onChange={(e) => setMappingId(e.target.value)}
+                  className={`w-full mt-2 border rounded-md px-3 py-2 focus:outline-none focus:ring-2 ${mappingId ? 'border-green-300 bg-green-50' : 'border-gray-300'}`}
                 >
-                  <option value="">Todas las ubicaciones</option>
-                  {locations.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.code}
-                    </option>
-                  ))}
+                  <option value="">Selecciona un mapeo</option>
+                  {availableMappings.map((mapping: any) => <option key={mapping.id} value={mapping.id}>{mapping.datasetType}</option>)}
                 </select>
               </div>
             )}
 
-            {/* Mapeo de Datos */}
-            <div>
-              <Label htmlFor="mapping" className="font-semibold">
-                🔗 Mapeo de Datos <span className="text-red-500">*</span>
-              </Label>
-
-              {mappingsLoading && (
-                <div className="w-full mt-2 p-3 bg-blue-50 text-blue-700 rounded-md text-sm border border-blue-200">
-                  ⏳ Cargando mappings...
+            {creationMode === 'excel' && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="font-semibold">📊 Archivo Excel <span className="text-red-500">*</span></Label>
+                  <button onClick={downloadTemplate} className="text-xs text-blue-600 hover:underline">📥 Descargar Plantilla</button>
                 </div>
-              )}
-
-              {mappingsError && (
-                <div className="w-full mt-2 p-3 bg-red-50 text-red-700 rounded-md text-sm border border-red-200">
-                  ❌ Error cargando mappings
-                  <p className="text-xs mt-1">Verifica que la conexión ERP esté configurada correctamente</p>
+                <div
+                  className={`border-2 border-dashed rounded-lg p-6 text-center transition-all ${excelFile ? 'border-green-400 bg-green-50' : 'border-gray-300 bg-gray-50'}`}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => { e.preventDefault(); if (e.dataTransfer.files?.[0]) setExcelFile(e.dataTransfer.files[0]); }}
+                >
+                  <input type="file" id="excel-upload" accept=".xlsx,.xls" className="hidden" onChange={(e) => setExcelFile(e.target.files?.[0] || null)} />
+                  <Label htmlFor="excel-upload" className="cursor-pointer">
+                    {excelFile ? <p className="text-sm font-medium text-green-700">📄 {excelFile.name}</p> : <p className="text-sm text-gray-600 font-medium">Haz click o arrastra (.xlsx)</p>}
+                  </Label>
                 </div>
-              )}
-
-              {!mappingsLoading && availableMappings.length === 0 && (
-                <div className="w-full mt-2 p-3 bg-yellow-50 text-yellow-700 rounded-md text-sm border border-yellow-200">
-                  ⚠️ No hay mappings disponibles
-                  <p className="text-xs mt-1">Ve a Settings → Mappings para crear uno</p>
-                </div>
-              )}
-
-              {!mappingsLoading && availableMappings.length > 0 && (
-                <>
-                  <select
-                    id="mapping"
-                    value={mappingId}
-                    onChange={(e) => setMappingId(e.target.value)}
-                    className={`w-full mt-2 border rounded-md px-3 py-2 focus:outline-none focus:ring-2 ${
-                      mappingId
-                        ? 'border-green-300 focus:ring-green-500 bg-green-50'
-                        : 'border-gray-300 focus:ring-blue-500'
-                    }`}
-                  >
-                    <option value="">Selecciona un mapeo</option>
-                    {availableMappings.map((mapping: any) => (
-                      <option key={mapping.id} value={mapping.id}>
-                        {mapping.datasetType}
-                      </option>
-                    ))}
-                  </select>
-                  {mappingId && (
-                    <p className="text-xs text-green-600 mt-1">✓ Mapeo seleccionado</p>
-                  )}
-                </>
-              )}
-            </div>
-
-            {/* Botones de Acción */}
-            <div className="flex gap-2 pt-6 border-t">
-              <Button
-                onClick={() => createCountMutation.mutate()}
-                disabled={!isFormValid || createCountMutation.isPending}
-                variant="primary"
-                className="flex-1"
-              >
-                {createCountMutation.isPending ? (
-                  <>⏳ Creando...</>
-                ) : (
-                  <>✓ Crear Conteo</>
+                {excelPreview && (
+                  <div className="mt-4 border rounded-md overflow-hidden bg-white max-h-40 overflow-y-auto">
+                    <table className="w-full text-[10px]">
+                      <thead className="bg-gray-50 border-b">
+                        <tr><th className="px-2 py-1 text-left">Item</th><th className="px-2 py-1 text-right">Cant.</th></tr>
+                      </thead>
+                      <tbody>
+                        {excelPreview.preview.map((item, i) => (
+                          <tr key={i} className="border-b">
+                            <td className="px-2 py-1 truncate">{item.itemName}</td>
+                            <td className="px-2 py-1 text-right">{item.systemQty}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
-              </Button>
-              <Button
-                onClick={() => setView('list')}
-                variant="secondary"
-                className="flex-1"
-              >
-                ✕ Cancelar
-              </Button>
-            </div>
-
-            {/* Ayuda */}
-            {!isFormValid && (
-              <div className="mt-4 p-3 bg-amber-50 text-amber-700 rounded-md text-xs border border-amber-200">
-                📌 <strong>Pasos:</strong>
-                <ol className="list-decimal list-inside mt-2 space-y-1">
-                  <li>Selecciona un almacén</li>
-                  <li>Selecciona un mapeo de datos</li>
-                  <li>Haz click en "Crear Conteo"</li>
-                </ol>
               </div>
             )}
+
+            <div>
+              <Label htmlFor="location">📍 Ubicación <span className="text-gray-400">(opcional)</span></Label>
+              <select id="location" value={locationId} onChange={(e) => setLocationId(e.target.value)} className="w-full mt-2 border border-gray-300 rounded-md px-3 py-2">
+                <option value="">Todas las ubicaciones</option>
+                {locations.map((l: any) => <option key={l.id} value={l.id}>{l.code}</option>)}
+              </select>
+            </div>
+
+            <div className="flex gap-2 pt-6 border-t">
+              <Button onClick={() => createCountMutation.mutate()} disabled={!isFormValid || createCountMutation.isPending || uploadingExcel} variant="primary" className="flex-1">
+                {createCountMutation.isPending || uploadingExcel ? '⏳ Procesando...' : '✓ Crear Conteo'}
+              </Button>
+              <Button onClick={() => { setView('list'); setExcelFile(null); }} variant="secondary" className="flex-1">✕ Cancelar</Button>
+            </div>
           </div>
         </div>
       </div>
@@ -1028,434 +1135,214 @@ export default function InventoryCountPage() {
   if (view === 'process' && selectedCount) {
     return (
       <div className="w-full h-full flex flex-col bg-gray-50">
-        {/* Title and Status Bar */}
         <div className="flex-shrink-0 border-b bg-white px-6 py-4">
           <div className="flex justify-between items-start">
             <div>
               <h1 className="text-3xl font-bold">{selectedCount.sequenceNumber}</h1>
               <p className="text-sm text-gray-500">{selectedCount.code}</p>
             </div>
-            <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-              selectedCount.status === 'COMPLETED' ? 'bg-green-100 text-green-700' :
-              selectedCount.status === 'ACTIVE' ? 'bg-blue-100 text-blue-700' :
-              selectedCount.status === 'IN_PROGRESS' ? 'bg-purple-100 text-purple-700' :
-              selectedCount.status === 'CLOSED' ? 'bg-gray-100 text-gray-700' :
-              'bg-gray-100 text-gray-700'
-            }`}>
+            <span className={`px-3 py-1 rounded-full text-xs font-semibold ${selectedCount.status === 'COMPLETED' ? 'bg-green-100 text-green-700' :
+              selectedCount.status === 'SUBMITTED' ? 'bg-purple-100 text-purple-700' :
+                selectedCount.status === 'ACTIVE' ? 'bg-blue-100 text-blue-700' :
+                  selectedCount.status === 'ON_HOLD' ? 'bg-yellow-100 text-yellow-700' :
+                    'bg-gray-100 text-gray-700'
+              }`}>
               {selectedCount.status}
             </span>
           </div>
-
-          {/* Estado informativo */}
-          <div className="mt-3 p-3 rounded-md text-sm">
-            {selectedCount.status === 'DRAFT' && (
-              <div className="bg-yellow-50 border border-yellow-200 text-yellow-700">
-                📄 <strong>Conteo recién creado</strong>
-                <p>Carga items desde el ERP y luego haz click en "✓ Iniciar Conteo" para comenzar</p>
-              </div>
-            )}
-            {selectedCount.status === 'ACTIVE' && (
-              <div className="bg-blue-50 border border-blue-200 text-blue-700">
-                📝 <strong>Registrando items</strong>
-                <p>Completa las cantidades en la tabla y haz click en "✓ Finalizar" cuando termines</p>
-              </div>
-            )}
-            {selectedCount.status === 'ON_HOLD' && (
-              <div className="bg-orange-50 border border-orange-200 text-orange-700">
-                ⏸ <strong>Conteo pausado</strong>
-                <p>Haz click en "▶ Reanudar" para continuar o "✓ Finalizar" para terminar</p>
-              </div>
-            )}
-            {selectedCount.status === 'IN_PROGRESS' && (
-              <div className="bg-purple-50 border border-purple-200 text-purple-700">
-                🔄 <strong>Versión {selectedCount.currentVersion} de {selectedCount.totalVersions}</strong>
-                <p>Recontar {countItems.length} items con varianza</p>
-              </div>
-            )}
-            {selectedCount.status === 'COMPLETED' && (
-              <div className="bg-green-50 border border-green-200 text-green-700">
-                ✅ <strong>Conteo completado</strong>
-                <p>Crea una nueva versión si hay varianza o envía al ERP para finalizar</p>
-              </div>
-            )}
-            {selectedCount.status === 'CLOSED' && (
-              <div className="bg-gray-50 border border-gray-200 text-gray-700">
-                🔒 <strong>Conteo archivado</strong>
-                <p>Enviado al ERP. Solo puedes visualizar los datos</p>
-              </div>
-            )}
-          </div>
         </div>
 
-        {/* Action Buttons */}
         <div className="flex-shrink-0 border-b bg-white px-6 py-4">
           <div className="flex gap-2 flex-wrap">
             {selectedCount.status === 'DRAFT' && (
               <>
-                <Button
-                  onClick={() => startCountMutation.mutate(selectedCount.id)}
-                  variant="primary"
-                  disabled={startCountMutation.isPending}
-                >
-                  ✓ Iniciar Conteo
-                </Button>
-                <Button
-                  onClick={() => cancelCountMutation.mutate(selectedCount.id)}
-                  variant="danger"
-                  disabled={cancelCountMutation.isPending}
-                >
-                  ✕ Cancelar
-                </Button>
+                <Button onClick={() => startCountMutation.mutate(selectedCount.id)} variant="primary">✓ Iniciar Conteo</Button>
+                {canDelete && (
+                  <Button onClick={() => cancelCountMutation.mutate(selectedCount.id)} variant="danger">✕ Cancelar</Button>
+                )}
               </>
             )}
-
             {selectedCount.status === 'ACTIVE' && (
               <>
-                <Button
-                  onClick={() => completeCountMutation.mutate(selectedCount.id)}
-                  variant="primary"
-                  disabled={completeCountMutation.isPending || countItems.length === 0}
-                  title={countItems.length === 0 ? "No hay items para finalizar" : "Finalizar conteo"}
-                >
-                  ✓ Finalizar
-                </Button>
-                <Button
-                  onClick={() => pauseMutation.mutate(selectedCount.id)}
-                  variant="secondary"
-                  disabled={pauseMutation.isPending}
-                  title="Pausar temporalmente (puedes reanudar después)"
-                >
-                  ⏸ Pausar
-                </Button>
-                <Button
-                  onClick={() => cancelCountMutation.mutate(selectedCount.id)}
-                  variant="danger"
-                  disabled={cancelCountMutation.isPending}
-                  title="Cancelar definitivamente (no se puede recuperar)"
-                >
-                  ✕ Cancelar
-                </Button>
+                <Button onClick={() => completeCountMutation.mutate(selectedCount.id)} variant="primary">✓ Finalizar</Button>
+                <Button onClick={() => pauseMutation.mutate(selectedCount.id)} variant="secondary">⏸ Pausar</Button>
+                {canDelete && (
+                  <Button onClick={() => cancelCountMutation.mutate(selectedCount.id)} variant="danger">✕ Cancelar</Button>
+                )}
               </>
             )}
-
             {selectedCount.status === 'ON_HOLD' && (
               <>
-                <Button
-                  onClick={() => resumeMutation.mutate(selectedCount.id)}
-                  variant="secondary"
-                  disabled={resumeMutation.isPending}
-                  title="Reanudar conteo desde donde pausó"
-                >
-                  ▶ Reanudar
-                </Button>
-                <Button
-                  onClick={() => completeCountMutation.mutate(selectedCount.id)}
-                  variant="primary"
-                  disabled={completeCountMutation.isPending}
-                  title="Finalizar conteo sin más cambios"
-                >
-                  ✓ Finalizar
-                </Button>
-                <Button
-                  onClick={() => cancelCountMutation.mutate(selectedCount.id)}
-                  variant="danger"
-                  disabled={cancelCountMutation.isPending}
-                  title="Cancelar definitivamente"
-                >
-                  ✕ Cancelar
-                </Button>
+                <Button onClick={() => resumeMutation.mutate(selectedCount.id)} variant="secondary">▶ Reanudar</Button>
+                <Button onClick={() => completeCountMutation.mutate(selectedCount.id)} variant="primary" disabled={completeCountMutation.isPending}>✓ Finalizar / Entregar</Button>
+                {canDelete && (
+                  <Button onClick={() => cancelCountMutation.mutate(selectedCount.id)} variant="danger">✕ Cancelar</Button>
+                )}
               </>
             )}
-
-            {selectedCount.status === 'IN_PROGRESS' && (
+            {selectedCount.status === 'SUBMITTED' && (
               <>
-                <Button
-                  onClick={() => completeCountMutation.mutate(selectedCount.id)}
-                  variant="primary"
-                  disabled={completeCountMutation.isPending || countItems.length === 0}
-                  title={countItems.length === 0 ? "No hay items para finalizar" : `Finalizar versión ${selectedCount.currentVersion}`}
-                >
-                  ✓ Finalizar V{selectedCount.currentVersion}
-                </Button>
-                <Button
-                  onClick={() => pauseMutation.mutate(selectedCount.id)}
-                  variant="secondary"
-                  disabled={pauseMutation.isPending}
-                  title="Pausar recontar"
-                >
-                  ⏸ Pausar
-                </Button>
-                <Button
-                  onClick={() => cancelCountMutation.mutate(selectedCount.id)}
-                  variant="danger"
-                  disabled={cancelCountMutation.isPending}
-                  title="Cancelar definitivamente"
-                >
-                  ✕ Cancelar
-                </Button>
+                <Button onClick={() => finalizeCountMutation.mutate(selectedCount.id)} variant="primary" disabled={finalizeCountMutation.isPending}>🏆 Finalizar Conteo</Button>
+                <Button onClick={() => createVersionMutation.mutate(selectedCount.id)} variant="secondary" disabled={createVersionMutation.isPending}>🔄 Crear Nueva Versión (Recontar)</Button>
+                {canExport && (
+                  <Button onClick={() => handleExportExcel(selectedCount.id)} variant="secondary">📥 Exportar Excel</Button>
+                )}
+                {canDelete && (
+                  <Button onClick={() => cancelCountMutation.mutate(selectedCount.id)} variant="danger">✕ Cancelar</Button>
+                )}
               </>
             )}
-
             {selectedCount.status === 'COMPLETED' && (
               <>
-                <Button
-                  onClick={() => createVersionMutation.mutate(selectedCount.id)}
-                  variant="secondary"
-                  disabled={createVersionMutation.isPending}
-                  title="Crear nueva versión para recontar items con varianza"
-                >
-                  🔄 Crear Versión
-                </Button>
-                <Button
-                  onClick={() => sendToERPMutation.mutate(selectedCount.id)}
-                  variant="primary"
-                  disabled={sendToERPMutation.isPending}
-                  title="Enviar datos del conteo al ERP"
-                >
-                  🚀 Enviar a ERP
-                </Button>
-                <Button
-                  onClick={() => cancelCountMutation.mutate(selectedCount.id)}
-                  variant="danger"
-                  disabled={cancelCountMutation.isPending}
-                  title="Cancelar conteo"
-                >
-                  ✕ Cancelar
-                </Button>
+                {canCreate && (
+                  <Button onClick={() => createVersionMutation.mutate(selectedCount.id)} variant="secondary">🔄 Crear Versión</Button>
+                )}
+                {canExport && (
+                  <Button onClick={() => handleExportExcel(selectedCount.id)} variant="secondary">📥 Exportar Excel</Button>
+                )}
+                {canSyncERP && (
+                  <Button onClick={() => sendToERPMutation.mutate(selectedCount.id)} variant="primary">🚀 Enviar a ERP</Button>
+                )}
+                {canDelete && (
+                  <Button onClick={() => cancelCountMutation.mutate(selectedCount.id)} variant="danger">✕ Cancelar</Button>
+                )}
               </>
             )}
-
-            <Button
-              onClick={() => {
-                if (selectedCount) {
-                  localStorage.removeItem(STORAGE_KEY(selectedCount.id));
-                  localStorage.removeItem('active_count_id');
-                }
-                setSelectedCount(null);
-                setCountItems([]);
-                setView('list');
-              }}
-              variant="secondary"
-              title="Volver a la lista"
-            >
-              ← Volver a la lista
-            </Button>
+            <Button onClick={() => { setSelectedCount(null); setCountItems([]); setView('list'); refetchCounts(); }} variant="secondary">← Volver</Button>
           </div>
         </div>
 
-        {/* Scrollable Content Container */}
         <div className="flex-1 overflow-y-auto">
-          {/* HEADER - Stats and Filters */}
-          <div className="bg-white border-b">
-            <div className="p-6">
-              {/* Stats Row */}
-              <div className="flex gap-4 mb-6">
-                {/* Varianzas Card */}
-                <div className="flex-1 bg-gradient-to-br from-yellow-50 to-yellow-100 border border-yellow-200 rounded-lg p-4">
-                  <p className="text-xs font-semibold text-yellow-700 uppercase tracking-wide">Varianzas</p>
-                  <p className="text-4xl font-bold text-yellow-600 mt-2">
-                    {filteredItems.filter((i) => getVariance(i).variance !== 0).length}
-                  </p>
-                  <p className="text-xs text-yellow-600 mt-1">Items con diferencia</p>
-                </div>
-
-                {/* Bajo Card */}
-                <div className="flex-1 bg-gradient-to-br from-green-50 to-green-100 border border-green-200 rounded-lg p-4">
-                  <p className="text-xs font-semibold text-green-700 uppercase tracking-wide">Bajo</p>
-                  <p className="text-4xl font-bold text-green-600 mt-2">
-                    {filteredItems.filter((i) => getVariance(i).variance < 0).length}
-                  </p>
-                  <p className="text-xs text-green-600 mt-1">Cantidad insuficiente</p>
-                </div>
-
-                {/* Sobre Card */}
-                <div className="flex-1 bg-gradient-to-br from-red-50 to-red-100 border border-red-200 rounded-lg p-4">
-                  <p className="text-xs font-semibold text-red-700 uppercase tracking-wide">Sobre</p>
-                  <p className="text-4xl font-bold text-red-600 mt-2">
-                    {filteredItems.filter((i) => getVariance(i).variance > 0).length}
-                  </p>
-                  <p className="text-xs text-red-600 mt-1">Cantidad excesiva</p>
-                </div>
+          <div className="bg-white border-b p-6">
+            <div className="flex gap-4 mb-6">
+              <div className="flex-1 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <p className="text-xs font-semibold text-yellow-700 uppercase">Varianzas</p>
+                <p className="text-4xl font-bold text-yellow-600">{filteredItems.filter(i => getVariance(i).variance !== 0).length}</p>
               </div>
+              <div className="flex-1 bg-green-50 border border-green-200 rounded-lg p-4">
+                <p className="text-xs font-semibold text-green-700 uppercase">Bajo</p>
+                <p className="text-4xl font-bold text-green-600">{filteredItems.filter(i => getVariance(i).variance < 0).length}</p>
+              </div>
+              <div className="flex-1 bg-red-50 border border-red-200 rounded-lg p-4">
+                <p className="text-xs font-semibold text-red-700 uppercase">Sobre</p>
+                <p className="text-4xl font-bold text-red-600">{filteredItems.filter(i => getVariance(i).variance > 0).length}</p>
+              </div>
+            </div>
 
-              {/* Search and Filter */}
-              <div className="pt-4 border-t space-y-3">
-                <Input
-                  placeholder="🔍 Buscar por código o descripción..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
+            <div className="space-y-3">
+              <Input
+                ref={searchInputRef}
+                placeholder="🔍 Escanea o busca por código/descripción... (Barcode ready)"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                onKeyDown={handleSearchKeyDown}
+                autoFocus
+              />
+              <div className="flex gap-2 flex-wrap">
+                <select
+                  value={filterCategory}
+                  onChange={(e) => setFilterCategory(e.target.value)}
+                  style={selectStyle}
+                >
+                  <option value="">📁 Todas las Categorías</option>
+                  {categories.map((c) => (
+                    <option key={c.value} value={c.value}>{c.label}</option>
+                  ))}
+                </select>
+
+                <select
+                  value={filterSubcategory}
+                  onChange={(e) => setFilterSubcategory(e.target.value)}
+                  style={selectStyle}
+                >
+                  <option value="">📂 Todas las Subcategorías</option>
+                  {subcategories.map((s) => (
+                    <option key={s.value} value={s.value}>{s.label}</option>
+                  ))}
+                </select>
+
+                <select
+                  value={filterBrand}
+                  onChange={(e) => setFilterBrand(e.target.value)}
+                  style={selectStyle}
+                >
+                  <option value="">🏷️ Todas las Marcas</option>
+                  {brands.map((b) => (
+                    <option key={b.value} value={b.value}>{b.label}</option>
+                  ))}
+                </select>
 
                 <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={filterVarianceOnly}
-                    onChange={(e) => setFilterVarianceOnly(e.target.checked)}
-                    className="rounded w-4 h-4"
-                  />
-                  <span className="text-sm font-medium">Solo items con varianza</span>
+                  <input type="checkbox" checked={filterVarianceOnly} onChange={(e) => setFilterVarianceOnly(e.target.checked)} className="rounded w-4 h-4" />
+                  <span className="text-sm font-medium">Solo variado</span>
                 </label>
               </div>
             </div>
           </div>
 
-          {/* TABLE */}
-          <div className="bg-gray-50 p-4">
-            {filteredItems.length === 0 ? (
-              <div className="text-center py-12 bg-white rounded-lg border">
-                <p className="text-gray-500">
-                  No hay items para mostrar
-                  {countItems.length > 0 && ` (${countItems.length} items en estado local)`}
-                </p>
-              </div>
-            ) : (
-              <div className="bg-white rounded-lg border overflow-hidden">
-                <table className="w-full border-collapse">
-                  <thead className="bg-gray-50 border-b">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Código</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Descripción</th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">UOM</th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Sistema</th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Conteo</th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Varianza</th>
-                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700">Estado</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredItems.map((item) => {
-                      const { variance, percent } = getVariance(item);
-                      const isVariance = variance !== 0;
-
-                      return (
-                        <tr
-                          key={item.id}
-                          className={`border-b hover:bg-gray-50 transition-colors ${isVariance ? 'bg-yellow-50' : ''}`}
-                        >
-                          <td className="px-4 py-3 font-mono text-sm text-gray-900 font-medium">
-                            {item.itemCode}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-700">{item.itemName}</td>
-                          <td className="px-4 py-3 text-right text-sm text-gray-600">{item.uom}</td>
-                          <td className="px-4 py-3 text-right text-sm font-medium text-gray-900">
-                            {(typeof item.systemQty === 'string' ? parseFloat(item.systemQty) : item.systemQty).toFixed(1)}
-                          </td>
-                          <td className="px-4 py-3">
-                            <Input
-                              type="number"
-                              value={item.countedQty ?? ''}
-                              onChange={(e) =>
-                                handleItemChange(item.id, e.target.value ? parseFloat(e.target.value) : 0)
-                              }
-                              placeholder="0"
-                              className="w-28 text-right text-sm"
-                            />
-                          </td>
-                          <td className={`px-4 py-3 text-right text-sm font-semibold ${
-                            variance < 0 ? 'text-green-600' : variance > 0 ? 'text-red-600' : 'text-gray-400'
-                          }`}>
+          <div className="p-4">
+            <div className="bg-white rounded-lg border overflow-hidden">
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Item</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">UOM</th>
+                    {hasSystemView && <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Sistema</th>}
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Conteo</th>
+                    {hasSystemView && <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Varianza</th>}
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700">Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredItems.map((item, index) => {
+                    const { variance, percent } = getVariance(item);
+                    return (
+                      <tr key={item.id} className={`border-b hover:bg-gray-50 ${variance !== 0 ? 'bg-yellow-50' : ''}`}>
+                        <td className="px-4 py-3">
+                          <p className="font-mono text-sm font-bold">{item.itemCode}</p>
+                          <p className="text-xs text-gray-500 truncate max-w-[200px]">{item.itemName}</p>
+                        </td>
+                        <td className="px-4 py-3 text-right text-sm">{item.uom}</td>
+                        {hasSystemView && <td className="px-4 py-3 text-right font-medium">{item.systemQty}</td>}
+                        <td className="px-4 py-3">
+                          <Input
+                            ref={index === 0 ? firstItemQtyRef : null}
+                            type="number" value={item.countedQty ?? ''}
+                            onChange={(e) => handleItemChange(item.id, parseFloat(e.target.value) || 0)}
+                            onKeyDown={(e) => handleQtyKeyDown(e, item.id)}
+                            className="w-24 text-right ml-auto"
+                          />
+                        </td>
+                        {hasSystemView && (
+                          <td className={`px-4 py-3 text-right font-bold ${variance < 0 ? 'text-green-600' : variance > 0 ? 'text-red-600' : 'text-gray-400'}`}>
                             {variance >= 0 ? '+' : ''}{variance.toFixed(1)} <br />
-                            <span className="text-xs text-gray-500">({percent.toFixed(1)}%)</span>
+                            <span className="text-[10px]">({percent.toFixed(1)}%)</span>
                           </td>
-                          <td className="px-4 py-3 text-center">
-                            {item.countedQty !== undefined && (
-                              <div className="flex items-center justify-center">
-                                {syncingItemIds.has(item.id) ? (
-                                  <span className="text-blue-600 font-semibold text-xs">⟳ Guardando...</span>
-                                ) : syncedItemIds.has(item.id) ? (
-                                  <span className="text-green-600 font-semibold text-xs">✓ Guardado</span>
-                                ) : (
-                                  <span className="text-gray-400 text-xs">•</span>
-                                )}
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {/* FOOTER - Summary Stats */}
-          {filteredItems.length > 0 && (
-            <div className="bg-white border-t">
-              <div className="px-6 py-4">
-                <div className="flex gap-6 items-center">
-                  {/* Total Items */}
-                  <div className="flex-1">
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Total Items</p>
-                    <p className="text-3xl font-bold text-gray-900">{filteredItems.length}</p>
-                  </div>
-
-                  {/* Contados */}
-                  <div className="flex-1 bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-lg p-4">
-                    <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-2">Contados</p>
-                    <p className="text-3xl font-bold text-blue-600">
-                      {filteredItems.filter((i) => i.countedQty !== undefined).length}
-                    </p>
-                  </div>
-
-                  {/* Con Varianza */}
-                  <div className="flex-1 bg-gradient-to-br from-yellow-50 to-yellow-100 border border-yellow-200 rounded-lg p-4">
-                    <p className="text-xs font-semibold text-yellow-700 uppercase tracking-wide mb-2">Con Varianza</p>
-                    <p className="text-3xl font-bold text-yellow-600">
-                      {filteredItems.filter((i) => getVariance(i).variance !== 0).length}
-                    </p>
-                  </div>
-                </div>
-              </div>
+                        )}
+                        <td className="px-4 py-3 text-center text-xs">
+                          {syncingItemIds.has(item.id) ? '⟳' : syncedItemIds.has(item.id) ? '✓' : ''}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-          )}
+          </div>
         </div>
 
-        {/* Modal para Nueva Versión */}
-        {newVersionData && (
-          <NewVersionModal
-            isOpen={showNewVersionModal}
-            onClose={() => {
-              setShowNewVersionModal(false);
-              setNewVersionData(null);
-            }}
-            versionNumber={newVersionData.versionNumber}
-            itemsCount={newVersionData.itemsCount}
-            previousVersion={newVersionData.previousVersion}
-          />
-        )}
-
-        {/* Modal de Notificación Simple */}
         <NotificationModal
           isOpen={notification.isOpen}
           onClose={() => setNotification({ ...notification, isOpen: false })}
-          type={notification.type}
-          title={notification.title}
-          message={notification.message}
-          autoClose={3000}
+          type={notification.type} title={notification.title} message={notification.message}
         />
 
-        {/* Modal de Confirmación para Eliminar */}
-        <ConfirmModal
-          isOpen={showDeleteConfirm}
-          onConfirm={() => {
-            if (countIdToDelete) {
-              setShowDeleteConfirm(false);
-              setCountIdToDelete(null);
-              deleteMutation.mutate(countIdToDelete);
-            }
-          }}
-          onCancel={() => {
-            setShowDeleteConfirm(false);
-            setCountIdToDelete(null);
-          }}
-          title="⚠️ Eliminar Conteo"
-          message="¿Estás seguro de que deseas eliminar este conteo? Se eliminarán todos sus items asociados y esta acción no se puede deshacer."
-          confirmText="Sí, Eliminar"
-          cancelText="Cancelar"
-          isDangerous={true}
-          isLoading={deleteMutation.isPending}
-        />
+        {newVersionData && (
+          <NewVersionModal
+            isOpen={showNewVersionModal} onClose={() => { setShowNewVersionModal(false); setNewVersionData(null); }}
+            versionNumber={newVersionData.versionNumber} itemsCount={newVersionData.itemsCount} previousVersion={newVersionData.previousVersion}
+          />
+        )}
       </div>
     );
   }

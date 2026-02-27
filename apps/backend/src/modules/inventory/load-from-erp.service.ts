@@ -18,6 +18,14 @@ interface LoadedItem {
   uom: string;
   baseUom: string;
   packQty: number;
+  // Campos opcionales — se mapean desde el ERP si están configurados
+  costPrice?: number;
+  salePrice?: number;
+  barCodeInv?: string;   // Código de barras inventario
+  barCodeVt?: string;    // Código de barras venta
+  brand?: string;        // Marca
+  category?: string;     // Categoría
+  subcategory?: string;  // Subcategoría
 }
 
 interface LoadInventoryResult {
@@ -29,7 +37,7 @@ interface LoadInventoryResult {
 }
 
 export class LoadInventoryFromERPService {
-  constructor(private fastify: FastifyInstance) {}
+  constructor(private fastify: FastifyInstance) { }
 
   /**
    * Cargar inventario desde ERP basado en configuración de mapeo
@@ -168,11 +176,19 @@ export class LoadInventoryFromERPService {
               itemCode: item.itemCode,
               itemName: item.itemName,
               systemQty: item.systemQty,
+              countedQty: null,           // Usuario llenará durante el conteo físico
               uom: item.uom || 'PZ',
               baseUom: item.baseUom || 'PZ',
               packQty: item.packQty || 1,
-              physicalQty: 0, // Usuario debe contar
-              variance: item.systemQty, // Diferencia inicial = systemQty
+              // Campos enriquecidos del ERP
+              ...(item.costPrice != null && { costPrice: item.costPrice }),
+              ...(item.salePrice != null && { salePrice: item.salePrice }),
+              ...(item.barCodeInv && { barCodeInv: item.barCodeInv }),
+              ...(item.barCodeVt && { barCodeVt: item.barCodeVt }),
+              ...(item.brand && { brand: item.brand }),
+              ...(item.category && { category: item.category }),
+              ...(item.subcategory && { subcategory: item.subcategory }),
+              status: 'PENDING',
               notes: 'Loaded from ERP',
             },
           });
@@ -236,6 +252,49 @@ export class LoadInventoryFromERPService {
       // Si filters es string (JSON), parsearlo
       if (typeof filters === 'string') {
         filters = JSON.parse(filters);
+      }
+
+      // ─── Normalizar formato array posicional del SimpleMappingBuilder ────────────
+      // El frontend guarda filters como: [joins[], whereFilters[], mainTable(string), selectedColumns[]]
+      // Lo convertimos al formato objeto que espera el builder.
+      if (Array.isArray(filters)) {
+        this.fastify.log.info('🔄 [buildQueryFromMapping] Detecting array-positional filters format, normalizing...');
+        const rawArray = filters as any[];
+        const normalizedFilters: {
+          mainTable: string;
+          joins: any[];
+          filters: any[];
+          selectedColumns: string[];
+        } = {
+          mainTable: '',
+          joins: [],
+          filters: [],
+          selectedColumns: [],
+        };
+
+        for (const element of rawArray) {
+          if (typeof element === 'string') {
+            // Es la tabla principal
+            normalizedFilters.mainTable = element;
+          } else if (Array.isArray(element) && element.length > 0) {
+            const first = element[0];
+            if (typeof first === 'string') {
+              // Array de strings → selectedColumns: ["a.ARTICULO", "a.DESCRIPCION", ...]
+              normalizedFilters.selectedColumns = element;
+            } else if (typeof first === 'object' && first !== null) {
+              if ('table' in first || 'joinType' in first || 'joinCondition' in first) {
+                // Array de JOINs: [{table, alias, joinType, joinCondition}]
+                normalizedFilters.joins = element;
+              } else if ('field' in first || 'operator' in first || 'value' in first) {
+                // Array de filtros WHERE: [{field, operator, value}]
+                normalizedFilters.filters = element;
+              }
+            }
+          }
+        }
+
+        filters = normalizedFilters;
+        this.fastify.log.info(`✅ [buildQueryFromMapping] Normalized: mainTable="${normalizedFilters.mainTable}", ${normalizedFilters.joins.length} joins, ${normalizedFilters.filters.length} filters, ${normalizedFilters.selectedColumns.length} columns`);
       }
 
       const mainTable = filters.mainTable || mappingConfig.sourceTables?.[0] || '';
@@ -507,14 +566,26 @@ export class LoadInventoryFromERPService {
             }
           }
 
-          // Mapear a estructura de LoadedItem
+          // Mapear a estructura completa de LoadedItem
+          const toNum = (v: any) => v != null && v !== '' ? parseFloat(String(v)) : undefined;
+          const toStr = (v: any) => v != null && v !== '' ? String(v).trim() : undefined;
+
           return {
-            itemCode: result.itemCode || '',
-            itemName: result.itemName || '',
-            systemQty: parseFloat(result.quantity || result.systemQty || '0'),
-            uom: result.uom || 'PZ',
-            baseUom: result.baseUom || 'PZ',
-            packQty: parseFloat(result.packQty || '1'),
+            itemCode: String(result.itemCode || '').trim(),
+            itemName: String(result.itemName || '').trim(),
+            systemQty: toNum(result.systemQty ?? result.quantity ?? result.cantDisponible ?? result.cant_disponible) ?? 0,
+            uom: toStr(result.uom) ?? 'PZ',
+            baseUom: toStr(result.baseUom) ?? 'PZ',
+            packQty: toNum(result.packQty ?? result.pesoBruto ?? result.peso_bruto) ?? 1,
+            // Campos opcionales — si el mapping los incluye, se persisten
+            // Se aceptan tanto los nombres del mapping (cost, price) como los canónicos (costPrice, salePrice)
+            costPrice: toNum(result.costPrice ?? result.cost ?? result.costoUltLoc ?? result.costo_ult_loc),
+            salePrice: toNum(result.salePrice ?? result.price ?? result.precio),
+            barCodeInv: toStr(result.barCodeInv ?? result.barcode ?? result.barCode ?? result.codigoBarrasInventario),
+            barCodeVt: toStr(result.barCodeVt ?? result.barcodeVt ?? result.barCodeVenta ?? result.codigoBarrasVenta),
+            brand: toStr(result.brand ?? result.marca),
+            category: toStr(result.category ?? result.categoria ?? result.clasificacion1 ?? result.clasificacion_1),
+            subcategory: toStr(result.subcategory ?? result.subcategoria ?? result.clasificacion2 ?? result.clasificacion_2),
           };
         } catch (error) {
           console.error('Error transforming row:', error);

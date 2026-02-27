@@ -4,32 +4,32 @@ import { z } from 'zod';
 export const CreateRoleSchema = z.object({
   name: z.string().min(1, 'Role name is required').max(100),
   description: z.string().max(500).optional(),
-  permissionIds: z.array(z.string().uuid()).min(1, 'At least one permission required'),
+  permissionIds: z.array(z.string()).min(1, 'At least one permission required'),
 });
 
 export const UpdateRoleSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   description: z.string().max(500).optional(),
-  permissionIds: z.array(z.string().uuid()).optional(),
+  permissionIds: z.array(z.string()).optional(),
 });
 
 export const AssignPermissionsSchema = z.object({
-  permissionIds: z.array(z.string().uuid()).min(1, 'At least one permission required'),
+  permissionIds: z.array(z.string()).min(1, 'At least one permission required'),
 });
 
 // Response schemas
 export const PermissionSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string(),
   name: z.string(),
-  code: z.string(),
   description: z.string().optional(),
+  category: z.string(),
 });
 
 export const RoleResponseSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string(),
   name: z.string(),
   description: z.string().nullable(),
-  companyId: z.string().uuid(),
+  companyId: z.string(),
   isActive: z.boolean(),
   permissionCount: z.number().int(),
   createdAt: z.date(),
@@ -37,10 +37,10 @@ export const RoleResponseSchema = z.object({
 });
 
 export const RoleDetailSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string(),
   name: z.string(),
   description: z.string().nullable(),
-  companyId: z.string().uuid(),
+  companyId: z.string(),
   isActive: z.boolean(),
   permissions: z.array(PermissionSchema),
   createdAt: z.date(),

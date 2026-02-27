@@ -16,10 +16,9 @@ export class UsersController {
   // List users in company
   async listUsers(request: any, reply: any) {
     try {
-      const companyId = request.user?.companyId;
-      if (!companyId) {
-        throw new AppError(401, 'Company context required');
-      }
+      const user = request.user;
+      this.checkPermission(user, 'users:manage');
+      const companyId = user.companyId;
 
       const query = ListUsersQuerySchema.parse(request.query);
       const isActiveFilter = query.isActive === 'true' ? true : query.isActive === 'false' ? false : undefined;
@@ -48,17 +47,16 @@ export class UsersController {
   // Get single user
   async getUser(request: any, reply: any) {
     try {
-      const companyId = request.user?.companyId;
-      if (!companyId) {
-        throw new AppError(401, 'Company context required');
-      }
+      const user = request.user;
+      this.checkPermission(user, 'users:manage');
+      const companyId = user.companyId;
 
       const { id } = request.params;
-      const user = await this.service.getUser(id, companyId);
+      const dbUser = await this.service.getUser(id, companyId);
 
       return reply.code(200).send({
         success: true,
-        data: user,
+        data: dbUser,
       });
     } catch (error: any) {
       throw error;
@@ -68,27 +66,26 @@ export class UsersController {
   // Create user
   async createUser(request: any, reply: any) {
     try {
-      const companyId = request.user?.companyId;
-      if (!companyId) {
-        throw new AppError(401, 'Company context required');
-      }
+      const user = request.user;
+      this.checkPermission(user, 'users:manage');
+      const companyId = user.companyId;
 
       const payload = CreateUserSchema.parse(request.body);
-      const user = await this.service.createUser(companyId, payload);
+      const newUser = await this.service.createUser(companyId, payload);
 
       // Log audit event
       const { auditLogger } = await import('../../utils/audit-logger');
       await auditLogger.log({
-        userId: request.user?.id,
+        userId: user.userId,
         companyId,
         action: 'CREATE',
         resource: 'User',
-        resourceId: user.id,
+        resourceId: newUser.id,
       });
 
       return reply.code(201).send({
         success: true,
-        data: user,
+        data: newUser,
       });
     } catch (error: any) {
       if (error instanceof ValidationError) {
@@ -101,28 +98,27 @@ export class UsersController {
   // Update user
   async updateUser(request: any, reply: any) {
     try {
-      const companyId = request.user?.companyId;
-      if (!companyId) {
-        throw new AppError(401, 'Company context required');
-      }
+      const user = request.user;
+      this.checkPermission(user, 'users:manage');
+      const companyId = user.companyId;
 
       const { id } = request.params;
       const payload = UpdateUserSchema.parse(request.body);
-      const user = await this.service.updateUser(id, companyId, payload);
+      const updatedUser = await this.service.updateUser(id, companyId, payload);
 
       // Log audit event
       const { auditLogger } = await import('../../utils/audit-logger');
       await auditLogger.log({
-        userId: request.user?.id,
+        userId: user.userId,
         companyId,
         action: 'UPDATE',
         resource: 'User',
-        resourceId: user.id,
+        resourceId: updatedUser.id,
       });
 
       return reply.code(200).send({
         success: true,
-        data: user,
+        data: updatedUser,
       });
     } catch (error: any) {
       throw error;
@@ -132,10 +128,9 @@ export class UsersController {
   // Delete user (soft delete)
   async deleteUser(request: any, reply: any) {
     try {
-      const companyId = request.user?.companyId;
-      if (!companyId) {
-        throw new AppError(401, 'Company context required');
-      }
+      const user = request.user;
+      this.checkPermission(user, 'users:manage');
+      const companyId = user.companyId;
 
       const { id } = request.params;
       await this.service.deleteUser(id, companyId);
@@ -143,7 +138,7 @@ export class UsersController {
       // Log audit event
       const { auditLogger } = await import('../../utils/audit-logger');
       await auditLogger.log({
-        userId: request.user?.id,
+        userId: user.userId,
         companyId,
         action: 'DELETE',
         resource: 'User',
@@ -162,10 +157,9 @@ export class UsersController {
   // Assign role to user
   async assignRole(request: any, reply: any) {
     try {
-      const companyId = request.user?.companyId;
-      if (!companyId) {
-        throw new AppError(401, 'Company context required');
-      }
+      const user = request.user;
+      this.checkPermission(user, 'users:manage');
+      const companyId = user.companyId;
 
       const { id } = request.params;
       const { roleId } = request.body;
@@ -179,7 +173,7 @@ export class UsersController {
       // Log audit event
       const { auditLogger } = await import('../../utils/audit-logger');
       await auditLogger.log({
-        userId: request.user?.id,
+        userId: user.userId,
         companyId,
         action: 'ASSIGN_ROLE',
         resource: 'User',
@@ -191,6 +185,19 @@ export class UsersController {
         message: 'Role assigned successfully',
       });
     } catch (error: any) {
+      throw error;
+    }
+  }
+
+  private checkPermission(user: any, permission: string) {
+    if (user && user.roles && user.roles.includes('SuperAdmin')) {
+      return;
+    }
+
+    if (!user || !user.permissions || !user.permissions.includes(permission)) {
+      const error: any = new Error(`Forbidden: Missing permission ${permission}`);
+      error.statusCode = 403;
+      error.code = 'FORBIDDEN';
       throw error;
     }
   }
