@@ -53,6 +53,10 @@ function App() {
 
         if (shouldBeJson) {
           try {
+            if (!trimmed || trimmed === '') {
+              keysToClear.push(key);
+              continue;
+            }
             JSON.parse(value);
           } catch (e) {
             // Solo borramos si contiene caracteres sospechosos de error de red o de parseo fallido de objeto

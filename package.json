@@ -9,7 +9,10 @@
     "dev": "pnpm -r --parallel run dev",
     "build": "pnpm -r run build",
     "lint": "pnpm -r run lint",
-    "type-check": "pnpm -r run type-check"
+    "type-check": "pnpm -r run type-check",
+    "android": "expo run:android",
+    "ios": "expo run:ios"
   },
-  "devDependencies": {}
+  "devDependencies": {},
+  "dependencies": {}
 }

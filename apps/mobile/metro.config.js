@@ -7,7 +7,8 @@ const workspaceRoot = path.resolve(projectRoot, '../..');
 
 const config = getDefaultConfig(projectRoot);
 
-// 2. Watch all files within the monorepo
+// 2. Monorepo / pnpm configuration
+config.projectRoot = projectRoot;
 config.watchFolders = [workspaceRoot];
 
 // 3. Let Metro know where to resolve packages and following symlinks
@@ -23,16 +24,17 @@ config.resolver.resolverMainFields = ['react-native', 'browser', 'main'];
 config.resolver.unstable_enablePackageExports = false;
 
 // 6. Polyfill or empty-out node-specific modules if requested by packages
+const emptyModulePath = path.resolve(__dirname, 'empty-module.js');
 config.resolver.extraNodeModules = {
-    crypto: require.resolve('empty-module'),
-    fs: require.resolve('empty-module'),
+    crypto: emptyModulePath,
+    fs: emptyModulePath,
     path: require.resolve('path-browserify'),
     stream: require.resolve('stream-browserify'),
     url: require.resolve('url'),
-    http: require.resolve('empty-module'),
-    https: require.resolve('empty-module'),
-    zlib: require.resolve('empty-module'),
-    os: require.resolve('empty-module'),
+    http: emptyModulePath,
+    https: emptyModulePath,
+    zlib: emptyModulePath,
+    os: emptyModulePath,
 };
 
 module.exports = config;

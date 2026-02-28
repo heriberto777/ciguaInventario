@@ -25,6 +25,7 @@ export default function ServerSetupScreen() {
     const [testing, setTesting] = useState(false);
     const [saving, setSaving] = useState(false);
     const [testResult, setTestResult] = useState<'ok' | 'error' | null>(null);
+    const [errorDetail, setErrorDetail] = useState<string | null>(null);
 
     // Cargar config guardada
     useEffect(() => {
@@ -52,13 +53,23 @@ export default function ServerSetupScreen() {
         }
         setTesting(true);
         setTestResult(null);
+        setErrorDetail(null);
         try {
             const url = buildApiUrl(buildConfig());
             // Prueba el health check del backend
-            await axios.get(`${url}/health`, { timeout: 5000 });
+            const response = await axios.get(`${url}/health`, { timeout: 8000 });
             setTestResult('ok');
-        } catch {
+        } catch (err: any) {
             setTestResult('error');
+            let det = '';
+            if (err.response) {
+                det = `Respuesta del servidor: ${err.response.status} - ${JSON.stringify(err.response.data)}`;
+            } else if (err.request) {
+                det = `Sin respuesta del servidor. Verifica que la IP ${host} sea accesible y el puerto ${port} esté abierto. Error: ${err.message}`;
+            } else {
+                det = `Error de configuración: ${err.message}`;
+            }
+            setErrorDetail(det);
         } finally {
             setTesting(false);
         }
@@ -177,6 +188,12 @@ export default function ServerSetupScreen() {
                     <Text style={styles.testResultText}>
                         ❌ No se pudo conectar. Verifica la IP, puerto y que el servidor esté activo.
                     </Text>
+                    {errorDetail && (
+                        <View style={styles.errorLogBox}>
+                            <Text style={styles.errorLogTitle}>LOG DE ERROR (Diagnostic):</Text>
+                            <Text style={styles.errorLogText}>{errorDetail}</Text>
+                        </View>
+                    )}
                 </View>
             )}
 
@@ -262,6 +279,26 @@ const styles = StyleSheet.create({
     testOk: { backgroundColor: '#dcfce7' },
     testError: { backgroundColor: '#fee2e2' },
     testResultText: { fontSize: 13, fontWeight: '600' },
+
+    errorLogBox: {
+        marginTop: 10,
+        padding: 8,
+        backgroundColor: '#fff',
+        borderRadius: 6,
+        borderWidth: 1,
+        borderColor: '#fecaca',
+    },
+    errorLogTitle: {
+        fontSize: 10,
+        fontWeight: 'bold',
+        color: '#b91c1c',
+        marginBottom: 4,
+    },
+    errorLogText: {
+        fontSize: 11,
+        color: '#7f1d1d',
+        fontFamily: 'monospace',
+    },
 
     testBtn: {
         borderWidth: 2, borderColor: '#6366f1',

@@ -158,8 +158,8 @@ const InventoryDashboardPage: React.FC = () => {
                       <td className="px-4 py-3 text-gray-600">{count.warehouse?.name}</td>
                       <td className="px-4 py-3">
                         <span className={`px-2 py-1 rounded-full text-[10px] font-black tracking-wider uppercase ${count.status === 'COMPLETED'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : 'bg-amber-100 text-amber-800'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-amber-100 text-amber-800'
                           }`}>
                           {count.status}
                         </span>
@@ -189,7 +189,7 @@ const InventoryDashboardPage: React.FC = () => {
                   <div className="flex justify-between items-start mb-1">
                     <p className="font-bold text-sm text-red-900">{item.itemCode}</p>
                     <span className="text-sm font-black text-red-600 bg-white px-2 py-0.5 rounded-lg shadow-sm">
-                      {item.variancePercent.toFixed(1)}%
+                      {typeof item.variancePercent === 'number' ? item.variancePercent.toFixed(1) : '0.0'}%
                     </span>
                   </div>
                   <p className="text-xs text-red-700 mb-2 font-medium line-clamp-1">{item.itemName}</p>

@@ -1,3 +1,7 @@
 {
-  "expo": {}
+  "expo": {
+    "android": {
+      "package": "com.heriberto777.ciguainv"
+    }
+  }
 }

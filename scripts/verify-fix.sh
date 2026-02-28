@@ -22,8 +22,8 @@ grep -n "Failed to connect to ERP" "apps/backend/src/modules/erp-connections/con
 
 echo ""
 echo "4️⃣ Documentación"
-[ -f "FIX_CONEXION_NO_VALIDA.md" ] && echo "✅ FIX_CONEXION_NO_VALIDA.md creado" || echo "❌ No encontrado"
-[ -f "RESUMEN_FIX_CONEXION_NO_VALIDA.md" ] && echo "✅ RESUMEN_FIX_CONEXION_NO_VALIDA.md creado" || echo "❌ No encontrado"
+[ -f "docs/fixes/FIX_CONEXION_NO_VALIDA.md" ] && echo "✅ FIX_CONEXION_NO_VALIDA.md creado" || echo "❌ No encontrado"
+[ -f "docs/reports/RESUMEN_FIX_CONEXION_NO_VALIDA.md" ] && echo "✅ RESUMEN_FIX_CONEXION_NO_VALIDA.md creado" || echo "❌ No encontrado"
 
 echo ""
 echo "✨ Verificación completada"

@@ -56,12 +56,26 @@ cigua-inv/
 │       └── src/
 │           ├── types/          # Domain types
 │           └── schemas/        # Zod schemas
+├── docs/               # Root for all project documentation
+│   ├── architecture/   # Technical design, schemas, and system overviews
+│   ├── archive/        # Legacy summaries and completed session notes
+│   ├── checklists/     # Verification, migration, and planning checklists
+│   ├── features/       # Documentation for specific functional areas
+│   ├── fixes/          # Reports and guides for solved issues
+│   ├── guides/         # Instructional guides, manuals, and FAQs
+│   ├── processes/      # Business logic, workflows, and state machines
+│   └── reports/        # Audits, analysis, and session summaries
+├── scripts/            # Shell and batch scripts for setup and maintenance
 ├── docker-compose.yml
 ├── pnpm-workspace.yaml
 ├── tsconfig.base.json
 ├── package.json
 └── .env.example
 ```
+
+## Documentation
+
+The project documentation has been reorganized into the `docs/` directory for better maintainability. Use the [Index Master](file:///docs/INDEX_MASTER_FINAL.md) as a starting point to navigate the available documentation.
 
 ## Getting Started
 

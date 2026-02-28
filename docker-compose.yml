@@ -4,8 +4,8 @@ services:
     container_name: cigua_postgres
     environment:
       POSTGRES_DB: cigua_inv
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: eli112910
     ports:
       - "5432:5432"
     volumes:

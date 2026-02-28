@@ -8,11 +8,18 @@
     "assetBundlePatterns": [
       "**/*"
     ],
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
     "ios": {
       "bundleIdentifier": "com.ciguainv.mobile"
     },
     "android": {
-      "package": "com.ciguainv.mobile"
+      "package": "com.ciguainv.mobile",
+      "usesCleartextTraffic": true
     },
     "plugins": [
       "expo-router",
