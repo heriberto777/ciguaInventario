@@ -1,5 +1,53 @@
-.env.local
+# Dependencies
 node_modules/
+.pnpm-store/
+
+# Sensitive files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.docker
+*.pem
+*.key
+
+# Build artifacts
 dist/
-.DS_Store
+build/
+out/
+.next/
+bin/
+obj/
+
+# Expo / React Native
+.expo/
+android/app/build/
+android/.gradle/
+ios/build/
+*.jks
+*.keystore
+android/app/src/main/res/xml/network_security_config.xml
+
+# Logs
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs/
+pm2-logs/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Misc
+tmp/
+.temp/
+.cache/
