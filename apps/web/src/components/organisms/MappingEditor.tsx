@@ -33,7 +33,7 @@ export function MappingEditor() {
   const { register, handleSubmit, formState: { errors } } = useForm<CreateMappingForm>({
     resolver: zodResolver(createMappingSchema),
   });
-  const { mutate: createMapping, isLoading, isError, error } = useCreateMapping();
+  const { mutate: createMapping, isPending, isError, error } = useCreateMapping();
   const [success, setSuccess] = useState(false);
   const [erpConnections, setErpConnections] = useState<ERPConnection[]>([]);
   const [loading, setLoading] = useState(true);
@@ -180,16 +180,12 @@ export function MappingEditor() {
           />
         </div>
 
-        <button
+        <Button
           type="submit"
-          disabled={isLoading || loading || erpConnections.length === 0}
-          className={`w-full px-4 py-2 rounded-md font-medium text-white transition-colors ${
-            isLoading || loading || erpConnections.length === 0
-              ? 'bg-gray-400 cursor-not-allowed'
-              : 'bg-blue-600 hover:bg-blue-700'
-          }`}
+          disabled={isPending || loading || erpConnections.length === 0}
+          className="w-full"
         >
-          {isLoading ? (
+          {isPending ? (
             <span className="flex items-center justify-center gap-2">
               <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
               Creating...
@@ -197,7 +193,7 @@ export function MappingEditor() {
           ) : (
             'Create Mapping'
           )}
-        </button>
+        </Button>
       </form>
     </Card>
   );

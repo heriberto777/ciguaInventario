@@ -1,13 +1,13 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer,
     PieChart, Pie, Cell, LineChart, Line, Legend
 } from 'recharts';
 import { AdminLayout } from '@/components/templates/AdminLayout';
 import { getApiClient } from '@/services/api';
-import { Button } from '@/components/atoms/Button';
 import { useQuery } from '@tanstack/react-query';
 
 const apiClient = getApiClient();
@@ -18,92 +18,79 @@ interface Message {
     createdAt?: string;
 }
 
-const COLORS = ['#3b82f6', '#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316', '#eab308'];
+const COLORS = [
+    'var(--accent-primary)',
+    'var(--accent-secondary)',
+    '#3b82f6',
+    '#10b981',
+    '#f59e0b',
+    '#ef4444'
+];
 
 function ChartRenderer({ content }: { content: string }) {
     const chartData = useMemo(() => {
         try {
-            // Buscamos un bloque de código JSON que empiece por { "chartType": ... }
             const jsonMatch = content.match(/```(?:json|chart)?\s*(\{[\s\S]*?\})\s*```/);
             if (!jsonMatch) return null;
             return JSON.parse(jsonMatch[1]);
         } catch (e) {
-            console.error('Error parseando datos del gráfico:', e);
             return null;
         }
     }, [content]);
 
     if (!chartData || !chartData.type || !chartData.data) return null;
-
     const { type, data, title } = chartData;
 
     return (
-        <div className="mt-4 p-4 bg-slate-900/50 rounded-2xl border border-white/5 shadow-2xl overflow-hidden min-h-[300px]">
-            {title && <h4 className="text-center text-xs font-black uppercase tracking-widest text-blue-400 mb-4">{title}</h4>}
+        <div className="mt-6 p-8 bg-app rounded-3xl border border-border-default overflow-hidden min-h-[320px] shadow-inner">
+            {title && <h4 className="text-center text-[10px] font-black uppercase tracking-[0.2em] text-muted mb-8">{title}</h4>}
             <div className="h-[250px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
                     {type === 'bar' ? (
-                        /* @ts-ignore - React 19 types mismatch */
                         <BarChart data={data}>
-                            {/* @ts-ignore */}
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                            {/* @ts-ignore */}
-                            <XAxis dataKey="name" stroke="#94a3b8" fontSize={10} tick={{ fill: '#94a3b8' }} />
-                            {/* @ts-ignore */}
-                            <YAxis stroke="#94a3b8" fontSize={10} tick={{ fill: '#94a3b8' }} />
-                            {/* @ts-ignore */}
-                            <Tooltip
-                                contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }}
-                                itemStyle={{ fontWeight: 'bold' }}
+                            <CartesianGrid strokeDasharray="3 3" stroke="var(--border-default)" vertical={false} opacity={0.5} />
+                            <XAxis dataKey="name" fontSize={10} tick={{ fill: 'var(--text-secondary)', fontWeight: 700 }} axisLine={false} tickLine={false} />
+                            <YAxis fontSize={10} tick={{ fill: 'var(--text-secondary)', fontWeight: 700 }} axisLine={false} tickLine={false} />
+                            <RechartsTooltip
+                                contentStyle={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-default)', borderRadius: '12px', fontSize: '11px', fontWeight: 700, boxShadow: 'var(--shadow-lg)' }}
+                                cursor={{ fill: 'var(--bg-hover)', opacity: 0.4 }}
                             />
-                            {/* @ts-ignore */}
-                            <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                            <Bar dataKey="value" radius={[6, 6, 0, 0]} barSize={35}>
                                 {data.map((entry: any, index: number) => (
-                                    /* @ts-ignore */
                                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                 ))}
                             </Bar>
                         </BarChart>
                     ) : type === 'pie' ? (
-                        /* @ts-ignore */
                         <PieChart>
-                            {/* @ts-ignore */}
                             <Pie
                                 data={data}
                                 cx="50%"
                                 cy="50%"
-                                innerRadius={60}
-                                outerRadius={80}
-                                paddingAngle={5}
+                                innerRadius={70}
+                                outerRadius={90}
+                                paddingAngle={8}
                                 dataKey="value"
+                                stroke="none"
                             >
                                 {data.map((entry: any, index: number) => (
-                                    /* @ts-ignore */
                                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                 ))}
                             </Pie>
-                            {/* @ts-ignore */}
-                            <Tooltip
-                                contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }}
+                            <RechartsTooltip
+                                contentStyle={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-default)', borderRadius: '12px', fontSize: '11px', fontWeight: 700 }}
                             />
-                            {/* @ts-ignore */}
-                            <Legend wrapperStyle={{ fontSize: '10px', paddingTop: '10px' }} />
+                            <Legend iconType="circle" wrapperStyle={{ fontSize: '10px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', paddingTop: '20px' }} />
                         </PieChart>
                     ) : (
-                        /* @ts-ignore */
                         <LineChart data={data}>
-                            {/* @ts-ignore */}
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                            {/* @ts-ignore */}
-                            <XAxis dataKey="name" stroke="#94a3b8" fontSize={10} />
-                            {/* @ts-ignore */}
-                            <YAxis stroke="#94a3b8" fontSize={10} />
-                            {/* @ts-ignore */}
-                            <Tooltip
-                                contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }}
+                            <CartesianGrid strokeDasharray="3 3" stroke="var(--border-default)" vertical={false} opacity={0.5} />
+                            <XAxis dataKey="name" fontSize={10} tick={{ fill: 'var(--text-secondary)', fontWeight: 700 }} axisLine={false} />
+                            <YAxis fontSize={10} tick={{ fill: 'var(--text-secondary)', fontWeight: 700 }} axisLine={false} />
+                            <RechartsTooltip
+                                contentStyle={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-default)', borderRadius: '12px', fontSize: '11px', fontWeight: 700 }}
                             />
-                            {/* @ts-ignore */}
-                            <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4, fill: '#3b82f6' }} />
+                            <Line type="monotone" dataKey="value" stroke="var(--accent-primary)" strokeWidth={4} dot={{ r: 5, fill: 'var(--accent-primary)', strokeWidth: 2, stroke: 'var(--bg-card)' }} activeDot={{ r: 7, strokeWidth: 0 }} />
                         </LineChart>
                     )}
                 </ResponsiveContainer>
@@ -116,9 +103,9 @@ export function AIChatPage() {
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const location = useLocation();
     const scrollRef = useRef<HTMLDivElement>(null);
 
-    // Cargar historial desde el servidor
     const { data: historyData, isLoading: isLoadingHistory } = useQuery({
         queryKey: ['chat-history'],
         queryFn: async () => {
@@ -134,12 +121,11 @@ export function AIChatPage() {
                 content: m.content,
                 createdAt: m.createdAt
             }));
-
             if (mappedMessages.length > 0) {
                 setMessages(mappedMessages);
             } else {
                 setMessages([
-                    { role: 'assistant', content: '¡Hola! Soy tu Asistente de Inventario Pro. He cargado nuestro historial. ¿En qué puedo ayudarte a analizar hoy?' }
+                    { role: 'assistant', content: '¡Hola! Soy tu Asistente de Inventario Inteligente. ¿Qué deseas auditar hoy?' }
                 ]);
             }
         }
@@ -151,221 +137,196 @@ export function AIChatPage() {
         }
     }, [messages, isLoading]);
 
-    const handleSend = async () => {
-        if (!input.trim() || isLoading) return;
+    // Auto-trigger from state
+    useEffect(() => {
+        if (location.state?.message && !isLoading && !isLoadingHistory) {
+            handleSendWithText(location.state.message);
+            // Clear state
+            window.history.replaceState({}, document.title);
+        }
+    }, [location.state, historyData, isLoadingHistory]);
 
-        const userMsg: Message = { role: 'user', content: input };
+    const handleSendWithText = async (text: string) => {
+        if (!text.trim() || isLoading) return;
+        const userMsg: Message = { role: 'user', content: text };
         setMessages(prev => [...prev, userMsg]);
-        setInput('');
         setIsLoading(true);
 
         try {
             const response = await apiClient.post('/reports/chat-ai', {
-                message: input,
-                context: {
-                    previousMessages: messages.slice(-5)
-                }
+                message: text,
+                context: { previousMessages: messages.slice(-5) }
             });
-
-            const assistantMsg: Message = {
-                role: 'assistant',
-                content: response.data.analysis
-            };
-            setMessages(prev => [...prev, assistantMsg]);
+            setMessages(prev => [...prev, { role: 'assistant', content: response.data.analysis }]);
         } catch (error) {
-            console.error(error);
             setMessages(prev => [...prev, {
                 role: 'assistant',
-                content: 'Lo siento, hubo un error al procesar tu consulta. Verifica la configuración de tu IA o tu conexión.'
+                content: 'Lo siento, hubo un error al procesar tu consulta estratégica.'
             }]);
         } finally {
             setIsLoading(false);
         }
     };
 
-    return (
-        <AdminLayout title="Cigua AI Auditor VIP">
-            <div className="max-w-6xl mx-auto h-[calc(100vh-140px)] flex flex-col bg-slate-950/40 backdrop-blur-xl rounded-[2.5rem] shadow-[0_32px_120px_-20px_rgba(0,0,0,0.5)] border border-white/5 overflow-hidden relative">
-                {/* Decorative Background Elements */}
-                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-blue-500/50 to-transparent opacity-50"></div>
+    const handleSend = async () => {
+        if (!input.trim() || isLoading) return;
+        await handleSendWithText(input);
+        setInput('');
+    };
 
-                {/* Header Premium (Glassy) */}
-                <div className="bg-white/[0.02] backdrop-blur-md p-8 flex items-center justify-between border-b border-white/5 relative z-10">
-                    <div className="flex items-center gap-6">
-                        <div className="relative">
-                            <div className="absolute -inset-1 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-2xl blur opacity-30 animate-pulse"></div>
-                            <div className="relative w-14 h-14 bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl flex items-center justify-center text-3xl border border-white/10 shadow-2xl">
-                                🤖
+    return (
+        <>
+            <AdminLayout title="Cigua AI Intelligence">
+                <div className="max-w-5xl mx-auto h-[calc(100vh-140px)] flex flex-col bg-card rounded-[2.5rem] border border-border-default shadow-2xl overflow-hidden">
+                    {/* Header Flat */}
+                    <div className="p-8 flex items-center justify-between border-b border-border-default bg-hover/30 backdrop-blur-md">
+                        <div className="flex items-center gap-5">
+                            <div className="w-14 h-14 bg-card rounded-2xl flex items-center justify-center text-3xl border border-border-default shadow-lg">
+                                🧠
+                            </div>
+                            <div>
+                                <h2 className="text-xl font-black text-primary tracking-tight">Cigua Core AI</h2>
+                                <div className="flex items-center gap-2">
+                                    <span className="w-2.5 h-2.5 bg-success rounded-full animate-pulse"></span>
+                                    <p className="text-[10px] text-secondary font-black uppercase tracking-[0.2em]">Auditoría en tiempo real</p>
+                                </div>
                             </div>
                         </div>
                         <div>
-                            <div className="flex items-center gap-3">
-                                <h2 className="text-2xl font-black text-white tracking-tight">Cigua Auditor <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-400">VIP</span></h2>
-                                <span className="bg-blue-500/10 text-blue-400 text-[10px] uppercase font-black px-2 py-0.5 rounded-md border border-blue-500/20 tracking-widest">Enterprise AI</span>
-                            </div>
-                            <div className="flex items-center gap-2 mt-1">
-                                <span className="w-2 h-2 bg-emerald-500 rounded-full shadow-[0_0_10px_rgba(16,185,129,0.5)] animate-pulse"></span>
-                                <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest">Motor de Auditoría Activo</p>
-                            </div>
+                            <button
+                                onClick={() => setMessages([{ role: 'assistant', content: 'Sesión reiniciada. ¿En qué puedo ayudarte?' }])}
+                                className="text-[10px] font-black uppercase tracking-widest text-muted hover:text-danger hover:scale-105 transition-all"
+                            >
+                                Limpiar Canal
+                            </button>
                         </div>
                     </div>
 
-                    <div className="flex gap-4">
-                        <div className="hidden lg:flex flex-col items-end px-6 border-r border-white/5">
-                            <span className="text-[10px] text-slate-500 uppercase tracking-widest font-black">Estado Global</span>
-                            <span className="text-sm font-bold text-slate-200">Sincronizado</span>
-                        </div>
-                        <div className="flex flex-col items-end">
-                            <span className="text-[10px] text-slate-500 uppercase tracking-widest font-black">Sessión</span>
-                            <span className="text-sm font-bold text-white uppercase tracking-tighter">Premium User</span>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Chat Area con diseño inmersivo */}
-                <div
-                    ref={scrollRef}
-                    className="flex-1 overflow-y-auto p-10 space-y-10 scroll-smooth custom-scrollbar bg-slate-950/20"
-                >
-                    {isLoadingHistory ? (
-                        <div className="flex flex-col items-center justify-center h-full gap-6">
-                            <div className="relative w-16 h-16">
-                                <div className="absolute inset-0 border-4 border-blue-500/10 rounded-full"></div>
-                                <div className="absolute inset-0 border-4 border-t-indigo-500 rounded-full animate-spin"></div>
+                    {/* Chat Area Flat */}
+                    <div
+                        ref={scrollRef}
+                        className="flex-1 overflow-y-auto p-10 space-y-10 scroll-smooth custom-scrollbar bg-card/50"
+                    >
+                        {isLoadingHistory ? (
+                            <div className="flex flex-col items-center justify-center h-full gap-6">
+                                <div className="w-12 h-12 border-4 border-border-default border-t-accent-primary rounded-full animate-spin"></div>
+                                <p className="text-muted text-[10px] font-black uppercase tracking-[0.3em]">Iniciando Protocolos AI...</p>
                             </div>
-                            <p className="text-slate-400 text-xs font-black uppercase tracking-[0.2em] animate-pulse">Restaurando Contexto Seguro...</p>
-                        </div>
-                    ) : (
-                        messages.map((msg, i) => (
-                            <div key={i} className={`flex transition-all duration-500 ease-out ${msg.role === 'user' ? 'justify-end animate-in slide-in-from-right-8' : 'justify-start animate-in slide-in-from-left-8'}`}>
-                                <div className={`flex gap-5 max-w-[90%] ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
-                                    <div className={`w-10 h-10 rounded-2xl flex-shrink-0 flex items-center justify-center text-sm ring-1 ring-white/10 shadow-xl overflow-hidden
-                                        ${msg.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-slate-800'}`}>
-                                        {msg.role === 'user' ? (
-                                            <span className="font-black">U</span>
-                                        ) : (
-                                            <div className="w-full h-full bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center font-black">AI</div>
-                                        )}
-                                    </div>
-                                    <div className="flex flex-col gap-2">
-                                        <div className={`p-6 rounded-[2rem] backdrop-blur-md shadow-lg transition-all border
-                                            ${msg.role === 'user'
-                                                ? 'bg-indigo-600/90 text-white border-white/10 rounded-tr-none'
-                                                : 'bg-white/5 border-white/5 text-slate-100 rounded-tl-none hover:bg-white/[0.08]'
-                                            }`}>
-                                            <div className="text-[14px] leading-relaxed markdown-content">
-                                                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                                    {msg.content}
-                                                </ReactMarkdown>
-                                                {msg.role === 'assistant' && <ChartRenderer content={msg.content} />}
-                                            </div>
+                        ) : (
+                            messages.map((msg, i) => (
+                                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-4 duration-500`}>
+                                    <div className={`flex gap-5 max-w-[90%] ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+                                        <div className={`w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-border-default shadow-md
+                                            ${msg.role === 'user' ? 'bg-accent-primary text-white border-none' : 'bg-hover text-primary'}`}>
+                                            {msg.role === 'user' ? 'USR' : 'BOT'}
                                         </div>
-                                        {msg.createdAt && (
-                                            <span className={`text-[9px] px-2 opacity-40 font-black uppercase tracking-widest
-                                                ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
-                                                {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                            </span>
-                                        )}
+                                        <div className="flex flex-col gap-2">
+                                            <div className={`p-6 rounded-[1.8rem] border shadow-xl transition-all
+                                                ${msg.role === 'user'
+                                                    ? 'bg-accent-primary/5 text-primary border-accent-primary/20 rounded-tr-none'
+                                                    : 'bg-hover/50 border-border-default text-primary rounded-tl-none'
+                                                }`}>
+                                                <div className="text-[15px] leading-relaxed markdown-content font-medium">
+                                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                                        {msg.content}
+                                                    </ReactMarkdown>
+                                                    {msg.role === 'assistant' && <ChartRenderer content={msg.content} />}
+                                                </div>
+                                            </div>
+                                            {msg.createdAt && (
+                                                <span className={`text-[9px] font-black uppercase tracking-widest text-muted/50 ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
+                                                    {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                        {isLoading && (
+                            <div className="flex justify-start animate-pulse">
+                                <div className="flex gap-5">
+                                    <div className="w-10 h-10 rounded-xl bg-hover border border-border-default flex items-center justify-center text-[10px] font-bold">
+                                        ...
+                                    </div>
+                                    <div className="bg-hover/50 border border-border-default px-6 py-4 rounded-[1.8rem] rounded-tl-none flex gap-2 items-center shadow-lg">
+                                        <div className="w-2 h-2 bg-accent-primary rounded-full animate-bounce"></div>
+                                        <div className="w-2 h-2 bg-accent-primary rounded-full animate-bounce [animation-delay:0.2s]"></div>
+                                        <div className="w-2 h-2 bg-accent-primary rounded-full animate-bounce [animation-delay:0.4s]"></div>
                                     </div>
                                 </div>
                             </div>
-                        ))
-                    )}
-                    {isLoading && (
-                        <div className="flex justify-start animate-in fade-in duration-300">
-                            <div className="flex gap-5 items-start">
-                                <div className="w-10 h-10 rounded-2xl bg-indigo-500 flex items-center justify-center text-xs font-black shadow-xl animate-pulse">
-                                    AI
-                                </div>
-                                <div className="bg-white/5 border border-white/5 p-6 rounded-[2rem] rounded-tl-none backdrop-blur-sm flex gap-2 items-center">
-                                    <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce [animation-duration:1s]"></div>
-                                    <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce [animation-duration:1s] [animation-delay:0.2s]"></div>
-                                    <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce [animation-duration:1s] [animation-delay:0.4s]"></div>
-                                </div>
+                        )}
+                    </div>
+
+                    {/* Input Area Flat */}
+                    <div className="p-8 border-t border-border-default bg-card">
+                        <div className="max-w-4xl mx-auto">
+                            <div className="flex gap-4 items-end bg-hover/40 p-3 rounded-3xl border border-border-default focus-within:border-accent-primary/50 focus-within:bg-hover/60 transition-all shadow-inner group">
+                                <textarea
+                                    className="flex-1 bg-transparent border-none focus:ring-0 text-[15px] text-primary placeholder:text-muted/50 resize-none py-4 px-5 min-h-[60px] max-h-[180px] font-medium"
+                                    placeholder="Consultar métricas, discrepancias o tendencias..."
+                                    rows={1}
+                                    value={input}
+                                    onChange={(e) => setInput(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' && !e.shiftKey) {
+                                            e.preventDefault();
+                                            handleSend();
+                                        }
+                                    }}
+                                />
+                                <button
+                                    onClick={handleSend}
+                                    disabled={!input.trim() || isLoading}
+                                    className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all shrink-0 mb-1.5 mr-1.5 shadow-xl
+                                        ${!input.trim() || isLoading
+                                            ? 'bg-border-default text-muted'
+                                            : 'bg-accent-primary text-white hover:bg-accent-hover hover:scale-105 active:scale-95'}`}
+                                >
+                                    <svg viewBox="0 0 24 24" className="w-6 h-6" fill="currentColor">
+                                        <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
+                                    </svg>
+                                </button>
                             </div>
-                        </div>
-                    )}
-                </div>
 
-                {/* Input Area Futurista */}
-                <div className="p-8 bg-black/20 border-t border-white/5 relative z-10 backdrop-blur-md">
-                    <div className="max-w-4xl mx-auto">
-                        <div className="flex gap-4 items-end bg-white/5 p-2 rounded-[2rem] border border-white/10 focus-within:border-blue-500/50 focus-within:ring-4 focus-within:ring-blue-500/10 transition-all group overflow-hidden shadow-2xl">
-                            <textarea
-                                className="flex-1 bg-transparent border-none focus:ring-0 text-sm font-bold text-white placeholder:text-slate-500 resize-none py-4 px-6 scrollbar-none"
-                                placeholder="Escribe tu consulta estratégica..."
-                                rows={1}
-                                style={{ minHeight: '60px', maxHeight: '150px' }}
-                                value={input}
-                                onChange={(e) => setInput(e.target.value)}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter' && !e.shiftKey) {
-                                        e.preventDefault();
-                                        handleSend();
-                                    }
-                                }}
-                            />
-                            <button
-                                onClick={handleSend}
-                                disabled={!input.trim() || isLoading}
-                                className={`w-14 h-14 rounded-full transition-all flex items-center justify-center shadow-2xl mr-1 mb-1
-                                    ${!input.trim() || isLoading
-                                        ? 'bg-slate-800 text-slate-600 grayscale'
-                                        : 'bg-gradient-to-tr from-blue-600 to-indigo-600 text-white hover:scale-110 active:scale-95 shadow-blue-500/20'}`}
-                            >
-                                <svg viewBox="0 0 24 24" className="w-6 h-6" fill="currentColor">
-                                    <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
-                                </svg>
-                            </button>
-                        </div>
-
-                        {/* Quick Prompts con estilo premium */}
-                        <div className="mt-6 flex flex-wrap gap-3 justify-center">
-                            <button
-                                onClick={() => setInput("Lista los productos que faltan por contar hoy.")}
-                                className="text-[10px] font-black tracking-widest uppercase py-2 px-5 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white rounded-xl border border-white/5 transition-all active:scale-95 shadow-lg"
-                            >
-                                📋 Pendientes Hoy
-                            </button>
-                            <button
-                                onClick={() => setInput("Dime qué productos tienen existencia 0 en sistema.")}
-                                className="text-[10px] font-black tracking-widest uppercase py-2 px-5 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white rounded-xl border border-white/5 transition-all active:scale-95 shadow-lg"
-                            >
-                                🚫 Stock Cero
-                            </button>
-                            <button
-                                onClick={() => setInput("Análisis de impacto financiero en marca M96.")}
-                                className="text-[10px] font-black tracking-widest uppercase py-2 px-5 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white rounded-xl border border-white/5 transition-all active:scale-95 shadow-lg"
-                            >
-                                📉 Impacto Financiero
-                            </button>
-                            <button
-                                onClick={() => setInput("¿Qué mejoras sugieres para el almacén central?")}
-                                className="text-[10px] font-black tracking-widest uppercase py-2 px-5 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white rounded-xl border border-white/5 transition-all active:scale-95 shadow-lg"
-                            >
-                                💡 Sugerencias Operativas
-                            </button>
+                            {/* Quick Prompts Flat */}
+                            <div className="mt-6 flex flex-wrap gap-3 justify-center">
+                                {["Resumen de Inventario", "Altas Varianzas", "Valoración de Stock"].map(label => (
+                                    <button
+                                        key={label}
+                                        onClick={() => setInput(label)}
+                                        className="text-[10px] font-black uppercase tracking-widest py-2 px-5 bg-hover/50 hover:bg-border-default text-secondary rounded-xl border border-border-default transition-all hover:scale-105 active:scale-95 shadow-md"
+                                    >
+                                        {label}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
+            </AdminLayout>
 
             <style>{`
-                .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+                .custom-scrollbar::-webkit-scrollbar { width: 6px; }
                 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-                .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.05); border-radius: 10px; }
-                .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.1); }
-                .markdown-content table { border-collapse: collapse; width: 100%; margin: 1em 0; background: rgba(255,255,255,0.02); border-radius: 0.8rem; overflow: hidden; border: 1px solid rgba(255,255,255,0.1); }
-                .markdown-content th, .markdown-content td { padding: 0.8rem 1rem; border: 1px solid rgba(255,255,255,0.05); text-align: left; }
-                .markdown-content th { background: rgba(255,255,255,0.05); color: #60a5fa; font-weight: 800; text-transform: uppercase; font-size: 10px; letter-spacing: 0.1em; }
+                .custom-scrollbar::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 10px; }
+                .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+                
+                .markdown-content table { border-collapse: separate; border-spacing: 0; width: 100%; margin: 1.5rem 0; background: var(--bg-hover); border-radius: 1rem; overflow: hidden; border: 1px solid var(--border-default); box-shadow: var(--shadow-lg); }
+                .markdown-content th, .markdown-content td { padding: 1rem 1.25rem; border-bottom: 1px solid var(--border-default); text-align: left; font-size: 14px; }
+                .markdown-content tr:last-child td { border-bottom: none; }
+                .markdown-content th { background: var(--bg-app); color: var(--text-primary); font-weight: 900; text-transform: uppercase; font-size: 10px; letter-spacing: 0.15em; border-bottom: 2px solid var(--border-default); }
                 .markdown-content p { margin-bottom: 0.75rem; }
                 .markdown-content p:last-child { margin-bottom: 0; }
-                .markdown-content strong { color: #fff; font-weight: 800; }
+                .markdown-content strong { color: var(--accent-primary); font-weight: 800; }
                 .markdown-content ul, .markdown-content ol { margin: 1rem 0; padding-left: 1.5rem; }
-                .markdown-content li { margin-bottom: 0.5rem; }
-                .markdown-content h1, .markdown-content h2, .markdown-content h3 { color: #fff; font-weight: 800; margin: 1.5rem 0 1rem 0; }
-                .markdown-content code { background: rgba(0,0,0,0.3); padding: 0.2rem 0.4rem; rounded: 0.4rem; font-family: monospace; font-size: 0.9em; color: #fbbf24; }
+                .markdown-content li { margin-bottom: 0.5rem; border-left: 2px solid var(--accent-primary); padding-left: 1rem; list-style: none; }
+                .markdown-content h1, .markdown-content h2, .markdown-content h3 { color: var(--text-primary); font-weight: 900; margin: 1.5rem 0 0.75rem 0; letter-spacing: -0.02em; }
+                .markdown-content code { background: var(--bg-card); padding: 0.2rem 0.5rem; border-radius: 0.5rem; font-family: 'JetBrains Mono', monospace; font-size: 0.9em; color: var(--accent-secondary); border: 1px solid var(--border-default); }
             `}</style>
-        </AdminLayout>
+        </>
     );
 }
+
+export default AIChatPage;

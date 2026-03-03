@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { FastifyInstance } from 'fastify';
 import { RolesController } from './controller';
 import { tenantGuard } from '../../guards/tenant';

@@ -39,6 +39,13 @@ const SettingsPage: React.FC = () => {
         { label: 'Sesiones', path: '/admin/sessions', description: 'Dispositivos y tokens activos', icon: '📱' },
         { label: 'Inteligencia Artificial', path: '/admin/ai-config', description: 'Modelos LLM y Prompts', icon: '🤖' },
       ]
+    },
+    {
+      title: 'Personalización',
+      icon: '🎨',
+      items: [
+        { label: 'Identidad Visual', path: '/admin/branding', description: 'Logo, colores y título de la app', icon: '🎨' },
+      ]
     }
   ];
 
@@ -47,23 +54,23 @@ const SettingsPage: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pb-12">
         {sections.map((section) => (
           <div key={section.title} className="space-y-4">
-            <div className="flex items-center gap-2 border-b border-gray-100 pb-2">
+            <div className="flex items-center gap-2 border-b border-[var(--border-default)] pb-2">
               <span className="text-xl">{section.icon}</span>
-              <h2 className="text-lg font-bold text-gray-800 uppercase tracking-wider">{section.title}</h2>
+              <h2 className="text-lg font-bold text-[var(--text-primary)] uppercase tracking-wider">{section.title}</h2>
             </div>
             <div className="grid grid-cols-1 gap-4">
               {section.items.map((item) => (
                 <button
                   key={item.path}
                   onClick={() => navigate(item.path)}
-                  className="group flex items-center p-4 bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md hover:border-blue-300 transition-all text-left"
+                  className="group flex items-center p-4 bg-[var(--bg-card)] border border-[var(--border-default)] rounded-xl shadow-sm hover:shadow-md hover:border-blue-500/50 transition-all text-left"
                 >
-                  <div className="w-12 h-12 flex-shrink-0 bg-gray-50 group-hover:bg-blue-50 rounded-lg flex items-center justify-center text-2xl transition-colors">
+                  <div className="w-12 h-12 flex-shrink-0 bg-[var(--bg-hover)] group-hover:bg-blue-500/10 rounded-lg flex items-center justify-center text-2xl transition-colors">
                     {item.icon}
                   </div>
                   <div className="ml-4">
-                    <h3 className="font-bold text-gray-900 group-hover:text-blue-700 transition-colors">{item.label}</h3>
-                    <p className="text-sm text-gray-500 line-clamp-1">{item.description}</p>
+                    <h3 className="font-bold text-[var(--text-primary)] group-hover:text-blue-500 transition-colors">{item.label}</h3>
+                    <p className="text-sm text-[var(--text-secondary)] line-clamp-1">{item.description}</p>
                   </div>
                   <div className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity text-blue-500">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

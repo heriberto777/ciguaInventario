@@ -1,0 +1,72 @@
+src/modules/adjustments/controller.ts(12,90): error TS2339: Property 'id' does not exist on type '{ userId: string; email: string; companyId: string; roles?: string[] | undefined; permissions?: string[] | undefined; type: "refresh" | "access"; }'.
+src/modules/adjustments/controller.ts(44,51): error TS2339: Property 'id' does not exist on type '{ userId: string; email: string; companyId: string; roles?: string[] | undefined; permissions?: string[] | undefined; type: "refresh" | "access"; }'.
+src/modules/audit-logs/repository.ts(60,94): error TS2339: Property 'email' does not exist on type 'never'.
+src/modules/audit-logs/repository.ts(90,92): error TS2339: Property 'email' does not exist on type 'never'.
+src/modules/audit-logs/repository.ts(151,85): error TS2339: Property 'email' does not exist on type 'never'.
+src/modules/auth/routes.ts(6,37): error TS2345: Argument of type 'FastifyRequest<RouteGenericInterface, RawServerDefault, IncomingMessage, FastifySchema, FastifyTypeProviderDefault, unknown, FastifyBaseLogger, ResolveFastifyRequestType<...>>' is not assignable to parameter of type 'FastifyRequest<{ Body: Record<string, any>; }, RawServerDefault, IncomingMessage, FastifySchema, FastifyTypeProviderDefault, unknown, FastifyBaseLogger, ResolveFastifyRequestType<...>>'.
+  Type 'RouteGenericInterface' is not assignable to type '{ Body: Record<string, any>; }'.
+    Types of property 'Body' are incompatible.
+      Type 'unknown' is not assignable to type 'Record<string, any>'.
+src/modules/auth/routes.ts(10,44): error TS2345: Argument of type 'FastifyRequest<RouteGenericInterface, RawServerDefault, IncomingMessage, FastifySchema, FastifyTypeProviderDefault, unknown, FastifyBaseLogger, ResolveFastifyRequestType<...>>' is not assignable to parameter of type 'FastifyRequest<{ Body: Record<string, any>; }, RawServerDefault, IncomingMessage, FastifySchema, FastifyTypeProviderDefault, unknown, FastifyBaseLogger, ResolveFastifyRequestType<...>>'.
+  Type 'RouteGenericInterface' is not assignable to type '{ Body: Record<string, any>; }'.
+    Types of property 'Body' are incompatible.
+      Type 'unknown' is not assignable to type 'Record<string, any>'.
+src/modules/companies/controller.ts(25,28): error TS2339: Property 'id' does not exist on type '{ userId: string; email: string; companyId: string; roles?: string[] | undefined; permissions?: string[] | undefined; type: "refresh" | "access"; }'.
+src/modules/companies/controller.ts(44,28): error TS2339: Property 'id' does not exist on type '{ userId: string; email: string; companyId: string; roles?: string[] | undefined; permissions?: string[] | undefined; type: "refresh" | "access"; }'.
+src/modules/companies/controller.ts(63,28): error TS2339: Property 'id' does not exist on type '{ userId: string; email: string; companyId: string; roles?: string[] | undefined; permissions?: string[] | undefined; type: "refresh" | "access"; }'.
+src/modules/companies/controller.ts(80,28): error TS2339: Property 'id' does not exist on type '{ userId: string; email: string; companyId: string; roles?: string[] | undefined; permissions?: string[] | undefined; type: "refresh" | "access"; }'.
+src/modules/config-mapping/routes.ts(16,44): error TS2345: Argument of type 'FastifyRequest<RouteGenericInterface, RawServerDefault, IncomingMessage, FastifySchema, FastifyTypeProviderDefault, unknown, FastifyBaseLogger, ResolveFastifyRequestType<...>>' is not assignable to parameter of type 'FastifyRequest<{ Querystring: Record<string, any>; }, RawServerDefault, IncomingMessage, FastifySchema, FastifyTypeProviderDefault, unknown, FastifyBaseLogger, ResolveFastifyRequestType<...>>'.
+  Type 'RouteGenericInterface' is not assignable to type '{ Querystring: Record<string, any>; }'.
+    Types of property 'Querystring' are incompatible.
+      Type 'unknown' is not assignable to type 'Record<string, any>'.
+src/modules/config-mapping/routes.ts(29,45): error TS2345: Argument of type 'FastifyRequest<RouteGenericInterface, RawServerDefault, IncomingMessage, FastifySchema, FastifyTypeProviderDefault, unknown, FastifyBaseLogger, ResolveFastifyRequestType<...>>' is not assignable to parameter of type 'FastifyRequest<{ Body: Record<string, any>; }, RawServerDefault, IncomingMessage, FastifySchema, FastifyTypeProviderDefault, unknown, FastifyBaseLogger, ResolveFastifyRequestType<...>>'.
+  Type 'RouteGenericInterface' is not assignable to type '{ Body: Record<string, any>; }'.
+    Types of property 'Body' are incompatible.
+      Type 'unknown' is not assignable to type 'Record<string, any>'.
+src/modules/config-mapping/routes.ts(34,43): error TS2345: Argument of type 'FastifyRequest<RouteGenericInterface, RawServerDefault, IncomingMessage, FastifySchema, FastifyTypeProviderDefault, unknown, FastifyBaseLogger, ResolveFastifyRequestType<...>>' is not assignable to parameter of type 'FastifyRequest<{ Body: Record<string, any>; }, RawServerDefault, IncomingMessage, FastifySchema, FastifyTypeProviderDefault, unknown, FastifyBaseLogger, ResolveFastifyRequestType<...>>'.
+  Type 'RouteGenericInterface' is not assignable to type '{ Body: Record<string, any>; }'.
+    Types of property 'Body' are incompatible.
+      Type 'unknown' is not assignable to type 'Record<string, any>'.
+src/modules/erp-connections/controller.ts(13,11): error TS2430: Interface 'AuthenticatedRequest' incorrectly extends interface 'FastifyRequest<RouteGenericInterface, RawServerDefault, IncomingMessage, FastifySchema, FastifyTypeProviderDefault, unknown, FastifyBaseLogger, ResolveFastifyRequestType<...>>'.
+  The types of 'user.type' are incompatible between these types.
+    Type '"refresh" | "access" | undefined' is not assignable to type '"refresh" | "access"'.
+      Type 'undefined' is not assignable to type '"refresh" | "access"'.
+src/modules/erp-connections/erp-connector-factory.ts(54,50): error TS2551: Property 'erpConnection' does not exist on type 'PrismaClient<PrismaClientOptions, never, DefaultArgs>'. Did you mean 'eRPConnection'?
+src/modules/erp-connections/mssql-connector.ts(1,17): error TS7016: Could not find a declaration file for module 'mssql'. 'D:/proyectos/app/ciguaInv/node_modules/.pnpm/mssql@9.3.2_@azure+core-client@1.10.1/node_modules/mssql/index.js' implicitly has an 'any' type.
+  Try `npm i --save-dev @types/mssql` if it exists or add a new declaration (.d.ts) file containing `declare module 'mssql';`
+src/modules/inventory/load-from-erp.controller.ts(11,11): error TS2430: Interface 'AuthenticatedRequest' incorrectly extends interface 'FastifyRequest<RouteGenericInterface, RawServerDefault, IncomingMessage, FastifySchema, FastifyTypeProviderDefault, unknown, FastifyBaseLogger, ResolveFastifyRequestType<...>>'.
+  The types of 'user.type' are incompatible between these types.
+    Type '"refresh" | "access" | undefined' is not assignable to type '"refresh" | "access"'.
+      Type 'undefined' is not assignable to type '"refresh" | "access"'.
+src/modules/inventory/load-from-erp.service.ts(347,97): error TS7006: Parameter 'j' implicitly has an 'any' type.
+src/modules/inventory/load-from-erp.service.ts(404,54): error TS7006: Parameter 'p' implicitly has an 'any' type.
+src/modules/inventory/load-from-erp.service.ts(405,43): error TS7006: Parameter 'part' implicitly has an 'any' type.
+src/modules/inventory/physical-count.controller.ts(10,11): error TS2430: Interface 'AuthenticatedRequest' incorrectly extends interface 'FastifyRequest<RouteGenericInterface, RawServerDefault, IncomingMessage, FastifySchema, FastifyTypeProviderDefault, unknown, FastifyBaseLogger, ResolveFastifyRequestType<...>>'.
+  The types of 'user.type' are incompatible between these types.
+    Type '"refresh" | "access" | undefined' is not assignable to type '"refresh" | "access"'.
+      Type 'undefined' is not assignable to type '"refresh" | "access"'.
+src/modules/inventory/sync-to-erp.controller.ts(12,11): error TS2430: Interface 'AuthenticatedRequest' incorrectly extends interface 'FastifyRequest<RouteGenericInterface, RawServerDefault, IncomingMessage, FastifySchema, FastifyTypeProviderDefault, unknown, FastifyBaseLogger, ResolveFastifyRequestType<...>>'.
+  The types of 'user.type' are incompatible between these types.
+    Type '"refresh" | "access" | undefined' is not assignable to type '"refresh" | "access"'.
+      Type 'undefined' is not assignable to type '"refresh" | "access"'.
+src/modules/permissions/controller.ts(25,28): error TS2339: Property 'id' does not exist on type '{ userId: string; email: string; companyId: string; roles?: string[] | undefined; permissions?: string[] | undefined; type: "refresh" | "access"; }'.
+src/modules/permissions/controller.ts(44,28): error TS2339: Property 'id' does not exist on type '{ userId: string; email: string; companyId: string; roles?: string[] | undefined; permissions?: string[] | undefined; type: "refresh" | "access"; }'.
+src/modules/permissions/controller.ts(63,28): error TS2339: Property 'id' does not exist on type '{ userId: string; email: string; companyId: string; roles?: string[] | undefined; permissions?: string[] | undefined; type: "refresh" | "access"; }'.
+src/modules/roles/routes.ts(14,9): error TS2353: Object literal may only specify known properties, and 'description' does not exist in type 'FastifySchema'.
+src/modules/roles/routes.ts(36,9): error TS2353: Object literal may only specify known properties, and 'description' does not exist in type 'FastifySchema'.
+src/modules/roles/routes.ts(56,9): error TS2353: Object literal may only specify known properties, and 'description' does not exist in type 'FastifySchema'.
+src/modules/roles/routes.ts(81,9): error TS2353: Object literal may only specify known properties, and 'description' does not exist in type 'FastifySchema'.
+src/modules/roles/routes.ts(101,9): error TS2353: Object literal may only specify known properties, and 'description' does not exist in type 'FastifySchema'.
+src/modules/roles/routes.ts(121,9): error TS2353: Object literal may only specify known properties, and 'description' does not exist in type 'FastifySchema'.
+src/modules/roles/routes.ts(151,9): error TS2353: Object literal may only specify known properties, and 'description' does not exist in type 'FastifySchema'.
+src/modules/sessions/controller.ts(24,22): error TS2339: Property 'id' does not exist on type '{ userId: string; email: string; companyId: string; roles?: string[] | undefined; permissions?: string[] | undefined; type: "refresh" | "access"; }'.
+src/modules/sessions/service.ts(13,33): error TS2339: Property 'name' does not exist on type '{ id: string; email: string; firstName: string | null; lastName: string | null; }'.
+src/modules/sessions/service.ts(35,31): error TS2339: Property 'name' does not exist on type '{ id: string; email: string; firstName: string | null; lastName: string | null; }'.
+src/modules/sessions/service.ts(62,35): error TS2339: Property 'name' does not exist on type '{ id: string; email: string; firstName: string | null; lastName: string | null; }'.
+src/modules/sessions/service.ts(84,31): error TS2339: Property 'name' does not exist on type '{ id: string; email: string; firstName: string | null; lastName: string | null; }'.
+src/modules/users/routes.ts(14,9): error TS2353: Object literal may only specify known properties, and 'description' does not exist in type 'FastifySchema'.
+src/modules/users/routes.ts(47,9): error TS2353: Object literal may only specify known properties, and 'description' does not exist in type 'FastifySchema'.
+src/modules/users/routes.ts(67,9): error TS2353: Object literal may only specify known properties, and 'description' does not exist in type 'FastifySchema'.
+src/modules/users/routes.ts(91,9): error TS2353: Object literal may only specify known properties, and 'description' does not exist in type 'FastifySchema'.
+src/modules/users/routes.ts(111,9): error TS2353: Object literal may only specify known properties, and 'description' does not exist in type 'FastifySchema'.
+src/modules/users/routes.ts(131,9): error TS2353: Object literal may only specify known properties, and 'description' does not exist in type 'FastifySchema'.

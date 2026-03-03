@@ -1,7 +1,12 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { AdminLayout } from '@/components/templates/AdminLayout';
-import { Button, Input } from '../components/inventory';
+import { Button } from '@/components/atoms/Button';
+import { Input } from '@/components/atoms/Input';
+import { Label } from '@/components/atoms/Label';
+import { ConfirmModal } from '@/components/atoms/ConfirmModal';
+import { NotificationModal } from '@/components/atoms/NotificationModal';
+import { ProcessingModal } from '@/components/atoms/ProcessingModal';
 import { getApiClient } from '@/services/api';
 
 const WarehousesPage: React.FC = () => {
@@ -24,6 +29,72 @@ const WarehousesPage: React.FC = () => {
     city: '',
     manager: '',
   });
+
+  // Estado de procesamiento global
+  const [processing, setProcessing] = useState<{
+    isOpen: boolean;
+    message: string;
+    status: 'processing' | 'success' | 'error';
+  }>({
+    isOpen: false,
+    message: '',
+    status: 'processing',
+  });
+
+  const showProcessing = (message: string) => setProcessing({ isOpen: true, message, status: 'processing' });
+  const stopProcessing = () => setProcessing(prev => ({ ...prev, isOpen: false }));
+  const successProcessing = (message: string) => setProcessing({ isOpen: true, message, status: 'success' });
+  const errorProcessing = (message: string) => setProcessing({ isOpen: true, message, status: 'error' });
+
+  // Modal de confirmación genérico
+  const [confirmState, setConfirmState] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    isDangerous?: boolean;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => { },
+    isDangerous: false,
+  });
+
+  const handleActionWithConfirm = (
+    title: string,
+    message: string,
+    onConfirm: () => void,
+    isDangerous: boolean = false
+  ) => {
+    setConfirmState({
+      isOpen: true,
+      title,
+      message,
+      onConfirm: () => {
+        onConfirm();
+        setConfirmState(prev => ({ ...prev, isOpen: false }));
+      },
+      isDangerous,
+    });
+  };
+
+  // Modal de notificación
+  const [notification, setNotification] = useState<{
+    isOpen: boolean;
+    type: 'success' | 'error' | 'warning' | 'info';
+    title: string;
+    message: string;
+  }>({
+    isOpen: false,
+    type: 'info',
+    title: '',
+    message: '',
+  });
+
+  const showNotification = (type: 'success' | 'error' | 'warning' | 'info', title: string, message: string) => {
+    setNotification({ isOpen: true, type, title, message });
+  };
 
   // Fetch warehouses
   const { data: warehouses, refetch } = useQuery({
@@ -48,6 +119,7 @@ const WarehousesPage: React.FC = () => {
   // Create warehouse mutation
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
+      showProcessing(editingId ? 'Actualizando almacén...' : 'Creando almacén...');
       if (editingId) {
         const res = await apiClient.patch(`/warehouses/${editingId}`, data);
         return res.data.data || res.data;
@@ -62,26 +134,31 @@ const WarehousesPage: React.FC = () => {
       setFormData({ code: '', name: '', address: '', city: '', manager: '' });
       setShowForm(false);
       setEditingId(null);
+      successProcessing('Operación completada correctamente.');
+      setTimeout(stopProcessing, 1500);
     },
     onError: (error: any) => {
       const message = error?.response?.data?.message || error.message || 'Error guardando almacén';
-      setError(message);
+      errorProcessing(message);
     },
   });
 
   // Delete warehouse mutation
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
+      showProcessing('Eliminando almacén...');
       const res = await apiClient.delete(`/warehouses/${id}`);
       return res.data;
     },
     onSuccess: () => {
       setError(null);
       refetch();
+      successProcessing('Almacén eliminado.');
+      setTimeout(stopProcessing, 1500);
     },
     onError: (error: any) => {
       const message = error?.response?.data?.message || error.message || 'Error eliminando almacén';
-      setError(message);
+      errorProcessing(message);
     },
   });
 
@@ -128,9 +205,12 @@ const WarehousesPage: React.FC = () => {
   };
 
   const handleDelete = (id: string) => {
-    if (window.confirm('¿Estás seguro de que deseas eliminar este almacén?')) {
-      deleteMutation.mutate(id);
-    }
+    handleActionWithConfirm(
+      '⚠️ Eliminar Almacén',
+      '¿Estás seguro de que deseas eliminar este almacén? Esta acción no se puede deshacer.',
+      () => deleteMutation.mutate(id),
+      true
+    );
   };
 
   const handleCancel = () => {
@@ -173,7 +253,7 @@ const WarehousesPage: React.FC = () => {
         </div>
 
         {error && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-800 mb-4">
+          <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4 text-red-500 mb-4">
             <div className="flex justify-between items-start">
               <div>
                 <h3 className="font-semibold">Error</h3>
@@ -190,8 +270,8 @@ const WarehousesPage: React.FC = () => {
         )}
 
         {showForm && (
-          <div className="bg-white rounded-lg shadow p-6 mb-6">
-            <h2 className="text-xl font-semibold mb-4">{editingId ? 'Editar Almacén' : 'Crear Nuevo Almacén'}</h2>
+          <div className="bg-[var(--bg-card)] rounded-lg border border-[var(--border-default)] shadow-sm p-6 mb-6">
+            <h2 className="text-xl font-semibold mb-4 text-[var(--text-primary)]">{editingId ? 'Editar Almacén' : 'Crear Nuevo Almacén'}</h2>
             <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4">
               <Input
                 label="Código"
@@ -224,10 +304,10 @@ const WarehousesPage: React.FC = () => {
               <Button
                 type="submit"
                 variant="success"
-                disabled={createMutation.isPending}
+                isLoading={createMutation.isPending}
                 className="col-span-1"
               >
-                {createMutation.isPending ? 'Guardando...' : (editingId ? 'Actualizar Almacén' : 'Crear Almacén')}
+                {editingId ? 'Actualizar Almacén' : 'Crear Almacén'}
               </Button>
               <Button
                 type="button"
@@ -245,22 +325,21 @@ const WarehousesPage: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Warehouses List */}
           <div className="lg:col-span-1">
-            <h2 className="text-xl font-semibold mb-4">Almacenes</h2>
+            <h2 className="text-xl font-semibold mb-4 text-[var(--text-primary)]">Almacenes</h2>
             <div className="space-y-3">
-              {warehouses?.map(warehouse => (
+              {warehouses?.map((warehouse: any) => (
                 <div
                   key={warehouse.id}
-                  className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
-                    selectedWarehouseForLocations === warehouse.id
-                      ? 'border-blue-500 bg-blue-50'
-                      : 'border-gray-200 bg-white hover:border-gray-300'
-                  }`}
+                  className={`p-4 rounded-lg border cursor-pointer transition-all ${selectedWarehouseForLocations === warehouse.id
+                    ? 'border-blue-500 bg-blue-500/10'
+                    : 'border-[var(--border-default)] bg-[var(--bg-card)] hover:border-blue-500/30'
+                    }`}
                   onClick={() => setSelectedWarehouseForLocations(warehouse.id)}
                 >
-                  <h3 className="font-semibold">{warehouse.name}</h3>
-                  <p className="text-sm text-gray-600">{warehouse.code}</p>
+                  <h3 className="font-semibold text-[var(--text-primary)]">{warehouse.name}</h3>
+                  <p className="text-sm text-[var(--text-secondary)]">{warehouse.code}</p>
                   {warehouse.city && (
-                    <p className="text-sm text-gray-600">{warehouse.city}</p>
+                    <p className="text-sm text-[var(--text-muted)]">{warehouse.city}</p>
                   )}
                   <div className="flex gap-2 mt-3">
                     <Button
@@ -280,9 +359,9 @@ const WarehousesPage: React.FC = () => {
                         e.stopPropagation();
                         handleDelete(warehouse.id);
                       }}
-                      disabled={deleteMutation.isPending}
+                      isLoading={deleteMutation.isPending && deleteMutation.variables === warehouse.id}
                     >
-                      {deleteMutation.isPending ? 'Eliminando...' : 'Eliminar'}
+                      Eliminar
                     </Button>
                   </div>
                 </div>
@@ -294,7 +373,7 @@ const WarehousesPage: React.FC = () => {
           {selectedWarehouseForLocations && (
             <div className="lg:col-span-2">
               <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-semibold">Ubicaciones del Almacén</h2>
+                <h2 className="text-xl font-semibold text-[var(--text-primary)]">Ubicaciones del Almacén</h2>
                 <Button
                   size="sm"
                   onClick={() => setShowLocationForm(!showLocationForm)}
@@ -304,8 +383,8 @@ const WarehousesPage: React.FC = () => {
               </div>
 
               {showLocationForm && (
-                <div className="bg-white rounded-lg shadow p-4 mb-4">
-                  <h3 className="font-semibold mb-4">Crear Nueva Ubicación</h3>
+                <div className="bg-[var(--bg-card)] rounded-lg border border-[var(--border-default)] shadow p-4 mb-4">
+                  <h3 className="font-semibold mb-4 text-[var(--text-primary)]">Crear Nueva Ubicación</h3>
                   <form onSubmit={handleLocationSubmit} className="space-y-3">
                     <Input
                       label="Código de Ubicación (ej: A-01-01)"
@@ -328,9 +407,9 @@ const WarehousesPage: React.FC = () => {
                       <Button
                         type="submit"
                         variant="success"
-                        disabled={createLocationMutation.isPending}
+                        isLoading={createLocationMutation.isPending}
                       >
-                        {createLocationMutation.isPending ? 'Creando...' : 'Crear Ubicación'}
+                        Crear Ubicación
                       </Button>
                       <Button
                         type="button"
@@ -347,21 +426,21 @@ const WarehousesPage: React.FC = () => {
               <div className="space-y-2">
                 {locations && locations.length > 0 ? (
                   locations.map((location: any) => (
-                    <div key={location.id} className="bg-white rounded-lg shadow p-3 border-l-4 border-blue-400">
-                      <h4 className="font-semibold">{location.code}</h4>
+                    <div key={location.id} className="bg-[var(--bg-card)] rounded-lg shadow-sm p-3 border-l-4 border-blue-500 border border-[var(--border-default)]">
+                      <h4 className="font-semibold text-[var(--text-primary)]">{location.code}</h4>
                       {location.description && (
-                        <p className="text-sm text-gray-600">{location.description}</p>
+                        <p className="text-sm text-[var(--text-secondary)]">{location.description}</p>
                       )}
                       {location.capacity && (
-                        <p className="text-sm text-gray-600">Capacidad: {location.capacity}</p>
+                        <p className="text-sm text-[var(--text-muted)]">Capacidad: {location.capacity}</p>
                       )}
-                      <div className="text-xs text-gray-500 mt-1">
+                      <div className="text-xs text-[var(--text-muted)] mt-1">
                         {location.isActive ? '✅ Activa' : '❌ Inactiva'}
                       </div>
                     </div>
                   ))
                 ) : (
-                  <div className="bg-gray-50 rounded-lg p-4 text-center text-gray-600">
+                  <div className="bg-[var(--bg-hover)] rounded-lg p-4 text-center text-[var(--text-muted)]">
                     <p>No hay ubicaciones. Crea la primera ubicación.</p>
                   </div>
                 )}
@@ -370,6 +449,30 @@ const WarehousesPage: React.FC = () => {
           )}
         </div>
       </div>
+
+      <ConfirmModal
+        isOpen={confirmState.isOpen}
+        onConfirm={confirmState.onConfirm}
+        onCancel={() => setConfirmState(prev => ({ ...prev, isOpen: false }))}
+        title={confirmState.title}
+        message={confirmState.message}
+        isDangerous={confirmState.isDangerous}
+      />
+
+      <NotificationModal
+        isOpen={notification.isOpen}
+        onClose={() => setNotification({ ...notification, isOpen: false })}
+        type={notification.type}
+        title={notification.title}
+        message={notification.message}
+      />
+
+      <ProcessingModal
+        isOpen={processing.isOpen}
+        message={processing.message}
+        status={processing.status}
+        onClose={processing.status !== 'processing' ? stopProcessing : undefined}
+      />
     </AdminLayout>
   );
 };

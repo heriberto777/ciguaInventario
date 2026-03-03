@@ -57,7 +57,10 @@ export function initializeApiClient() {
       ) {
         const { refreshToken, logout } = useAuthStore.getState();
 
+        console.warn(`🔐 [API Interceptor] 401 detectado en: ${originalRequest.url}. Intentando refrescar token...`);
+
         if (!refreshToken) {
+          console.error('❌ [API Interceptor] No hay Refresh Token disponible en el store. Forzando logout.');
           logout();
           if (!window.location.pathname.startsWith('/login')) {
             window.location.href = '/login';
@@ -66,6 +69,7 @@ export function initializeApiClient() {
         }
 
         if (isRefreshing) {
+          console.debug('⏳ [API Interceptor] Ya hay un refresco en progreso. Encolando request.');
           return new Promise((resolve, reject) => {
             failedRequestsQueue.push({
               resolve: (token) => {
@@ -81,22 +85,38 @@ export function initializeApiClient() {
         isRefreshing = true;
 
         try {
-          // Llamada directa a axios para el refresh para evitar interceptores
+          console.debug('🔄 [API Interceptor] Solicitando nuevo Access Token al backend...');
           const response = await axios.post(`${baseURL}/auth/refresh`, { refreshToken });
           const { accessToken: newAccessToken, refreshToken: newRefreshToken } = response.data.data;
 
+          console.info('✅ [API Interceptor] Token refrescado con éxito.');
           useAuthStore.getState().setTokens(newAccessToken, newRefreshToken);
 
           processQueue(null, newAccessToken);
 
           originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
           return apiClient(originalRequest);
-        } catch (refreshError) {
+        } catch (refreshError: any) {
+          const status = refreshError.response?.status;
+          console.error('❌ [API Interceptor] Falló el refresco del token:', {
+            status,
+            code: refreshError.response?.data?.error?.code,
+            message: refreshError.message
+          });
+
           processQueue(refreshError, null);
-          logout();
-          if (!window.location.pathname.startsWith('/login')) {
-            window.location.href = '/login';
+
+          // SOLO desloguear si el error es explícitamente 401 (token inválido/expirado en BD)
+          // Si el error es de red (no hay status) o 500 (error servidor), NO desloguear automáticamente.
+          if (status === 401) {
+            console.error('🔒 [API Interceptor] El Refresh Token ha expirado o es inválido. Forzando login.');
+            logout();
+            if (!window.location.pathname.startsWith('/login')) {
+              localStorage.setItem('redirectAfterLogin', window.location.pathname);
+              window.location.href = '/login';
+            }
           }
+
           return Promise.reject(refreshError);
         } finally {
           isRefreshing = false;

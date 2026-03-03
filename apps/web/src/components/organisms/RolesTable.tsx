@@ -46,7 +46,7 @@ export const RolesTable: React.FC<RolesTableProps> = ({
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-left text-sm">
-        <thead className="bg-gray-100 border-b">
+        <thead className="bg-[var(--bg-hover)] border-b border-[var(--border-default)] text-[var(--text-secondary)] font-bold uppercase text-[10px] tracking-wider">
           <tr>
             <th className="px-4 py-3 font-semibold">Name</th>
             <th className="px-4 py-3 font-semibold">Description</th>
@@ -58,24 +58,24 @@ export const RolesTable: React.FC<RolesTableProps> = ({
         </thead>
         <tbody>
           {roles.map((role) => (
-            <tr key={role.id} className="border-b hover:bg-gray-50">
-              <td className="px-4 py-3 font-semibold text-gray-900">
+            <tr key={role.id} className="border-b border-[var(--border-default)] hover:bg-[var(--bg-hover)] transition-colors">
+              <td className="px-4 py-3 font-bold text-[var(--text-primary)]">
                 {role.name}
               </td>
-              <td className="px-4 py-3 text-gray-600">
+              <td className="px-4 py-3 text-[var(--text-secondary)]">
                 {role.description || '-'}
               </td>
               <td className="px-4 py-3">
-                <span className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded">
+                <span className="inline-block bg-blue-500/10 text-blue-500 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border border-blue-500/20">
                   {role.permissionCount} permission
                   {role.permissionCount !== 1 ? 's' : ''}
                 </span>
               </td>
               <td className="px-4 py-3">
                 <span
-                  className={`inline-block px-2 py-1 rounded text-xs font-semibold ${role.isActive
-                      ? 'bg-green-100 text-green-800'
-                      : 'bg-red-100 text-red-800'
+                  className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${role.isActive
+                    ? 'bg-green-500/10 text-green-500 border border-green-500/20'
+                    : 'bg-red-500/10 text-red-500 border border-red-500/20'
                     }`}
                 >
                   {role.isActive ? 'Active' : 'Inactive'}

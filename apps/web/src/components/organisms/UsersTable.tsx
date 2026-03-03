@@ -31,7 +31,7 @@ export const UsersTable: React.FC<UsersTableProps> = ({
 
   if (users.length === 0) {
     return (
-      <div className="text-center py-8 text-gray-500">
+      <div className="text-center py-8 text-[var(--text-muted)]">
         No se encontraron usuarios. Crea uno para comenzar.
       </div>
     );
@@ -40,22 +40,22 @@ export const UsersTable: React.FC<UsersTableProps> = ({
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-left text-sm">
-        <thead className="bg-gray-50 border-b border-gray-200">
+        <thead className="bg-[var(--bg-hover)] border-b border-[var(--border-default)]">
           <tr>
-            <th className="px-6 py-4 font-semibold text-gray-700">Email</th>
-            <th className="px-6 py-4 font-semibold text-gray-700">Nombre</th>
-            <th className="px-6 py-4 font-semibold text-gray-700">Rol</th>
-            <th className="px-6 py-4 font-semibold text-gray-700">Estado</th>
-            <th className="px-6 py-4 font-semibold text-gray-700 text-right">Acciones</th>
+            <th className="px-6 py-4 font-semibold text-[var(--text-primary)]">Email</th>
+            <th className="px-6 py-4 font-semibold text-[var(--text-primary)]">Nombre</th>
+            <th className="px-6 py-4 font-semibold text-[var(--text-primary)]">Rol</th>
+            <th className="px-6 py-4 font-semibold text-[var(--text-primary)]">Estado</th>
+            <th className="px-6 py-4 font-semibold text-[var(--text-primary)] text-right">Acciones</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-100">
+        <tbody className="divide-y divide-[var(--border-default)]">
           {users.map((user) => (
-            <tr key={user.id} className="hover:bg-gray-50 transition-colors">
-              <td className="px-6 py-4 font-mono text-xs text-gray-600">{user.email}</td>
-              <td className="px-6 py-4 text-gray-800">
+            <tr key={user.id} className="hover:bg-[var(--bg-hover)] transition-colors">
+              <td className="px-6 py-4 font-mono text-xs text-[var(--text-secondary)]">{user.email}</td>
+              <td className="px-6 py-4 text-[var(--text-primary)]">
                 {user.firstName || ''} {user.lastName || ''}
-                {(!user.firstName && !user.lastName) && <span className="text-gray-400 italic text-xs">Sin nombre</span>}
+                {(!user.firstName && !user.lastName) && <span className="text-[var(--text-muted)] italic text-xs">Sin nombre</span>}
               </td>
               <td className="px-6 py-4">
                 {user.roleName ? (
@@ -63,14 +63,14 @@ export const UsersTable: React.FC<UsersTableProps> = ({
                     {user.roleName}
                   </span>
                 ) : (
-                  <span className="text-gray-400 italic text-xs">Sin rol</span>
+                  <span className="text-[var(--text-muted)] italic text-xs">Sin rol</span>
                 )}
               </td>
               <td className="px-6 py-4">
                 <span
                   className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${user.isActive
-                      ? 'bg-green-100 text-green-800'
-                      : 'bg-red-100 text-red-800'
+                    ? 'bg-green-100 text-green-800'
+                    : 'bg-red-100 text-red-800'
                     }`}
                 >
                   <span className={`w-1.5 h-1.5 mr-1.5 rounded-full ${user.isActive ? 'bg-green-400' : 'bg-red-400'}`}></span>

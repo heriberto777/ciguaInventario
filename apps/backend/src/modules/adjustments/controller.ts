@@ -3,7 +3,7 @@ import { AdjustmentService } from './service';
 import { createAdjustmentSchema, approveAdjustmentSchema } from './schema';
 
 export class AdjustmentController {
-  constructor(private service: AdjustmentService) {}
+  constructor(private service: AdjustmentService) { }
 
   async createAdjustment(request: FastifyRequest, reply: FastifyReply) {
     const companyId = request.user.companyId;
@@ -23,12 +23,11 @@ export class AdjustmentController {
 
   async listAdjustments(request: FastifyRequest, reply: FastifyReply) {
     const companyId = request.user.companyId;
-    const { warehouseId, status, page = 1, pageSize = 20 } = request.query as {
-      warehouseId?: string;
-      status?: string;
-      page?: number;
-      pageSize?: number;
-    };
+    const query = request.query as any;
+    const warehouseId = query.warehouseId as string;
+    const status = query.status as string;
+    const page = query.page ? parseInt(query.page as string, 10) : 1;
+    const pageSize = query.pageSize ? parseInt(query.pageSize as string, 10) : 20;
 
     const adjustments = await this.service.listAdjustments(companyId, warehouseId, status, page, pageSize);
     reply.send(adjustments);

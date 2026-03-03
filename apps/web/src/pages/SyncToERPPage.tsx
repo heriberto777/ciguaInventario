@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { ProcessingModal } from '@/components/atoms/ProcessingModal';
 
 interface SyncableItem {
   itemId: string;
@@ -67,6 +68,22 @@ export function SyncToERPPage() {
   const [mappings, setMappings] = useState<any[]>([]);
   const [selectedMappingId, setSelectedMappingId] = useState<string>('');
 
+  // Estado de procesamiento global
+  const [processing, setProcessing] = useState<{
+    isOpen: boolean;
+    message: string;
+    status: 'processing' | 'success' | 'error';
+  }>({
+    isOpen: false,
+    message: '',
+    status: 'processing',
+  });
+
+  const showProcessing = (message: string) => setProcessing({ isOpen: true, message, status: 'processing' });
+  const stopProcessing = () => setProcessing(prev => ({ ...prev, isOpen: false }));
+  const successProcessing = (message: string) => setProcessing({ isOpen: true, message, status: 'success' });
+  const errorProcessing = (message: string) => setProcessing({ isOpen: true, message, status: 'error' });
+
   useEffect(() => {
     validateAndLoadData();
   }, [countId]);
@@ -122,7 +139,7 @@ export function SyncToERPPage() {
     if (!countId) return;
 
     try {
-      setSyncing(true);
+      showProcessing('Iniciando sincronización con el ERP...');
       setError(null);
       setSyncResult(null);
 
@@ -144,13 +161,14 @@ export function SyncToERPPage() {
         details: data.details,
       });
 
+      successProcessing('Sincronización completada correctamente.');
+      setTimeout(stopProcessing, 1500);
+
       // Recargar historial
       await validateAndLoadData();
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to sync to ERP';
-      setError(message);
-    } finally {
-      setSyncing(false);
+      errorProcessing(message);
     }
   };
 
@@ -434,6 +452,13 @@ export function SyncToERPPage() {
           </table>
         </div>
       )}
+
+      <ProcessingModal
+        isOpen={processing.isOpen}
+        message={processing.message}
+        status={processing.status}
+        onClose={processing.status !== 'processing' ? stopProcessing : undefined}
+      />
     </div>
   );
 }

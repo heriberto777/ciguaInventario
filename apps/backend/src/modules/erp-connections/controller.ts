@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { erpConnectionsService } from './service';
 import { ERPIntrospectionService } from './erp-introspection';

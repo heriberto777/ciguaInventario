@@ -48,14 +48,23 @@ export class ERPIntrospectionService {
   async getAvailableTables(): Promise<AvailableTable[]> {
     try {
       const query = `
-        SELECT
-          TABLE_SCHEMA + '.' + TABLE_NAME as name,
-          COUNT(*) as columnCount
-        FROM INFORMATION_SCHEMA.COLUMNS
-        WHERE TABLE_CATALOG = DB_NAME()
-          AND TABLE_SCHEMA NOT IN ('sys', 'information_schema')
-        GROUP BY TABLE_SCHEMA, TABLE_NAME
-        ORDER BY TABLE_SCHEMA, TABLE_NAME
+        SELECT 
+          s.name + '.' + t.name AS name,
+          (SELECT COUNT(*) FROM sys.columns c WHERE c.object_id = t.object_id) AS columnCount
+        FROM sys.tables t
+        JOIN sys.schemas s ON t.schema_id = s.schema_id
+        WHERE s.name NOT IN ('sys', 'information_schema')
+        
+        UNION ALL
+        
+        SELECT 
+          s.name + '.' + v.name AS name,
+          (SELECT COUNT(*) FROM sys.columns c WHERE c.object_id = v.object_id) AS columnCount
+        FROM sys.views v
+        JOIN sys.schemas s ON v.schema_id = s.schema_id
+        WHERE s.name NOT IN ('sys', 'information_schema')
+        
+        ORDER BY name
       `;
 
       const results = await this.connector.executeQuery(query);

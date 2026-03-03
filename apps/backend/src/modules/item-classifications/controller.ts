@@ -59,4 +59,14 @@ export class ItemClassificationsController {
         const result = await this.service.syncFromItems(companyId);
         return reply.send({ data: result });
     }
+
+    async getExcelTemplate(_request: FastifyRequest, reply: FastifyReply) {
+        const buffer = this.service.generateTemplateBuffer();
+        const filename = 'plantilla_clasificaciones_items.xlsx';
+
+        reply
+            .header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            .header('Content-Disposition', `attachment; filename="${filename}"`)
+            .send(buffer);
+    }
 }

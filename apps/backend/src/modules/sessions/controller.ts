@@ -41,7 +41,7 @@ export const sessionsController = {
 
   async endAllUserSessions(request: FastifyRequest, reply: FastifyReply) {
     const { userId } = request.body as { userId: string };
-    const sessionId = request.cookies.sessionId;
+    const sessionId = (request.user as any).sessionId;
 
     const result = await sessionsService.endAllUserSessions(
       userId,

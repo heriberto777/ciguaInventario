@@ -3,7 +3,7 @@ module.exports = {
         {
             name: "cigua-inv-backend",
             script: "dist/server.js",
-            cwd: "/home/heriberto777/proyectos/ciguainv/apps/backend",
+            cwd: "/home/heriberto777/proyectos/ciguainv",
             watch: false,
             max_memory_restart: "500M",
             exec_mode: "fork",

@@ -16,7 +16,7 @@ interface AuthState {
   refreshToken: string | null;
   isAuthenticated: boolean;
   _hasHydrated: boolean;
-  setAuth: (user: AuthUser, accessToken: string, refreshToken: string) => void;
+  login: (user: AuthUser, accessToken: string, refreshToken: string) => void;
   logout: () => void;
   setTokens: (accessToken: string, refreshToken: string) => void;
   setHasHydrated: (state: boolean) => void;
@@ -57,7 +57,7 @@ const customStorage = {
   },
 };
 
-export const useAuthStore = create<AuthState>(
+export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
       user: null,
@@ -66,7 +66,7 @@ export const useAuthStore = create<AuthState>(
       isAuthenticated: false,
       _hasHydrated: false,
 
-      setAuth: (user, accessToken, refreshToken) =>
+      login: (user, accessToken, refreshToken) =>
         set({
           user,
           accessToken,

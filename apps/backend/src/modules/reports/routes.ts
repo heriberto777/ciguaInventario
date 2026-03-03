@@ -15,6 +15,8 @@ export async function reportsRoutes(fastify: FastifyInstance) {
     fastify.post('/analyze-ai', { preHandler: [tenantGuard] }, (req, res) => reportsController.analyzeWithAI(req, res));
     fastify.post('/chat-ai', { preHandler: [tenantGuard] }, (req, res) => reportsController.chatAI(req, res));
     fastify.get('/chat-history', { preHandler: [tenantGuard] }, (req) => reportsController.getChatHistory(req));
+    fastify.post('/ai-audit', { preHandler: [tenantGuard] }, (req, rep) => reportsController.aiAudit(req, rep));
+    fastify.get('/historical-audit', { preHandler: [tenantGuard] }, (req) => reportsController.getHistoricalAuditData(req));
 
     // Config routes
     fastify.get('/ai-config', aiConfigController.getConfig.bind(aiConfigController));

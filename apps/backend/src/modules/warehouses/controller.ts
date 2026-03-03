@@ -3,7 +3,7 @@ import { WarehouseService } from './service';
 import { createWarehouseSchema, updateWarehouseSchema, createLocationSchema, updateLocationSchema } from './schema';
 
 export class WarehouseController {
-  constructor(private service: WarehouseService) {}
+  constructor(private service: WarehouseService) { }
 
   async createWarehouse(request: FastifyRequest, reply: FastifyReply) {
     const companyId = request.user.companyId;
@@ -23,7 +23,9 @@ export class WarehouseController {
 
   async listWarehouses(request: FastifyRequest, reply: FastifyReply) {
     const companyId = request.user.companyId;
-    const { page = 1, pageSize = 20 } = request.query as { page?: number; pageSize?: number };
+    const query = request.query as any;
+    const page = query.page ? parseInt(query.page as string, 10) : 1;
+    const pageSize = query.pageSize ? parseInt(query.pageSize as string, 10) : 20;
 
     const warehouses = await this.service.listWarehouses(companyId, page, pageSize);
     reply.send(warehouses);

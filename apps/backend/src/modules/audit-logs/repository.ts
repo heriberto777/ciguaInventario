@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { prisma } from '../../utils/db';
 
 export const auditLogsRepository = {

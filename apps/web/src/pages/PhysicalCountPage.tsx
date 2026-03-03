@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { NotificationModal } from '@/components/atoms/NotificationModal';
+import { ConfirmModal } from '@/components/atoms/ConfirmModal';
+import { ProcessingModal } from '@/components/atoms/ProcessingModal';
 
 interface CountItem {
   itemId: string;
@@ -51,6 +54,65 @@ export function PhysicalCountPage() {
   const [completing, setCompleting] = useState(false);
   const [showVariances, setShowVariances] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [notification, setNotification] = useState<{
+    isOpen: boolean;
+    type: 'success' | 'error' | 'warning' | 'info';
+    title: string;
+    message: string;
+  }>({
+    isOpen: false,
+    type: 'info',
+    title: '',
+    message: '',
+  });
+
+  const [confirmState, setConfirmState] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    isDangerous?: boolean;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => { },
+    isDangerous: false,
+  });
+
+  // Estado de procesamiento global
+  const [processing, setProcessing] = useState<{
+    isOpen: boolean;
+    message: string;
+    status: 'processing' | 'success' | 'error';
+  }>({
+    isOpen: false,
+    message: '',
+    status: 'processing',
+  });
+
+  const showProcessing = (message: string) => setProcessing({ isOpen: true, message, status: 'processing' });
+  const stopProcessing = () => setProcessing(prev => ({ ...prev, isOpen: false }));
+  const successProcessing = (message: string) => setProcessing({ isOpen: true, message, status: 'success' });
+  const errorProcessing = (message: string) => setProcessing({ isOpen: true, message, status: 'error' });
+
+  const showNotification = (type: 'success' | 'error' | 'warning' | 'info', title: string, message: string) => {
+    setNotification({ isOpen: true, type, title, message });
+  };
+
+  const handleConfirm = (title: string, message: string, onConfirm: () => void, isDangerous = false) => {
+    setConfirmState({
+      isOpen: true,
+      title,
+      message,
+      onConfirm: () => {
+        onConfirm();
+        setConfirmState(prev => ({ ...prev, isOpen: false }));
+      },
+      isDangerous
+    });
+  };
 
   useEffect(() => {
     loadCountData();
@@ -106,12 +168,8 @@ export function PhysicalCountPage() {
       setEditValue(0);
       setNotes('');
 
-      // Reload variance summary
-      const varianceRes = await fetch(`/api/inventory/counts/${countId}/variances`);
-      if (varianceRes.ok) {
-        const varianceData = await varianceRes.json();
-        setVarianceSummary(varianceData);
-      }
+      // Recargar datos completos para actualizar el resumen (itemsCounted, etc.)
+      await loadCountData();
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to update item';
       setError(message);
@@ -129,7 +187,7 @@ export function PhysicalCountPage() {
     }
 
     try {
-      setCompleting(true);
+      showProcessing('Finalizando conteo y guardando resultados...');
       const res = await fetch(`/api/inventory/counts/${countId}/complete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -138,37 +196,45 @@ export function PhysicalCountPage() {
       if (!res.ok) throw new Error('Failed to complete count');
 
       setError(null);
-      alert('Count completed successfully');
-      navigate(`/inventory/counts/${countId}`);
+      successProcessing('El conteo ha sido finalizado exitosamente.');
+      setTimeout(() => {
+        stopProcessing();
+        navigate(`/inventory/counts/${countId}`);
+      }, 1500);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to complete count';
-      setError(message);
-    } finally {
-      setCompleting(false);
+      errorProcessing(message);
     }
   };
 
   const handleDiscardCount = async () => {
     if (!countId) return;
 
-    if (!confirm('Are you sure you want to discard this count? This action cannot be undone.')) {
-      return;
-    }
+    handleConfirm(
+      '⚠ Descartar Conteo',
+      '¿Estás seguro de que deseas descartar este conteo? Esta acción no se puede deshacer.',
+      async () => {
+        try {
+          showProcessing('Eliminando el conteo...');
+          const res = await fetch(`/api/inventory/counts/${countId}`, {
+            method: 'DELETE',
+          });
 
-    try {
-      const res = await fetch(`/api/inventory/counts/${countId}`, {
-        method: 'DELETE',
-      });
+          if (!res.ok) throw new Error('Failed to discard count');
 
-      if (!res.ok) throw new Error('Failed to discard count');
-
-      setError(null);
-      alert('Count discarded');
-      navigate('/inventory/counts');
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to discard count';
-      setError(message);
-    }
+          setError(null);
+          successProcessing('El conteo ha sido eliminado.');
+          setTimeout(() => {
+            stopProcessing();
+            navigate('/inventory/counts');
+          }, 1500);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Failed to discard count';
+          errorProcessing(message);
+        }
+      },
+      true
+    );
   };
 
   if (loading) {
@@ -388,6 +454,30 @@ export function PhysicalCountPage() {
           Back to Counts
         </button>
       </div>
+
+      <ConfirmModal
+        isOpen={confirmState.isOpen}
+        onConfirm={confirmState.onConfirm}
+        onCancel={() => setConfirmState(prev => ({ ...prev, isOpen: false }))}
+        title={confirmState.title}
+        message={confirmState.message}
+        isDangerous={confirmState.isDangerous}
+      />
+
+      <NotificationModal
+        isOpen={notification.isOpen}
+        onClose={() => setNotification({ ...notification, isOpen: false })}
+        type={notification.type}
+        title={notification.title}
+        message={notification.message}
+      />
+
+      <ProcessingModal
+        isOpen={processing.isOpen}
+        message={processing.message}
+        status={processing.status}
+        onClose={processing.status !== 'processing' ? stopProcessing : undefined}
+      />
     </div>
   );
 }

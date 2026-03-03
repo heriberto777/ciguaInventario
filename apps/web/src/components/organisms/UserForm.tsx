@@ -116,8 +116,7 @@ export const UserForm: React.FC<UserFormProps> = ({
         <select
           id="roleId"
           {...register('roleId')}
-          className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white ${errors.roleId ? 'border-red-500' : 'border-gray-300'
-            }`}
+          className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--primary-500)] bg-[var(--bg-input)] text-[var(--text-primary)] ${errors.roleId ? 'border-[var(--border-danger)]' : 'border-[var(--border-default)]'}`}
         >
           <option value="">Select a role</option>
           {roles.map((role) => (

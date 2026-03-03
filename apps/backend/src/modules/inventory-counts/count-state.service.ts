@@ -128,12 +128,64 @@ export class CountStateService {
         let itemsApproved = 0;
 
         for (const item of items) {
-            const hasVariance = item.countedQty !== null && item.countedQty !== item.systemQty;
+            const countedVal = item.countedQty ? Number(item.countedQty) : 0;
+            const systemVal = Number(item.systemQty);
+            const diff = countedVal - systemVal;
+            const hasVariance = diff !== 0;
+
             await this.fastify.prisma.inventoryCount_Item.update({
                 where: { id: item.id },
-                data: { hasVariance, status: hasVariance ? 'VARIANCE' : 'APPROVED' },
+                data: {
+                    hasVariance,
+                    status: hasVariance ? 'VARIANCE' : 'APPROVED',
+                    // Si el operario nunca lo tocó, registramos 0 para el reporte
+                    ...(item.countedQty === null && { countedQty: 0 })
+                },
             });
-            hasVariance ? itemsWithVariance++ : itemsApproved++;
+
+            if (hasVariance) {
+                const variancePercent = systemVal > 0 ? (diff / systemVal) * 100 : 0;
+
+                await this.fastify.prisma.varianceReport.upsert({
+                    where: {
+                        countId_countItemId_version: {
+                            countId,
+                            countItemId: item.id,
+                            version: count.currentVersion
+                        }
+                    },
+                    update: {
+                        countedQty: countedVal,
+                        difference: diff,
+                        variancePercent,
+                        status: 'PENDING'
+                    },
+                    create: {
+                        companyId,
+                        countId,
+                        countItemId: item.id,
+                        version: count.currentVersion,
+                        itemCode: item.itemCode,
+                        itemName: item.itemName,
+                        systemQty: systemVal,
+                        countedQty: countedVal,
+                        difference: diff,
+                        variancePercent,
+                        status: 'PENDING'
+                    }
+                });
+                itemsWithVariance++;
+            } else {
+                // Si ya no hay varianza, eliminamos un posible reporte previo
+                await this.fastify.prisma.varianceReport.deleteMany({
+                    where: {
+                        countId,
+                        countItemId: item.id,
+                        version: count.currentVersion
+                    }
+                });
+                itemsApproved++;
+            }
         }
 
         this.fastify.log.info(`   ✅ ${itemsApproved} items sin varianza (APPROVED)`);
@@ -169,6 +221,36 @@ export class CountStateService {
         const result = await this.repository.getCountById(countId, companyId);
         this.fastify.log.info(`✅ [finalizeInventoryCount] Conteo finalizado administrativamente: ${count.sequenceNumber}`);
         return result;
+    }
+
+    /**
+     * Marca una versión como definitiva y CIERRA el conteo para reconteos.
+     * Esta es la "Finalización Física" solicitada.
+     */
+    async finalizePhysicalCount(countId: string, companyId: string, userId: string) {
+        const count = await this.repository.getCountById(countId, companyId);
+        if (!count) {
+            throw new AppError(404, 'Conteo no encontrado', 'COUNT_NOT_FOUND');
+        }
+
+        // Solo finalizar si está en un estado avanzado de conteo
+        if (!['ACTIVE', 'SUBMITTED', 'COMPLETED', 'ON_HOLD'].includes(count.status)) {
+            throw new AppError(400, `No se puede finalizar físicamente un conteo en estado ${count.status}`, 'INVALID_STATUS');
+        }
+
+        const updated = await this.fastify.prisma.inventoryCount.update({
+            where: { id: countId },
+            data: {
+                status: 'FINALIZED',
+                finalizedVersion: count.currentVersion,
+                approvedBy: userId,
+                approvedAt: new Date(),
+            },
+            include: { countItems: true },
+        });
+
+        this.fastify.log.info(`✅ [finalizePhysicalCount] Conteo finalizado físicamente (V${count.currentVersion}): ${updated.sequenceNumber}`);
+        return updated;
     }
 
     /**
@@ -311,11 +393,24 @@ export class CountStateService {
         if (!count) {
             throw new AppError(404, 'Conteo no encontrado', 'COUNT_NOT_FOUND');
         }
-        if (count.status !== 'COMPLETED') {
-            throw new AppError(400, `No se puede enviar al ERP. Estado actual: ${count.status}. Debe estar en COMPLETED.`, 'INVALID_STATUS');
+        if (count.status !== 'COMPLETED' && count.status !== 'FINALIZED') {
+            throw new AppError(400, `No se puede enviar al ERP. Estado actual: ${count.status}. Debe estar en COMPLETED o FINALIZED.`, 'INVALID_STATUS');
         }
 
         this.fastify.log.info(`🚀 [sendToERP] Enviando conteo al ERP: ${count.sequenceNumber}`);
+
+        // Si no se ha finalizado físicamente, lo hacemos automáticamente ahora
+        if (!count.finalizedVersion) {
+            this.fastify.log.info(`   - Auto-finalizando versión física: V${count.currentVersion}`);
+            await this.fastify.prisma.inventoryCount.update({
+                where: { id: countId },
+                data: { finalizedVersion: count.currentVersion }
+            });
+            count.finalizedVersion = count.currentVersion;
+        }
+
+        const versionToSync = count.finalizedVersion;
+        this.fastify.log.info(`   - Sincronizando Versión: V${versionToSync}`);
         this.fastify.log.info(`   - Total items: ${count.countItems?.length || 0}`);
 
         // Importar dinámicamente para evitar circular dependencies si fuera el caso
@@ -342,7 +437,17 @@ export class CountStateService {
             throw new AppError(500, 'Error al sincronizar con el ERP: ' + (syncResult.details[0]?.errorMessage || 'Error desconocido'));
         }
 
-        this.fastify.log.info(`✅ [sendToERP] Conteo enviado al ERP: ${count.sequenceNumber} (${syncResult.itemsSynced} items ok, ${syncResult.itemsFailed} fallidos)`);
+        // Marcar el conteo como cerrado definitivamente tras el envío exitoso
+        await this.fastify.prisma.inventoryCount.update({
+            where: { id: countId },
+            data: {
+                status: 'CLOSED',
+                closedAt: new Date(),
+                closedBy: userId
+            },
+        });
+
+        this.fastify.log.info(`✅ [sendToERP] Conteo enviado al ERP y CERRADO: ${count.sequenceNumber} (${syncResult.itemsSynced} items ok, ${syncResult.itemsFailed} fallidos)`);
 
         return {
             success: syncResult.success,

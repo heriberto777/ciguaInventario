@@ -13,14 +13,15 @@ export class ReportsController {
     async getPhysicalInventoryReport(request: FastifyRequest, reply: FastifyReply) {
         const { companyId } = request.user as { companyId: string };
         const { countId } = request.params as { countId: string };
-        const { onlyVariances, brand } = request.query as { onlyVariances?: string, brand?: string };
+        const { onlyVariances, brand, category } = request.query as { onlyVariances?: string, brand?: string, category?: string };
 
         try {
             const data = await this.reportsService.getPhysicalInventoryReport({
                 countId,
                 companyId,
                 onlyVariances: onlyVariances === 'true',
-                brand
+                brand,
+                category
             });
             return { success: true, data };
         } catch (error: any) {
@@ -97,6 +98,43 @@ export class ReportsController {
             return { success: true, data: history };
         } catch (error: any) {
             return { success: false, message: error.message };
+        }
+    }
+
+    async getHistoricalAuditData(request: FastifyRequest) {
+        const { companyId } = request.user as any;
+        const { startDate, endDate, warehouseId, status } = request.query as any;
+
+        try {
+            const data = await this.reportsService.getHistoricalAuditData({
+                companyId,
+                startDate,
+                endDate,
+                warehouseId,
+                status: status ? (Array.isArray(status) ? status : [status]) : undefined
+            });
+            return { success: true, data };
+        } catch (error: any) {
+            return { success: false, message: error.message };
+        }
+    }
+
+    async aiAudit(request: FastifyRequest, reply: FastifyReply) {
+        const user = request.user as any;
+        const userId = user.userId || user.id;
+        const companyId = user.companyId;
+        const { auditIds } = request.body as { auditIds: string[] };
+
+        try {
+            const result = await this.aiService.performDeepAudit(companyId, auditIds, userId);
+            return {
+                success: true,
+                analysis: result.analysis,
+                mode: result.mode
+            };
+        } catch (error: any) {
+            request.log.error(error);
+            return reply.status(500).send({ success: false, message: error.message });
         }
     }
 }

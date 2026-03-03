@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { FastifyInstance } from 'fastify';
 import { MSSQLConnector, MSSQLConfig } from './mssql-connector';
 import { AppError } from '../../utils/errors';

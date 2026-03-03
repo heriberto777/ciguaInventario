@@ -2,6 +2,10 @@ import React, { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { getApiClient } from '@/services/api';
 import { SimpleMappingBuilder } from '@/components/SimpleMappingBuilder';
+import { Button } from '@/components/atoms/Button';
+import { ConfirmModal } from '@/components/atoms/ConfirmModal';
+import { NotificationModal } from '@/components/atoms/NotificationModal';
+import { ProcessingModal } from '@/components/atoms/ProcessingModal';
 
 // MappingConfig ahora viene de SimpleMappingBuilder
 // Ver: src/components/SimpleMappingBuilder/index.tsx
@@ -12,6 +16,72 @@ export const MappingConfigAdminPage: React.FC = () => {
   const [step, setStep] = useState<'list' | 'create' | 'edit' | 'select_type'>('list');
   const [selectedConfig, setSelectedConfig] = useState<MappingConfig | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  // Estado de procesamiento global
+  const [processing, setProcessing] = useState<{
+    isOpen: boolean;
+    message: string;
+    status: 'processing' | 'success' | 'error';
+  }>({
+    isOpen: false,
+    message: '',
+    status: 'processing',
+  });
+
+  const showProcessing = (message: string) => setProcessing({ isOpen: true, message, status: 'processing' });
+  const stopProcessing = () => setProcessing(prev => ({ ...prev, isOpen: false }));
+  const successProcessing = (message: string) => setProcessing({ isOpen: true, message, status: 'success' });
+  const errorProcessing = (message: string) => setProcessing({ isOpen: true, message, status: 'error' });
+
+  // Modal de confirmación genérico
+  const [confirmState, setConfirmState] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    isDangerous?: boolean;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => { },
+    isDangerous: false,
+  });
+
+  const handleActionWithConfirm = (
+    title: string,
+    message: string,
+    onConfirm: () => void,
+    isDangerous: boolean = false
+  ) => {
+    setConfirmState({
+      isOpen: true,
+      title,
+      message,
+      onConfirm: () => {
+        onConfirm();
+        setConfirmState(prev => ({ ...prev, isOpen: false }));
+      },
+      isDangerous,
+    });
+  };
+
+  // Modal de notificación
+  const [notification, setNotification] = useState<{
+    isOpen: boolean;
+    type: 'success' | 'error' | 'warning' | 'info';
+    title: string;
+    message: string;
+  }>({
+    isOpen: false,
+    type: 'info',
+    title: '',
+    message: '',
+  });
+
+  const showNotification = (type: 'success' | 'error' | 'warning' | 'info', title: string, message: string) => {
+    setNotification({ isOpen: true, type, title, message });
+  };
 
   // Fetch connections
   const { data: connections } = useQuery({
@@ -40,6 +110,7 @@ export const MappingConfigAdminPage: React.FC = () => {
   const saveMutation = useMutation({
     mutationFn: async (data: MappingConfig) => {
       console.log('💾 [saveMutation] Starting save with data:', data);
+      showProcessing(data.id ? 'Actualizando mapping...' : 'Creando mapping...');
 
       // Validación básica
       if (!data.connectionId) {
@@ -85,22 +156,32 @@ export const MappingConfigAdminPage: React.FC = () => {
       refetch();
       setStep('list');
       setSelectedConfig(null);
+      successProcessing('Mapping guardado correctamente.');
+      setTimeout(stopProcessing, 1500);
     },
     onError: (error: any) => {
       console.error('❌ [saveMutation] onError - Error:', error);
       const message = error?.response?.data?.error?.message || error.message || 'Error al guardar el mapping';
       console.error('❌ [saveMutation] Error message:', message);
       setSaveError(message);
+      errorProcessing(message);
     },
   });
 
   // Delete mutation
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
+      showProcessing('Eliminando mapping...');
       await apiClient.delete(`/mapping-configs/${id}`);
     },
     onSuccess: () => {
       refetch();
+      successProcessing('Mapping eliminado.');
+      setTimeout(stopProcessing, 1500);
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.message || error.message || 'Error al eliminar el mapping';
+      errorProcessing(message);
     },
   });
 
@@ -108,6 +189,7 @@ export const MappingConfigAdminPage: React.FC = () => {
   const toggleMutation = useMutation({
     mutationFn: async (id: string) => {
       const config = configs?.find((c: any) => c.id === id);
+      showProcessing(!config?.isActive ? 'Activando mapping...' : 'Desactivando mapping...');
       const res = await apiClient.post(`/mapping-configs/${id}/toggle`, {
         isActive: !config?.isActive,
       });
@@ -115,6 +197,12 @@ export const MappingConfigAdminPage: React.FC = () => {
     },
     onSuccess: () => {
       refetch();
+      successProcessing('Estado actualizado.');
+      setTimeout(stopProcessing, 1500);
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.message || error.message || 'Error al cambiar estado';
+      errorProcessing(message);
     },
   });
 
@@ -142,79 +230,127 @@ export const MappingConfigAdminPage: React.FC = () => {
       filters: [],
       selectedColumns: [],
       fieldMappings: [],
-    });
+    } as any);
     setStep('create');
   };
 
-  if (isLoading) return <div>Cargando...</div>;
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
+        <div className="w-12 h-12 border-4 border-accent-primary border-t-transparent rounded-full animate-spin" />
+        <p className="text-muted font-black uppercase tracking-widest text-[10px] animate-pulse">Cargando Mapeos...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6">
       {step === 'list' && (
         <div>
-          <div className="flex justify-between items-center mb-6">
-            <h1 className="text-3xl font-bold">Configuración de Mappings</h1>
-            <button
+          <div className="flex justify-between items-center mb-8">
+            <div>
+              <h1 className="text-3xl font-black text-primary tracking-tight">Mapeos de Datos</h1>
+              <p className="text-muted text-sm mt-1 uppercase font-black tracking-widest opacity-60">Configuración de integración ERP</p>
+            </div>
+            <Button
               onClick={handleNew}
-              className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+              variant="primary"
+              className="rounded-xl px-6 py-6 shadow-lg shadow-accent-primary/20"
             >
-              + Nuevo Mapping
-            </button>
+              ✨ Nuevo Mapping
+            </Button>
           </div>
 
           <div className="grid gap-4">
             {configs?.length === 0 && (
-              <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-                <p className="text-gray-500">No hay mappings configurados. ¡Crea el primero!</p>
+              <div className="text-center py-24 bg-hover/30 rounded-2xl border-2 border-dashed border-border-default/50">
+                <div className="text-6xl mb-6 opacity-20">🧭</div>
+                <p className="text-muted font-black uppercase tracking-[0.2em] text-xs">No hay mappings configurados. ¡Crea el primero!</p>
               </div>
             )}
             {configs?.map((config: any) => (
-              <div key={config.id} className="bg-white border border-gray-200 p-5 rounded-lg shadow-sm hover:shadow-md transition-shadow">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${config.datasetType === 'DESTINATION' ? 'bg-purple-100 text-purple-700 border border-purple-200' :
-                        config.datasetType === 'ITEMS' ? 'bg-blue-100 text-blue-700 border border-blue-200' :
-                          'bg-gray-100 text-gray-700 border border-gray-200'
+              <div key={config.id} className="bg-card border border-border-default p-6 rounded-2xl shadow-sm hover:shadow-xl-hover transition-all group overflow-hidden relative">
+                <div className="absolute right-0 top-0 w-1 h-full bg-accent-primary opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                <div className="flex justify-between items-center">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-3">
+                      <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${config.datasetType === 'DESTINATION' ? 'bg-accent-secondary/10 text-accent-secondary border-accent-secondary/20' :
+                        config.datasetType === 'ITEMS' ? 'bg-accent-primary/10 text-accent-primary border-accent-primary/20' :
+                          'bg-hover text-muted border-border-default'
                         }`}>
                         {config.datasetType}
                       </span>
-                      <h3 className="text-lg font-bold text-gray-800">{config.datasetType === 'DESTINATION' ? 'Exportación a ERP' : 'Carga desde ERP'}</h3>
+                      <h3 className="text-xl font-black text-primary tracking-tight">{config.datasetType === 'DESTINATION' ? 'Exportación a ERP' : 'Carga desde ERP'}</h3>
                     </div>
-                    <p className="text-sm text-gray-600 flex items-center gap-1">
+                    <p className="text-sm text-[var(--text-secondary)] flex items-center gap-1">
                       <span className="opacity-60">📍 Tabla:</span>
-                      <code className="bg-gray-100 px-1 rounded text-blue-700 font-mono text-xs">
+                      <code className="bg-[var(--bg-hover)] px-1 rounded text-blue-500 font-mono text-xs border border-[var(--border-default)]">
                         {config.mainTable || (config.customQuery ? 'Query Personalizada' : 'Sin definir')}
                       </code>
                     </p>
-                    <p className="text-sm text-gray-600 mt-1">
+                    <p className="text-sm text-[var(--text-secondary)] mt-1">
                       <span className="opacity-60">🔗 Campos:</span> <strong>{config.fieldMappings?.length || 0}</strong> mapeados
                     </p>
                   </div>
                   <div className="flex gap-2">
                     <button
                       onClick={() => toggleMutation.mutate(config.id)}
-                      className={`px-3 py-1 rounded text-sm ${config.isActive
-                        ? 'bg-green-200 text-green-800'
-                        : 'bg-gray-200 text-gray-800'
-                        }`}
+                      disabled={toggleMutation.isPending && toggleMutation.variables === config.id}
+                      className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border flex items-center gap-2 ${config.isActive
+                        ? 'bg-success/10 text-success border-success/20 shadow-sm shadow-success/5'
+                        : 'bg-hover text-muted border-border-default'
+                        } disabled:opacity-50`}
                     >
+                      {toggleMutation.isPending && toggleMutation.variables === config.id && (
+                        <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                      )}
                       {config.isActive ? 'Activo' : 'Inactivo'}
                     </button>
                     <button
                       onClick={() => {
-                        setSelectedConfig(config);
+                        let configToEdit = { ...config };
+                        // Si existe config.filters, lo aplanamos para el builder
+                        if (config.filters) {
+                          try {
+                            const parsedFilters = typeof config.filters === 'string'
+                              ? JSON.parse(config.filters)
+                              : config.filters;
+
+                            configToEdit = {
+                              ...configToEdit,
+                              ...parsedFilters,
+                              // Asegurar que no quede el objeto original estorbando
+                              filters: Array.isArray(parsedFilters.filters) ? parsedFilters.filters : (configToEdit.filters || []),
+                              joins: Array.isArray(parsedFilters.joins) ? parsedFilters.joins : (configToEdit.joins || []),
+                              mainTable: parsedFilters.mainTable || config.mainTable,
+                              selectedColumns: Array.isArray(parsedFilters.selectedColumns) ? parsedFilters.selectedColumns : (configToEdit.selectedColumns || []),
+                              fieldMappings: Array.isArray(parsedFilters.fieldMappings) ? parsedFilters.fieldMappings : (configToEdit.fieldMappings || []),
+                            };
+                          } catch (e) {
+                            console.error('Error parsing filters for edit:', e);
+                          }
+                        }
+                        console.log('✏️ [MappingConfigAdminPage] Editing config:', configToEdit);
+                        setSelectedConfig(configToEdit);
                         setStep('edit');
                       }}
-                      className="bg-yellow-600 text-white px-3 py-1 rounded hover:bg-yellow-700"
+                      className="p-2.5 rounded-lg bg-hover text-muted hover:text-accent-primary hover:bg-accent-primary/10 transition-all border border-transparent hover:border-accent-primary/20"
+                      title="Editar"
                     >
-                      Editar
+                      ✏️
                     </button>
                     <button
-                      onClick={() => deleteMutation.mutate(config.id)}
-                      className="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700"
+                      onClick={() => handleActionWithConfirm(
+                        '⚠️ Eliminar Mapping',
+                        '¿Estás seguro de que deseas eliminar este mapping? Esta acción afectará la sincronización con el ERP.',
+                        () => deleteMutation.mutate(config.id),
+                        true
+                      )}
+                      disabled={deleteMutation.isPending && deleteMutation.variables === config.id}
+                      className="p-2.5 rounded-lg bg-hover text-muted hover:text-danger hover:bg-danger/10 transition-all border border-transparent hover:border-danger/20 disabled:opacity-50 flex items-center justify-center"
+                      title="Eliminar"
                     >
-                      Eliminar
+                      🗑️
                     </button>
                   </div>
                 </div>
@@ -230,35 +366,37 @@ export const MappingConfigAdminPage: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <button
               onClick={() => handleCreateWithType('ITEMS')}
-              className="group p-8 border-2 border-blue-100 bg-white rounded-2xl hover:border-blue-500 hover:bg-blue-50 transition-all text-left shadow-sm"
+              className="group p-8 border border-border-default bg-card rounded-3xl hover:border-accent-primary hover:shadow-xl-hover transition-all text-left shadow-lg overflow-hidden relative"
             >
-              <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center mb-4 group-hover:bg-blue-500 group-hover:text-white transition-colors">
-                <span className="text-2xl">📦</span>
+              <div className="absolute -right-4 -bottom-4 text-7xl opacity-5 group-hover:scale-110 group-hover:opacity-10 transition-all duration-500">📦</div>
+              <div className="w-14 h-14 bg-accent-primary/10 text-accent-primary rounded-2xl flex items-center justify-center mb-6 group-hover:bg-accent-primary group-hover:text-white transition-all shadow-inner">
+                <span className="text-3xl">📦</span>
               </div>
-              <h3 className="text-xl font-bold mb-2 text-gray-800">Carga de Artículos</h3>
-              <p className="text-sm text-gray-600 leading-relaxed">Importa códigos, descripciones y unidades de medida desde el ERP para iniciar conteos.</p>
+              <h3 className="text-2xl font-black mb-2 text-primary tracking-tight">Carga de Artículos</h3>
+              <p className="text-sm text-secondary leading-relaxed font-medium">Importa códigos, descripciones y unidades de medida desde el ERP para iniciar conteos.</p>
             </button>
 
             <button
               onClick={() => handleCreateWithType('DESTINATION')}
-              className="group p-8 border-2 border-purple-100 bg-white rounded-2xl hover:border-purple-500 hover:bg-purple-50 transition-all text-left shadow-sm"
+              className="group p-8 border border-border-default bg-card rounded-3xl hover:border-accent-secondary hover:shadow-xl-hover transition-all text-left shadow-lg overflow-hidden relative"
             >
-              <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center mb-4 group-hover:bg-purple-500 group-hover:text-white transition-colors">
-                <span className="text-2xl">🚀</span>
+              <div className="absolute -right-4 -bottom-4 text-7xl opacity-5 group-hover:scale-110 group-hover:opacity-10 transition-all duration-500">🚀</div>
+              <div className="w-14 h-14 bg-accent-secondary/10 text-accent-secondary rounded-2xl flex items-center justify-center mb-6 group-hover:bg-accent-secondary group-hover:text-white transition-all shadow-inner">
+                <span className="text-3xl">🚀</span>
               </div>
-              <h3 className="text-xl font-bold mb-2 text-gray-800">Exportación (Destination)</h3>
-              <p className="text-sm text-gray-600 leading-relaxed">Envía los resultados del conteo a una tabla específica del ERP (ej: Boleta de Inventario).</p>
+              <h3 className="text-2xl font-black mb-2 text-primary tracking-tight">Exportación Hub</h3>
+              <p className="text-sm text-secondary leading-relaxed font-medium">Envía los resultados del conteo a una tabla específica del ERP (ej: Boleta de Inventario).</p>
             </button>
 
             <button
               onClick={() => handleCreateWithType('STOCK')}
-              className="group p-8 border-2 border-gray-100 bg-white rounded-2xl hover:border-blue-500 hover:bg-blue-50 transition-all text-left shadow-sm opacity-60 hover:opacity-100"
+              className="group p-8 border-2 border-[var(--border-default)] bg-[var(--bg-card)] rounded-2xl hover:border-blue-500 hover:bg-blue-500/5 transition-all text-left shadow-sm opacity-60 hover:opacity-100"
             >
-              <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center mb-4 group-hover:bg-blue-500 group-hover:text-white transition-colors">
+              <div className="w-12 h-12 bg-[var(--bg-hover)] rounded-xl flex items-center justify-center mb-4 group-hover:bg-blue-500 group-hover:text-white transition-colors">
                 <span className="text-2xl">📊</span>
               </div>
-              <h3 className="text-xl font-bold mb-2 text-gray-800">Carga de Existencia</h3>
-              <p className="text-sm text-gray-600 leading-relaxed">Importa el stock teórico actual desde el ERP para compararlo con el conteo físico.</p>
+              <h3 className="text-xl font-black mb-2 text-[var(--text-primary)]">Carga de Existencia</h3>
+              <p className="text-sm text-[var(--text-secondary)] leading-relaxed">Importa el stock teórico actual desde el ERP para compararlo con el conteo físico.</p>
             </button>
 
             <button
@@ -286,6 +424,30 @@ export const MappingConfigAdminPage: React.FC = () => {
           saveMutation={saveMutation}
         />
       )}
+
+      <ConfirmModal
+        isOpen={confirmState.isOpen}
+        onConfirm={confirmState.onConfirm}
+        onCancel={() => setConfirmState(prev => ({ ...prev, isOpen: false }))}
+        title={confirmState.title}
+        message={confirmState.message}
+        isDangerous={confirmState.isDangerous}
+      />
+
+      <NotificationModal
+        isOpen={notification.isOpen}
+        onClose={() => setNotification({ ...notification, isOpen: false })}
+        type={notification.type}
+        title={notification.title}
+        message={notification.message}
+      />
+
+      <ProcessingModal
+        isOpen={processing.isOpen}
+        message={processing.message}
+        status={processing.status}
+        onClose={processing.status !== 'processing' ? stopProcessing : undefined}
+      />
     </div>
   );
 };

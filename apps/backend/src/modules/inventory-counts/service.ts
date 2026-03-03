@@ -205,7 +205,7 @@ export class InventoryCountService {
     countId: string,
     companyId: string,
     items: ExcelCountItem[],
-  ): Promise<{ loaded: number; skipped: number }> {
+  ): Promise<{ loaded: number; updated: number }> {
     const count = await this.getCountById(countId, companyId);
 
     // Obtener la ubicación por defecto del almacén del conteo
@@ -219,49 +219,80 @@ export class InventoryCountService {
 
     const locationId = defaultLocation.id;
 
-    // Obtener códigos ya cargados para evitar duplicados
+    // Obtener códigos ya cargados para saber si hacemos update o create
     const existingCodes = new Set(
       count.countItems.map((i: { itemCode: string }) => i.itemCode)
     );
 
     let loaded = 0;
-    let skipped = 0;
+    let updated = 0;
 
     for (const item of items) {
+      // Enriquecer clasificaciones
+      const brand = await this.getClassificationDescription(companyId, item.brand, 'BRAND');
+      const category = await this.getClassificationDescription(companyId, item.category, 'CATEGORY');
+      const subcategory = await this.getClassificationDescription(companyId, item.subcategory, 'SUBCATEGORY');
+
+      const itemData = {
+        itemName: item.itemName,
+        systemQty: item.systemQty,
+        uom: item.uom || 'UND',
+        packQty: item.packQty || 1,
+        baseUom: item.uom || 'UND',
+        category: category || item.category,
+        subcategory: subcategory || item.subcategory,
+        brand: brand || item.brand,
+        ...(item.costPrice != null && { costPrice: item.costPrice }),
+        ...(item.salePrice != null && { salePrice: item.salePrice }),
+        ...(item.barCodeInv && { barCodeInv: item.barCodeInv }),
+        ...(item.barCodeVt && { barCodeVt: item.barCodeVt }),
+      };
+
       if (existingCodes.has(item.itemCode)) {
-        skipped++;
-        continue;
+        // ACTUALIZAR (solo versión 1 que es la base de la carga)
+        await this.fastify.prisma.inventoryCount_Item.updateMany({
+          where: { countId, locationId, itemCode: item.itemCode, version: 1 },
+          data: itemData
+        });
+        updated++;
+      } else {
+        // CREAR
+        await this.fastify.prisma.inventoryCount_Item.create({
+          data: {
+            countId,
+            locationId,
+            itemCode: item.itemCode,
+            version: 1,
+            status: 'PENDING',
+            countedQty: null,
+            notes: 'Cargado desde Excel',
+            ...itemData
+          },
+        });
+        existingCodes.add(item.itemCode);
+        loaded++;
       }
-
-      await this.fastify.prisma.inventoryCount_Item.create({
-        data: {
-          countId,
-          locationId,
-          itemCode: item.itemCode,
-          itemName: item.itemName,
-          systemQty: item.systemQty,
-          uom: item.uom || 'UND',
-          packQty: item.packQty || 1,
-          baseUom: item.uom || 'UND',
-          version: 1,
-          status: 'PENDING',
-          countedQty: null,
-          notes: 'Cargado desde Excel',
-          ...(item.category && { category: item.category }),
-          ...(item.subcategory && { subcategory: item.subcategory }),
-          ...(item.brand && { brand: item.brand }),
-          ...(item.costPrice != null && { costPrice: item.costPrice }),
-          ...(item.salePrice != null && { salePrice: item.salePrice }),
-          ...(item.barCodeInv && { barCodeInv: item.barCodeInv }),
-          ...(item.barCodeVt && { barCodeVt: item.barCodeVt }),
-        },
-      });
-
-      existingCodes.add(item.itemCode);
-      loaded++;
     }
 
-    return { loaded, skipped };
+    return { loaded, updated };
+  }
+
+  /**
+   * Helper duplicado (o podrías moverlo a un base service) para enriquecer clasificaciones.
+   */
+  private async getClassificationDescription(companyId: string, code: string | undefined, groupType: string): Promise<string | null> {
+    if (!code || !companyId || code.trim() === '') return null;
+
+    const classification = await (this.fastify.prisma as any).itemClassification.findFirst({
+      where: {
+        companyId,
+        code: code.trim().toUpperCase(),
+        groupType: groupType as any,
+      },
+      select: { description: true }
+    });
+
+    return classification?.description || null;
   }
 }
 

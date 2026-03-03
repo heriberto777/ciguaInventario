@@ -25,10 +25,10 @@ const GROUP_LABELS: Record<GroupType, string> = {
 };
 
 const GROUP_COLORS: Record<GroupType, { bg: string; text: string }> = {
-    CATEGORY: { bg: '#eff6ff', text: '#1d4ed8' },
-    SUBCATEGORY: { bg: '#f0fdf4', text: '#15803d' },
-    BRAND: { bg: '#fdf4ff', text: '#7e22ce' },
-    OTHER: { bg: '#f9fafb', text: '#4b5563' },
+    CATEGORY: { bg: 'rgba(59, 130, 246, 0.1)', text: '#60a5fa' },
+    SUBCATEGORY: { bg: 'rgba(16, 185, 129, 0.1)', text: '#34d399' },
+    BRAND: { bg: 'rgba(139, 92, 246, 0.1)', text: '#a78bfa' },
+    OTHER: { bg: 'var(--bg-hover)', text: 'var(--text-secondary)' },
 };
 
 const ALL_TABS: Array<{ key: GroupType | 'ALL'; label: string }> = [
@@ -242,6 +242,142 @@ function ImportResultModal({ result, onClose }: { result: any; onClose: () => vo
     );
 }
 
+// ─── Modal de Importación Integrado ──────────────────────────
+interface ImportModalProps {
+    onClose: () => void;
+    onDownloadTemplate: () => void;
+    onImport: (items: any[]) => Promise<void>;
+    isImporting: boolean;
+}
+
+function ClassificationImportModal({ onClose, onDownloadTemplate, onImport, isImporting }: ImportModalProps) {
+    const [previewData, setPreviewData] = useState<any[]>([]);
+    const [fileName, setFileName] = useState('');
+    const [error, setError] = useState('');
+
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setFileName(file.name);
+        setError('');
+
+        try {
+            const buffer = await file.arrayBuffer();
+            const wb = XLSX.read(buffer, { type: 'array' });
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json<any>(ws);
+
+            const parsed = rows.map((r) => {
+                const code = r.CLASIFICACION || r.CODIGO || r.CODE || r.SKU;
+                const description = r.DESCRIPCION || r.DESCRIPTION || r.NOMBRE || r.NAME || r.DESC;
+                const groupNumber = r.AGRUPACION || r.AGRUPACIÓN || r.GROUP || r.TIPO || r.AGRUP;
+
+                return {
+                    code: code ? String(code).trim().toUpperCase() : '',
+                    description: description ? String(description).trim() : '',
+                    groupNumber: groupNumber ? Number(groupNumber) : 0,
+                    isValid: !!code && !!description && !!groupNumber
+                };
+            });
+
+            if (parsed.length === 0) {
+                setError('El archivo parece estar vacío o no tiene el formato correcto.');
+            }
+            setPreviewData(parsed);
+        } catch (err: any) {
+            setError('Error al procesar el archivo: ' + err.message);
+        }
+    };
+
+    const validItems = previewData.filter(i => i.isValid);
+
+    return (
+        <div style={styles.overlay}>
+            <div style={{ ...styles.modal, maxWidth: 800 }}>
+                <div style={styles.modalHeader}>
+                    <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                        Importar Clasificaciones desde Excel
+                    </h3>
+                    <button onClick={onClose} style={styles.closeBtn}>✕</button>
+                </div>
+
+                <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+                    {/* Paso 1: Preparación */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', background: 'var(--bg-hover)', padding: '12px 16px', borderRadius: 10 }}>
+                        <div>
+                            <p style={{ margin: '0 0 4px', fontSize: '0.9rem', fontWeight: 600 }}>1. Prepara tu archivo</p>
+                            <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>Mínimo: código, descripción y agrupación (1-4)</p>
+                        </div>
+                        <button onClick={onDownloadTemplate} style={{ ...styles.btnSecondary, background: '#fff' }}>
+                            📥 Descargar Plantilla
+                        </button>
+                    </div>
+
+                    {/* Paso 2: Carga */}
+                    <div>
+                        <p style={{ margin: '0 0 8px', fontSize: '0.9rem', fontWeight: 600 }}>2. Selecciona el archivo</p>
+                        <label style={{
+                            display: 'block', border: '2px dashed var(--border-default)', borderRadius: 12,
+                            padding: '30px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s',
+                            background: fileName ? 'var(--accent-light)' : 'transparent'
+                        }}>
+                            <input type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={handleFileChange} />
+                            <div style={{ fontSize: '1.5rem', marginBottom: 8 }}>📄</div>
+                            <p style={{ margin: 0, fontSize: '0.9rem', fontWeight: 500 }}>
+                                {fileName ? fileName : 'Haz clic para buscar o arrastra un archivo Excel'}
+                            </p>
+                        </label>
+                    </div>
+
+                    {/* Paso 3: Vista Previa */}
+                    {previewData.length > 0 && (
+                        <div>
+                            <p style={{ margin: '0 0 8px', fontSize: '0.9rem', fontWeight: 600 }}>3. Vista Previa ({validItems.length} listos)</p>
+                            <div style={{ maxHeight: 250, overflow: 'auto', border: '1px solid var(--border-default)', borderRadius: 8 }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                                    <thead style={{ position: 'sticky', top: 0, background: 'var(--bg-hover)', zIndex: 1 }}>
+                                        <tr>
+                                            <th style={{ padding: 8, textAlign: 'left', borderBottom: '1px solid var(--border-default)' }}>Código</th>
+                                            <th style={{ padding: 8, textAlign: 'left', borderBottom: '1px solid var(--border-default)' }}>Descripción</th>
+                                            <th style={{ padding: 8, textAlign: 'center', borderBottom: '1px solid var(--border-default)' }}>Agrup.</th>
+                                            <th style={{ padding: 8, textAlign: 'center', borderBottom: '1px solid var(--border-default)' }}>Estado</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {previewData.map((row, i) => (
+                                            <tr key={i} style={{ borderBottom: '1px solid var(--border-default)', opacity: row.isValid ? 1 : 0.5 }}>
+                                                <td style={{ padding: 8 }}>{row.code || '—'}</td>
+                                                <td style={{ padding: 8, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.description || '—'}</td>
+                                                <td style={{ padding: 8, textAlign: 'center' }}>{row.groupNumber || '—'}</td>
+                                                <td style={{ padding: 8, textAlign: 'center' }}>
+                                                    {row.isValid ? '✅ OK' : '❌ Incompleto'}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
+
+                    {error && <p style={{ color: 'var(--color-danger)', fontSize: '0.85rem', margin: 0 }}>{error}</p>}
+                </div>
+
+                <div style={{ padding: '16px 20px', borderTop: '1px solid var(--border-default)', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                    <button onClick={onClose} style={styles.btnSecondary}>Cancelar</button>
+                    <button
+                        onClick={() => onImport(validItems)}
+                        disabled={isImporting || validItems.length === 0}
+                        style={{ ...styles.btnPrimary, minWidth: 140 }}
+                    >
+                        {isImporting ? '⏳ Cargando...' : `Confirmar y Cargar (${validItems.length})`}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 // ─── Página principal ─────────────────────────────────────────
 export default function ItemClassificationsPage() {
     const [activeTab, setActiveTab] = useState<GroupType | 'ALL'>('ALL');
@@ -249,6 +385,7 @@ export default function ItemClassificationsPage() {
     const [modalItem, setModalItem] = useState<Classification | null | undefined>(undefined); // undefined = cerrado
     const [deleteId, setDeleteId] = useState<string | null>(null);
     const [importResult, setImportResult] = useState<any>(null);
+    const [showImportModal, setShowImportModal] = useState(false);
     const fileRef = useRef<HTMLInputElement>(null);
 
     const groupFilter = activeTab === 'ALL' ? undefined : activeTab;
@@ -302,12 +439,43 @@ export default function ItemClassificationsPage() {
         try {
             const res = await bulkMutation.mutateAsync({ items: parsed, upsert: true });
             setImportResult(res.data.data);
+            setShowImportModal(false);
         } catch (e: any) {
             alert('Error al importar: ' + (e.response?.data?.message ?? e.message));
         }
 
         // Reset el input para permitir reimportar el mismo archivo
         if (fileRef.current) fileRef.current.value = '';
+    };
+
+    const handleDownloadTemplate = async () => {
+        try {
+            const response = await apiClient.get('/item-classifications/excel-template', { responseType: 'blob' });
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', 'plantilla_clasificaciones_items.xlsx');
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+        } catch (error) {
+            console.error('Error downloading template:', error);
+            alert('Error al descargar la plantilla');
+        }
+    };
+
+    const handleExportToExcel = () => {
+        if (items.length === 0) return;
+        const data = items.map(i => ({
+            CLASIFICACION: i.code,
+            DESCRIPCION: i.description,
+            AGRUPACION: i.groupNumber,
+            TIPO: GROUP_LABELS[i.groupType]
+        }));
+        const ws = XLSX.utils.json_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Clasificaciones');
+        XLSX.writeFile(wb, 'export_clasificaciones.xlsx');
     };
 
     // ── Delete ──
@@ -332,19 +500,19 @@ export default function ItemClassificationsPage() {
 
                 <div style={{ display: 'flex', gap: 8 }}>
                     {/* Import Excel */}
-                    <input
-                        ref={fileRef}
-                        type="file"
-                        accept=".xlsx,.xls,.csv"
-                        style={{ display: 'none' }}
-                        onChange={handleFileChange}
-                    />
                     <button
-                        onClick={() => fileRef.current?.click()}
-                        disabled={bulkMutation.isPending}
-                        style={{ ...styles.btnSecondary, display: 'flex', alignItems: 'center', gap: 6 }}
+                        onClick={handleExportToExcel}
+                        title="Exportar actuales a Excel"
+                        style={{ ...styles.btnSecondary, padding: '8px 12px' }}
                     >
-                        {bulkMutation.isPending ? '⏳ Importando...' : '📥 Importar Excel'}
+                        📤 Exportar
+                    </button>
+                    <button
+                        onClick={() => setShowImportModal(true)}
+                        disabled={bulkMutation.isPending}
+                        style={{ ...styles.btnPrimary, display: 'flex', alignItems: 'center', gap: 6, background: '#059669' }}
+                    >
+                        📥 Cargar Excel
                     </button>
                     <button
                         onClick={async () => {
@@ -526,6 +694,24 @@ export default function ItemClassificationsPage() {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* ── Import Modal ── */}
+            {showImportModal && (
+                <ClassificationImportModal
+                    onClose={() => setShowImportModal(false)}
+                    onDownloadTemplate={handleDownloadTemplate}
+                    onImport={async (lines) => {
+                        try {
+                            const res = await bulkMutation.mutateAsync({ items: lines, upsert: true });
+                            setImportResult(res.data.data);
+                            setShowImportModal(false);
+                        } catch (e: any) {
+                            alert('Error al importar: ' + (e.response?.data?.message ?? e.message));
+                        }
+                    }}
+                    isImporting={bulkMutation.isPending}
+                />
             )}
 
             {/* ── Import Result ── */}

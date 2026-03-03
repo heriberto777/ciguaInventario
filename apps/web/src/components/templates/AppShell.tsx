@@ -1,8 +1,8 @@
-import { ReactNode, useState } from 'react';
+import { ReactNode, useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '@/store/auth';
 import { useThemeStore } from '@/store/theme';
-import { useLogout } from '@/hooks/useApi';
+import { useLogout, useAppConfig } from '@/hooks/useApi';
 
 interface NavItem {
     label: string;
@@ -49,6 +49,18 @@ const NAV_SECTIONS: NavSection[] = [
                 label: 'Chat con IA',
                 path: '/inventory/chat-ai',
                 icon: <Icon d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8zm1-13h-2v2h2zm0 4h-2v6h2z" />,
+            },
+            {
+                label: 'Reportes',
+                path: '/reports',
+                icon: <Icon d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8" />,
+                requiredPermission: 'inventory:view_qty',
+            },
+            {
+                label: 'Auditoría IA',
+                path: '/inventory/audit',
+                icon: <Icon d="M9 12l2 2 4-4M3 21h18M3 10V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5" />,
+                requiredPermission: 'inventory:view_qty',
             },
         ],
     },
@@ -119,12 +131,6 @@ const NAV_SECTIONS: NavSection[] = [
         label: 'Sistema',
         items: [
             {
-                label: 'Reportes',
-                path: '/reports',
-                icon: <Icon d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8" />,
-                requiredPermission: 'inventory:view_qty',
-            },
-            {
                 label: 'Auditoría',
                 path: '/admin/audit-logs',
                 icon: <Icon d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />,
@@ -150,9 +156,16 @@ export function AppShell({ children }: AppShellProps) {
     const { user } = useAuthStore();
     const { theme, toggleTheme } = useThemeStore();
     const { mutate: logoutApi } = useLogout();
+    const { data: config } = useAppConfig();
     const [showUserMenu, setShowUserMenu] = useState(false);
 
     const isDark = theme === 'dark';
+
+    useEffect(() => {
+        if (config?.appTitle) {
+            document.title = config.appTitle;
+        }
+    }, [config]);
 
     const handleLogout = () => {
         logoutApi();
@@ -175,25 +188,33 @@ export function AppShell({ children }: AppShellProps) {
             <aside className="sidebar">
                 {/* Logo */}
                 <div className="sidebar-logo">
-                    <div style={{
-                        width: 36, height: 36,
-                        background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-                        borderRadius: 10,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        flexShrink: 0,
-                    }}>
-                        <Icon d="M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2ZM16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" size={20} />
-                    </div>
+                    {config?.logoUrl ? (
+                        <img
+                            src={config.logoUrl}
+                            alt="Logo"
+                            style={{ width: 36, height: 36, borderRadius: 10, objectFit: 'contain', flexShrink: 0 }}
+                        />
+                    ) : (
+                        <div style={{
+                            width: 36, height: 36,
+                            background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                            borderRadius: 10,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            flexShrink: 0,
+                        }}>
+                            <Icon d="M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2ZM16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" size={20} />
+                        </div>
+                    )}
                     <div>
                         <div style={{ color: '#f1f5f9', fontWeight: 700, fontSize: '0.95rem', lineHeight: 1.2 }}>
-                            Cigua Inv
+                            {config?.appTitle || 'Cigua Inv'}
                         </div>
                         <div style={{ color: '#64748b', fontSize: '0.7rem' }}>v2.0</div>
                     </div>
                 </div>
 
                 {/* Nav sections */}
-                <nav style={{ flex: 1, paddingBottom: 12 }}>
+                <nav className="flex-1 pb-3">
                     {NAV_SECTIONS.map((section) => {
                         const permissions = user?.permissions || [];
                         const roles = user?.roles || [];
@@ -225,23 +246,21 @@ export function AppShell({ children }: AppShellProps) {
                 </nav>
 
                 {/* Theme toggle en sidebar bottom */}
-                <div style={{
-                    padding: '12px 16px',
-                    borderTop: '1px solid rgba(255,255,255,0.06)',
-                    display: 'flex', alignItems: 'center', gap: 10,
-                }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2">
-                        {isDark
-                            ? <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-                            : <><circle cx="12" cy="12" r="5" /><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" /></>
-                        }
-                    </svg>
+                <div className="px-4 py-3 border-t border-white/5 flex items-center gap-2.5">
+                    <div className="text-muted">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            {isDark
+                                ? <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                                : <><circle cx="12" cy="12" r="5" /><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" /></>
+                            }
+                        </svg>
+                    </div>
                     <button
                         onClick={toggleTheme}
                         className={`theme-toggle ${isDark ? 'on' : ''}`}
                         aria-label="Cambiar tema"
                     />
-                    <span style={{ color: '#64748b', fontSize: '0.75rem' }}>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-muted">
                         {isDark ? 'Oscuro' : 'Claro'}
                     </span>
                 </div>
@@ -270,26 +289,19 @@ export function AppShell({ children }: AppShellProps) {
                         onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
                     >
                         {/* Avatar */}
-                        <div style={{
-                            width: 32, height: 32,
-                            background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-                            borderRadius: '50%',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            color: 'white', fontSize: '0.75rem', fontWeight: 700,
-                            flexShrink: 0,
-                        }}>
+                        <div className="w-8 h-8 bg-gradient-to-br from-primary to-secondary rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
                             {initials}
                         </div>
-                        <div style={{ textAlign: 'left' }}>
-                            <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        <div className="text-left">
+                            <div className="text-sm font-semibold text-primary">
                                 {user?.name || 'Usuario'}
                             </div>
-                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                            <div className="text-xs text-muted">
                                 {user?.email}
                             </div>
                         </div>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" strokeWidth="2" style={{ color: 'var(--text-muted)' }}>
+                            stroke="currentColor" strokeWidth="2" className="text-muted">
                             <path d="M6 9l6 6 6-6" />
                         </svg>
                     </button>
@@ -298,38 +310,21 @@ export function AppShell({ children }: AppShellProps) {
                     {showUserMenu && (
                         <>
                             <div
-                                style={{ position: 'fixed', inset: 0, zIndex: 40 }}
+                                className="fixed inset-0 z-40"
                                 onClick={() => setShowUserMenu(false)}
                             />
-                            <div style={{
-                                position: 'absolute', right: 0, top: '100%', marginTop: 8,
-                                background: 'var(--bg-card)',
-                                border: '1px solid var(--border-default)',
-                                borderRadius: 10,
-                                boxShadow: 'var(--shadow-lg)',
-                                minWidth: 180,
-                                zIndex: 50,
-                                overflow: 'hidden',
-                            }}>
-                                <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border-default)' }}>
-                                    <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                            <div className="absolute right-0 top-full mt-2 bg-card border border-border-default rounded-lg shadow-lg min-w-[180px] z-50 overflow-hidden">
+                                <div className="p-4 border-b border-border-default">
+                                    <div className="text-sm font-semibold text-primary">
                                         {user?.name}
                                     </div>
-                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                                    <div className="text-xs text-muted">
                                         {user?.email}
                                     </div>
                                 </div>
                                 <button
                                     onClick={() => { setShowUserMenu(false); navigate('/settings'); }}
-                                    style={{
-                                        display: 'flex', alignItems: 'center', gap: 10,
-                                        width: '100%', padding: '10px 16px',
-                                        background: 'none', border: 'none', cursor: 'pointer',
-                                        fontSize: '0.85rem', color: 'var(--text-primary)',
-                                        textAlign: 'left',
-                                    }}
-                                    onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-hover)'}
-                                    onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
+                                    className="flex items-center gap-2.5 w-full p-4 bg-transparent border-none cursor-pointer text-sm text-primary text-left hover:bg-hover"
                                 >
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                         <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" />
@@ -338,15 +333,7 @@ export function AppShell({ children }: AppShellProps) {
                                 </button>
                                 <button
                                     onClick={handleLogout}
-                                    style={{
-                                        display: 'flex', alignItems: 'center', gap: 10,
-                                        width: '100%', padding: '10px 16px',
-                                        background: 'none', border: 'none', cursor: 'pointer',
-                                        fontSize: '0.85rem', color: 'var(--color-danger)',
-                                        textAlign: 'left',
-                                    }}
-                                    onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(239,68,68,0.08)'}
-                                    onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
+                                    className="flex items-center gap-2.5 w-full p-4 bg-transparent border-none cursor-pointer text-sm text-danger text-left hover:bg-danger/10"
                                 >
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                         <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />

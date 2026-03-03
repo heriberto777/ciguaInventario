@@ -11,6 +11,7 @@ const RefreshTokenSchema = z.object({
   refreshToken: z.string(),
 });
 
+
 export async function loginController(
   fastify: FastifyInstance,
   request: FastifyRequest<{ Body: Record<string, any> }>,
@@ -48,26 +49,11 @@ export async function loginController(
     return reply.status(401).send({ error: { code: 'INVALID_CREDENTIALS' } });
   }
 
-  // Extraer roles y permisos
-  const roles = user.userRoles.map(ur => ur.role.name);
-  const permissions = Array.from(new Set(
-    user.userRoles.flatMap(ur => ur.role.rolePermissions.map(rp => rp.permission.name))
-  ));
-
-  // Generate tokens
-  const { accessToken, refreshToken } = fastify.generateTokens({
-    userId: user.id,
-    email: user.email,
-    companyId: user.companyId,
-    roles,
-    permissions,
-  });
-
   // Create a session record
   const userAgent = request.headers['user-agent'] || '';
   const ipAddress = request.ip || request.socket.remoteAddress || '';
 
-  await fastify.prisma.session.create({
+  const session = await fastify.prisma.session.create({
     data: {
       userId: user.id,
       companyId: user.companyId,
@@ -76,6 +62,22 @@ export async function loginController(
       isActive: true,
       lastActivityAt: new Date(),
     },
+  });
+
+  // Extraer roles y permisos
+  const roles = user.userRoles.map(ur => ur.role.name);
+  const permissions = Array.from(new Set(
+    user.userRoles.flatMap(ur => ur.role.rolePermissions.map(rp => rp.permission.name))
+  ));
+
+  // Generate tokens including sessionId
+  const { accessToken, refreshToken } = fastify.generateTokens({
+    userId: user.id,
+    email: user.email,
+    companyId: user.companyId,
+    sessionId: session.id,
+    roles,
+    permissions,
   });
 
   return reply.send({
@@ -138,33 +140,16 @@ export async function refreshTokenController(
       user.userRoles.flatMap(ur => ur.role.rolePermissions.map(rp => rp.permission.name))
     ));
 
-    // Generate new tokens
+    // Generate new tokens, preserving the sessionId
     const { accessToken: newAccessToken, refreshToken: newRefreshToken } =
       fastify.generateTokens({
         userId: user.id,
         email: user.email,
         companyId: user.companyId,
+        sessionId: decoded.sessionId, // Preserve original session
         roles,
         permissions,
       });
-
-    // Update cookies (using as any to avoid lint if plugin is not fully typed in this context)
-    const replyAny = reply as any;
-    if (replyAny.setCookie) {
-      replyAny.setCookie('accessToken', newAccessToken, {
-        httpOnly: true,
-        secure: fastify.config.NODE_ENV === 'production',
-        sameSite: 'strict',
-        maxAge: fastify.config.JWT_ACCESS_EXPIRY,
-      });
-
-      replyAny.setCookie('refreshToken', newRefreshToken, {
-        httpOnly: true,
-        secure: fastify.config.NODE_ENV === 'production',
-        sameSite: 'strict',
-        maxAge: fastify.config.JWT_REFRESH_EXPIRY,
-      });
-    }
 
     return reply.send({
       data: {
@@ -182,11 +167,5 @@ export async function logoutController(
   request: FastifyRequest,
   reply: FastifyReply
 ) {
-  const replyAny = reply as any;
-  if (replyAny.clearCookie) {
-    replyAny.clearCookie('accessToken');
-    replyAny.clearCookie('refreshToken');
-  }
-
   return reply.send({ data: { success: true } });
 }

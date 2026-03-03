@@ -11,9 +11,12 @@ export const rejectVarianceSchema = z.object({
 
 export const varianceFilterSchema = z.object({
   countId: z.string().optional(),
-  status: z.enum(['PENDING', 'APPROVED', 'REJECTED', 'ADJUSTED']).optional(),
+  status: z.enum(['PENDING', 'APPROVED', 'REJECTED', 'ADJUSTED', 'SUBMITTED']).optional(),
   minVariance: z.coerce.number().optional(),
   maxVariance: z.coerce.number().optional(),
+  brand: z.string().optional(),
+  category: z.string().optional(),
+  subCategory: z.string().optional(),
   page: z.coerce.number().default(1),
   pageSize: z.coerce.number().default(20),
 });

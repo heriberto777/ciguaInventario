@@ -27,11 +27,13 @@ const STANDARD_FIELDS: Record<string, Array<{ name: string; dataType: string; re
     { name: 'category', dataType: 'string', required: false }, // a.CLASIFICACION_1
     { name: 'subcategory', dataType: 'string', required: false }, // a.CLASIFICACION_2
     { name: 'brand', dataType: 'string', required: false }, // a.CLASIFICACION_3
+    { name: 'lot', dataType: 'string', required: false }, // LOTE
   ],
   STOCK: [
     { name: 'itemCode', dataType: 'string', required: true },
     { name: 'warehouseId', dataType: 'string', required: true },
     { name: 'systemQty', dataType: 'number', required: true },
+    { name: 'lot', dataType: 'string', required: false },
     { name: 'lastUpdate', dataType: 'date', required: false },
   ],
   PRICES: [
@@ -52,6 +54,7 @@ const STANDARD_FIELDS: Record<string, Array<{ name: string; dataType: string; re
     { name: 'warehouseCode', dataType: 'string', required: false },
     { name: 'locationCode', dataType: 'string', required: false },
     { name: 'uom', dataType: 'string', required: false },
+    { name: 'lot', dataType: 'string', required: false },
   ],
 };
 
@@ -169,8 +172,8 @@ export const FieldMappingStep: React.FC<FieldMappingStepProps> = ({
 
   return (
     <div className="space-y-6">
-      <div className="bg-blue-50 p-4 border border-blue-200 rounded-lg">
-        <p className="text-blue-800 text-sm">
+      <div className="bg-blue-500/10 p-4 border border-blue-500/20 rounded-lg">
+        <p className="text-blue-500 text-sm">
           <strong>💡 Cómo mapear:</strong> {isDestination
             ? 'Arrastra los campos locales (derecha) hacia las columnas del ERP (izquierda) o asigna valores constantes.'
             : 'Arrastra los campos del ERP (izquierda) hacia los campos locales (derecha).'}
@@ -179,7 +182,7 @@ export const FieldMappingStep: React.FC<FieldMappingStepProps> = ({
 
       {/* Validación solo para importación (ITEMS, etc) */}
       {!isDestination && standardFields.filter((f) => f.required).some((f) => !mappedTargets.includes(f.name)) && (
-        <div className="p-4 bg-yellow-50 border border-yellow-200 text-yellow-800 rounded">
+        <div className="p-4 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded">
           ⚠️ Campos requeridos sin mapear:
           <ul className="mt-2 ml-4">
             {standardFields
@@ -195,11 +198,11 @@ export const FieldMappingStep: React.FC<FieldMappingStepProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* COLUMNA 1: Datos de Origen */}
         <div>
-          <h3 className="text-lg font-semibold mb-1">
+          <h3 className="text-lg font-bold text-[var(--text-primary)] mb-1">
             {isDestination ? '🧩 Campos Locales (Fuente)' : '📦 Columnas ERP (Fuente)'}
           </h3>
-          <p className="text-xs text-gray-500 mb-3">Información disponible para asignar</p>
-          <div className="space-y-2 p-4 bg-gray-50 rounded border border-gray-200 min-h-64 shadow-inner">
+          <p className="text-xs text-[var(--text-muted)] mb-3 uppercase tracking-tight font-bold">Información disponible para asignar</p>
+          <div className="space-y-2 p-4 bg-[var(--bg-app)] rounded-lg border border-[var(--border-default)] min-h-[400px] shadow-inner overflow-y-auto">
             {sourcesForList.length === 0 ? (
               <p className="text-gray-500 text-sm italic">No hay datos disponibles</p>
             ) : (
@@ -210,9 +213,9 @@ export const FieldMappingStep: React.FC<FieldMappingStepProps> = ({
                     key={col}
                     draggable
                     onDragStart={() => handleDragStart(col)}
-                    className={`p-3 rounded cursor-move text-sm border-2 transition-all ${isMapped
-                      ? 'bg-green-100 border-green-400 text-green-800'
-                      : 'bg-blue-100 border-blue-400 text-blue-800 hover:bg-blue-200 hover:border-blue-500'
+                    className={`p-3 rounded-lg cursor-move text-xs font-bold uppercase tracking-wider border-2 transition-all shadow-sm ${isMapped
+                      ? 'bg-green-500/10 border-green-500/50 text-green-500'
+                      : 'bg-blue-500/10 border-blue-500/50 text-blue-500 hover:bg-blue-500/20'
                       }`}
                   >
                     <div className="flex justify-between">
@@ -228,11 +231,11 @@ export const FieldMappingStep: React.FC<FieldMappingStepProps> = ({
 
         {/* COLUMNA 2: Espacio de Destino */}
         <div>
-          <h3 className="text-lg font-semibold mb-1">
+          <h3 className="text-lg font-bold text-[var(--text-primary)] mb-1">
             {isDestination ? '⚙️ Columnas del ERP (Destino)' : '🎯 Campos de Cigua (Destino)'}
           </h3>
-          <p className="text-xs text-gray-500 mb-3">Donde se depositará la información</p>
-          <div className="space-y-2 p-4 bg-gray-50 rounded border border-gray-200 min-h-64 shadow-inner">
+          <p className="text-xs text-[var(--text-muted)] mb-3 uppercase tracking-tight font-bold">Donde se depositará la información</p>
+          <div className="space-y-2 p-4 bg-[var(--bg-app)] rounded-lg border border-[var(--border-default)] min-h-[400px] shadow-inner overflow-y-auto">
             {targetsForList.map((field) => {
               const mapping = config.fieldMappings.find((m) => m.target === field.name);
               const isMapped = !!mapping;
@@ -243,18 +246,18 @@ export const FieldMappingStep: React.FC<FieldMappingStepProps> = ({
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
                   onDrop={(e) => handleDropOnTarget(field.name, e)}
-                  className={`p-3 rounded border-2 text-sm transition-all ${isMapped
-                    ? 'bg-white border-green-500 shadow-sm'
-                    : 'bg-gray-100 border-gray-300 border-dashed hover:border-blue-400'
+                  className={`p-3 rounded-xl border-2 text-sm transition-all shadow-md ${isMapped
+                    ? 'bg-[var(--bg-card)] border-green-500/50'
+                    : 'bg-[var(--bg-hover)] border-[var(--border-default)] border-dashed hover:border-blue-500/50'
                     }`}
                 >
                   <div className="flex justify-between items-start">
                     <div>
-                      <div className="font-semibold text-gray-700">
+                      <div className="font-bold text-[var(--text-primary)] uppercase tracking-tight">
                         {field.name}
-                        {field.required && <span className="text-red-600 ml-1">*</span>}
+                        {field.required && <span className="text-red-500 ml-1">*</span>}
                       </div>
-                      <div className="text-[10px] text-gray-500 uppercase">({field.dataType})</div>
+                      <div className="text-[10px] text-[var(--text-muted)] font-bold">({field.dataType})</div>
                     </div>
                     {isMapped && (
                       <button
@@ -268,13 +271,13 @@ export const FieldMappingStep: React.FC<FieldMappingStepProps> = ({
                   </div>
 
                   {isMapped ? (
-                    <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded flex justify-between items-center animate-in fade-in zoom-in duration-200">
-                      <span className="font-semibold text-green-700 truncate mr-2">
+                    <div className="mt-2 p-2 bg-green-500/5 border border-green-500/20 rounded-lg flex justify-between items-center animate-in fade-in zoom-in duration-200">
+                      <span className="font-bold text-green-500 truncate mr-2">
                         {mapping.transformation === 'CONSTANT' ? `"${mapping.source}"` :
                           mapping.transformation === 'AUTO_GENERATE' ? `⚡ ${mapping.source}` :
                             mapping.source}
                       </span>
-                      <span className="text-[9px] bg-green-200 text-green-800 px-1.5 py-0.5 rounded font-bold">
+                      <span className="text-[9px] bg-green-500/20 text-green-500 px-1.5 py-0.5 rounded font-black uppercase">
                         {mapping.transformation || 'CAMPO'}
                       </span>
                     </div>
@@ -283,7 +286,7 @@ export const FieldMappingStep: React.FC<FieldMappingStepProps> = ({
                       <select
                         onChange={(e) => handleSelectMapping(field.name, e.target.value)}
                         value=""
-                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:ring-1 focus:ring-blue-500 outline-none"
+                        className="w-full px-2 py-1.5 border border-[var(--border-default)] bg-[var(--bg-app)] text-[var(--text-primary)] rounded-lg text-xs outline-none focus:ring-2 focus:ring-blue-500/50"
                       >
                         <option value="">-- Asignar campo --</option>
                         {(isDestination ? sourcesForList : unmappedSources).map((col) => (
@@ -295,7 +298,7 @@ export const FieldMappingStep: React.FC<FieldMappingStepProps> = ({
 
                       <div className="flex gap-1">
                         <button
-                          className="flex-1 text-[10px] bg-gray-200 text-gray-700 px-2 py-1.5 rounded hover:bg-blue-500 hover:text-white transition-colors border border-gray-300"
+                          className="flex-1 text-[10px] bg-[var(--bg-app)] text-[var(--text-primary)] px-2 py-1.5 rounded-lg hover:bg-blue-600 hover:text-white transition-colors border border-[var(--border-default)] font-bold"
                           onClick={() => {
                             const val = prompt(`Ingrese valor constante para "${field.name}":`);
                             if (val !== null) handleAddCustomMapping(field.name, 'CONSTANT', val);
@@ -304,7 +307,7 @@ export const FieldMappingStep: React.FC<FieldMappingStepProps> = ({
                           + Constante
                         </button>
                         <select
-                          className="flex-1 text-[10px] bg-gray-200 text-gray-700 px-1 py-1.5 rounded cursor-pointer border border-gray-300 hover:bg-blue-500 hover:text-white transition-colors"
+                          className="flex-1 text-[10px] bg-[var(--bg-app)] text-[var(--text-primary)] px-1 py-1.5 rounded-lg cursor-pointer border border-[var(--border-default)] hover:bg-blue-600 hover:text-white transition-colors font-bold outline-none"
                           onChange={(e) => {
                             if (e.target.value) handleAddCustomMapping(field.name, 'AUTO_GENERATE', e.target.value);
                           }}
@@ -327,17 +330,17 @@ export const FieldMappingStep: React.FC<FieldMappingStepProps> = ({
 
       {/* Resumen de Mappings */}
       {config.fieldMappings.length > 0 && (
-        <div className="mt-8 border-t pt-6">
-          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <span className="bg-green-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">✓</span>
+        <div className="mt-8 border-t border-[var(--border-default)] pt-6">
+          <h3 className="text-lg font-bold text-[var(--text-primary)] mb-4 flex items-center gap-2">
+            <span className="bg-green-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black">✓</span>
             Mapeos Definidos ({config.fieldMappings.length})
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {config.fieldMappings.map((mapping) => (
-              <div key={mapping.target} className="p-3 bg-white border border-gray-200 rounded-lg shadow-sm flex justify-between items-center group">
+              <div key={mapping.target} className="p-3 bg-[var(--bg-card)] border border-[var(--border-default)] rounded-xl shadow-sm flex justify-between items-center group hover:border-green-500/50 transition-all">
                 <div className="truncate pr-2">
-                  <div className="text-[10px] text-gray-500 uppercase mb-0.5">{mapping.target}</div>
-                  <div className="font-mono text-sm text-gray-800 font-semibold truncate">
+                  <div className="text-[10px] text-[var(--text-muted)] font-black uppercase mb-0.5">{mapping.target}</div>
+                  <div className="font-mono text-xs text-[var(--text-primary)] font-bold truncate">
                     {mapping.transformation === 'CONSTANT' ? `"${mapping.source}"` :
                       mapping.transformation === 'AUTO_GENERATE' ? `⚡ ${mapping.source}` :
                         mapping.source}

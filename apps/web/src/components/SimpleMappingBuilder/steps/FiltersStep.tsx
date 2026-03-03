@@ -128,7 +128,7 @@ export const FiltersStep: React.FC<FiltersStepProps> = ({
 
       <div>
         <div className="flex justify-between items-center mb-3">
-          <h3 className="text-lg font-semibold">🔍 Filtros (WHERE clause)</h3>
+          <h3 className="text-lg font-bold text-[var(--text-primary)]">🔍 Filtros (WHERE clause)</h3>
           <button
             onClick={handleAddFilter}
             className="px-3 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-600"
@@ -138,7 +138,7 @@ export const FiltersStep: React.FC<FiltersStepProps> = ({
         </div>
 
         {safeFilters.length === 0 ? (
-          <p className="text-gray-500 py-4">
+          <p className="text-[var(--text-muted)] py-4 italic">
             Sin filtros. Los datos no están filtrados. Click en "+ Agregar Filtro" para limitar.
           </p>
         ) : (
@@ -146,7 +146,7 @@ export const FiltersStep: React.FC<FiltersStepProps> = ({
             {safeFilters.map((filter, index) => (
               <div
                 key={index}
-                className="p-4 border border-gray-300 rounded bg-gray-50 flex gap-4 items-end"
+                className="p-4 border border-[var(--border-default)] rounded-xl bg-[var(--bg-hover)] flex gap-4 items-end shadow-sm"
               >
                 {/* Operador lógico (AND/OR) */}
                 {index > 0 && (
@@ -158,7 +158,7 @@ export const FiltersStep: React.FC<FiltersStepProps> = ({
                           logicalOperator: e.target.value as 'AND' | 'OR',
                         })
                       }
-                      className="px-2 py-2 border border-gray-300 rounded text-sm"
+                      className="px-2 py-2 border border-[var(--border-default)] bg-[var(--bg-app)] text-[var(--text-primary)] rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/50"
                     >
                       <option value="AND">AND</option>
                       <option value="OR">OR</option>
@@ -168,7 +168,7 @@ export const FiltersStep: React.FC<FiltersStepProps> = ({
 
                 {/* Campo */}
                 <div className="flex-1">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-bold text-[var(--text-secondary)] mb-1 uppercase tracking-tight">
                     Campo
                   </label>
                   <select
@@ -176,7 +176,7 @@ export const FiltersStep: React.FC<FiltersStepProps> = ({
                     onChange={(e) =>
                       handleUpdateFilter(index, { field: e.target.value })
                     }
-                    className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+                    className="w-full px-3 py-2 border border-[var(--border-default)] bg-[var(--bg-app)] text-[var(--text-primary)] rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/50"
                   >
                     <option value="">-- Selecciona campo --</option>
                     {availableColumns.map((col) => {
@@ -192,7 +192,7 @@ export const FiltersStep: React.FC<FiltersStepProps> = ({
 
                 {/* Operador */}
                 <div className="flex-shrink-0">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-bold text-[var(--text-secondary)] mb-1 uppercase tracking-tight">
                     Operador
                   </label>
                   <select
@@ -202,7 +202,7 @@ export const FiltersStep: React.FC<FiltersStepProps> = ({
                         operator: e.target.value as Filter['operator'],
                       })
                     }
-                    className="px-3 py-2 border border-gray-300 rounded text-sm"
+                    className="px-3 py-2 border border-[var(--border-default)] bg-[var(--bg-app)] text-[var(--text-primary)] rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/50"
                   >
                     <option value="=">=</option>
                     <option value="!=">!=</option>
@@ -218,7 +218,7 @@ export const FiltersStep: React.FC<FiltersStepProps> = ({
 
                 {/* Valor */}
                 <div className="flex-1">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-bold text-[var(--text-secondary)] mb-1 uppercase tracking-tight">
                     Valor
                   </label>
                   <input
@@ -228,7 +228,7 @@ export const FiltersStep: React.FC<FiltersStepProps> = ({
                       handleUpdateFilter(index, { value: e.target.value })
                     }
                     placeholder="ej: ACTIVO, 0, 100"
-                    className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+                    className="w-full px-3 py-2 border border-[var(--border-default)] bg-[var(--bg-app)] text-[var(--text-primary)] rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/50 placeholder:text-[var(--text-muted)]"
                   />
                 </div>
 
@@ -247,8 +247,8 @@ export const FiltersStep: React.FC<FiltersStepProps> = ({
 
       {/* Preview SQL */}
       {safeFilters.length > 0 && (
-        <div>
-          <h3 className="text-lg font-semibold mb-3">📝 Preview SQL</h3>
+        <div className="border-t border-[var(--border-default)] pt-6">
+          <h3 className="text-lg font-bold text-[var(--text-primary)] mb-3">📝 Preview SQL</h3>
           <div className="p-4 bg-gray-900 text-green-400 rounded font-mono text-sm overflow-auto">
             <pre>
               WHERE{' '}

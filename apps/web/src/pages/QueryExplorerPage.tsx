@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getApiClient } from '@/services/api';
+import { NotificationModal } from '@/components/atoms/NotificationModal';
 
 interface QueryBuilderState {
   mainTable: { name: string; alias: string };
@@ -34,6 +35,17 @@ export const QueryExplorerPage: React.FC = () => {
   const [mappingName, setMappingName] = useState('');
   const [mappingWarehouse, setMappingWarehouse] = useState('');
   const [warehouses, setWarehouses] = useState<any[]>([]);
+  const [notification, setNotification] = useState<{
+    isOpen: boolean;
+    type: 'success' | 'error' | 'warning' | 'info';
+    title: string;
+    message: string;
+  }>({
+    isOpen: false,
+    type: 'info',
+    title: '',
+    message: '',
+  });
 
   const apiClient = getApiClient();
 
@@ -128,8 +140,8 @@ FROM ${query.mainTable.name} ${query.mainTable.alias}`;
         .join(' ');
     }
 
-    if (query.orderBy?.length > 0) {
-      sql += '\nORDER BY ' + query.orderBy.map(o => `${o.field} ${o.direction}`).join(', ');
+    if (query.orderBy && query.orderBy.length > 0) {
+      sql += '\nORDER BY ' + query.orderBy.map((o: any) => `${o.field} ${o.direction}`).join(', ');
     }
 
     if (query.limit) {
@@ -197,7 +209,12 @@ FROM ${query.mainTable.name} ${query.mainTable.alias}`;
 
       setMappingName('');
       setMappingWarehouse('');
-      alert('Mapping guardado exitosamente');
+      setNotification({
+        isOpen: true,
+        type: 'success',
+        title: '✅ Mapeado Guardado',
+        message: 'El mapping se ha guardado exitosamente para su uso en conteos.'
+      });
     } catch (err: any) {
       setError(`Error guardando mapping: ${err.message}`);
     } finally {
@@ -503,6 +520,13 @@ FROM ${query.mainTable.name} ${query.mainTable.alias}`;
           <li>(Opcional) Guarda como Mapping para reusarlo en Conteos Físicos</li>
         </ol>
       </div>
+      <NotificationModal
+        isOpen={notification.isOpen}
+        onClose={() => setNotification({ ...notification, isOpen: false })}
+        type={notification.type}
+        title={notification.title}
+        message={notification.message}
+      />
     </div>
   );
 };

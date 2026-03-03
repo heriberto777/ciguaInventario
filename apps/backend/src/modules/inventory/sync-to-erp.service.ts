@@ -1,6 +1,7 @@
 import { AppError } from '../../utils/errors';
 import { prisma } from '../../utils/db';
 import { ERPConnectorFactory } from '../erp-connections/erp-connector-factory';
+import { formatDateForERP } from '../../utils/date';
 
 interface SyncItem {
   itemId: string;
@@ -10,6 +11,7 @@ interface SyncItem {
   countedQty: number;
   variance: number;
   variancePercent: number;
+  lot?: string;
 }
 
 interface SyncResult {
@@ -37,19 +39,30 @@ export class SyncToERPService {
    */
   async getSyncableItems(countId: string, companyId: string) {
     try {
+      // Obtener el conteo primero para saber la versión actual a sincronizar
+      const baseCount = await (this.fastify.prisma as any).inventoryCount.findUnique({
+        where: { id: countId }
+      });
+
+      if (!baseCount) {
+        throw new AppError(404, 'Count not found');
+      }
+
+      // Obtener el conteo consolidado (lo más reciente de cada ítem)
+      const versionToSync = baseCount.finalizedVersion || baseCount.currentVersion;
+      const countItems = await (this.fastify as any).inventoryCountRepository.getLatestItemsByVersion(countId, versionToSync);
+
       const count = (await (this.fastify.prisma as any).inventoryCount.findUnique({
         where: { id: countId },
-        include: {
-          warehouse: true,
-          countItems: {
-            where: { hasVariance: true }, // Versión del esquema: hasVariance: true
-          },
-        },
+        include: { warehouse: true },
       })) as any;
 
       if (!count) {
         throw new AppError(404, 'Count not found');
       }
+
+      // Sync all consolidated items
+      const itemsToProcess = countItems;
 
       if (count.status !== 'COMPLETED') {
         throw new AppError(409, 'Count must be completed before syncing to ERP');
@@ -60,7 +73,7 @@ export class SyncToERPService {
         throw new AppError(403, 'Access denied to this count');
       }
 
-      const items: SyncItem[] = count.countItems.map((countItem: any) => {
+      const items: SyncItem[] = itemsToProcess.map((countItem: any) => {
         const systemQty = Number(countItem.systemQty);
         const countedQty = Number(countItem.countedQty || 0);
         const variance = countedQty - systemQty;
@@ -72,7 +85,8 @@ export class SyncToERPService {
           systemQty,
           countedQty,
           variance: variance,
-          variancePercent: systemQty !== 0 ? (variance / systemQty) * 100 : 0,
+          variancePercent: countItem.variancePercent || (systemQty !== 0 ? (variance / systemQty) * 100 : 0),
+          lot: countItem.lot,
         };
       });
 
@@ -104,16 +118,30 @@ export class SyncToERPService {
     const startTime = Date.now();
 
     try {
-      // Obtener conteo y items
+      // Obtener conteo para saber la versión actual
+      const baseCount = await (this.fastify.prisma as any).inventoryCount.findUnique({
+        where: { id: countId }
+      });
+
+      if (!baseCount) {
+        throw new AppError(404, 'Count not found');
+      }
+
+      // Obtener el conteo consolidado
+      const versionToSync = baseCount.finalizedVersion || baseCount.currentVersion;
+      const countItems = await (this.fastify.inventoryCountRepository as any).getLatestItemsByVersion(countId, versionToSync);
+
       const count = (await (this.fastify.prisma as any).inventoryCount.findUnique({
         where: { id: countId },
-        include: {
-          warehouse: true,
-          countItems: {
-            where: { hasVariance: true },
-          },
-        },
+        include: { warehouse: true },
       })) as any;
+
+      if (!count) {
+        throw new AppError(404, 'Count not found');
+      }
+
+      // Sync all consolidated items
+      const itemsToSync = countItems;
 
       if (!count) {
         throw new AppError(404, 'Count not found');
@@ -171,7 +199,7 @@ export class SyncToERPService {
       let itemsFailed = 0;
 
       // Sincronizar cada item
-      for (const countItem of count.countItems) {
+      for (const countItem of itemsToSync) {
         try {
           const sysQty = Number(countItem.systemQty);
           const countQty = Number(countItem.countedQty || 0);
@@ -227,10 +255,11 @@ export class SyncToERPService {
         data: {
           countId,
           companyId,
+          version: baseCount.finalizedVersion || baseCount.currentVersion,
           status: itemsFailed === 0 ? 'COMPLETED' : itemsSynced > 0 ? 'PARTIAL' : 'FAILED',
           itemsSynced,
           itemsFailed,
-          totalItems: count.countItems.length,
+          totalItems: itemsToSync.length,
           strategy: input.updateStrategy,
           details: JSON.stringify(details),
           syncedBy: input.userEmail || 'system',
@@ -256,7 +285,8 @@ export class SyncToERPService {
       };
     } catch (error: any) {
       if (error.statusCode) throw error;
-      throw new AppError(500, 'Failed to sync to ERP');
+      console.error('Error in syncToERP:', error);
+      throw new AppError(500, `Failed to sync to ERP: ${error.message || 'Unknown error'}`);
     }
   }
 
@@ -520,7 +550,7 @@ export class SyncToERPService {
         value = sourceKey;
       } else if (sourceType === 'AUTO_GENERATE') {
         if (sourceKey === 'CONSECUTIVE') value = consecutive;
-        else if (sourceKey === 'NOW') value = new Date();
+        else if (sourceKey === 'NOW') value = formatDateForERP();
         else if (sourceKey === 'USER') value = userEmail;
       } else {
         // SYSTEM_FIELD
@@ -531,8 +561,9 @@ export class SyncToERPService {
           case 'systemQty': value = (countItem as any).systemQty; break;
           case 'variance': value = (countItem as any).variance; break;
           case 'warehouseCode': value = (count as any).warehouse?.code?.substring(0, 10); break;
-          case 'locationCode': value = (countItem as any).location?.code?.substring(0, 20); break;
+          case 'locationCode': value = (countItem.location?.code || 'ND').substring(0, 20); break;
           case 'uom': value = (countItem as any).uom?.substring(0, 10); break;
+          case 'lot': value = (countItem.lot || 'ND').substring(0, 50); break;
           default: value = null;
         }
       }

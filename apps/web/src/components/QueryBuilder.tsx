@@ -388,7 +388,7 @@ export const QueryBuilder: React.FC<QueryBuilderProps> = ({
   );
 
   return (
-    <div className="space-y-6 p-6 bg-white rounded-lg border border-gray-300">
+    <div className="space-y-6 p-6 bg-[var(--bg-card)] rounded-lg border border-[var(--border-default)]">
       {renderError()}
       {renderSaveMessage()}
 
@@ -396,13 +396,12 @@ export const QueryBuilder: React.FC<QueryBuilderProps> = ({
       <div className="flex items-center gap-2 justify-between bg-gray-100 p-3 rounded">
         <div className="flex gap-4">
           {[1, 2, 3, 4, 5].map(s => (
-            <div key={s} className={`px-3 py-1 rounded text-sm font-semibold ${
-              s === step
+            <div key={s} className={`px-3 py-1 rounded text-sm font-semibold ${s === step
                 ? 'bg-blue-600 text-white'
                 : s < step
-                ? 'bg-green-500 text-white'
-                : 'bg-gray-300 text-gray-600'
-            }`}>
+                  ? 'bg-green-500 text-white'
+                  : 'bg-gray-300 text-gray-600'
+              }`}>
               {s}
             </div>
           ))}
@@ -516,7 +515,7 @@ export const QueryBuilder: React.FC<QueryBuilderProps> = ({
             {query.joins.length > 0 && (
               <div className="bg-blue-50 p-4 rounded border border-blue-200 space-y-2">
                 {query.joins.map((join, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-2 bg-white border border-blue-300 rounded">
+                  <div key={idx} className="flex items-center justify-between p-2 bg-[var(--bg-card)] border border-[var(--primary-300)] rounded">
                     <div className="font-mono text-sm">
                       {join.joinType} JOIN {join.name} {join.alias} ON {join.joinCondition}
                     </div>
@@ -566,7 +565,7 @@ export const QueryBuilder: React.FC<QueryBuilderProps> = ({
             {query.filters.length > 0 && (
               <div className="bg-green-50 p-4 rounded border border-green-200 space-y-2">
                 {query.filters.map((filter, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-2 bg-white border border-green-300 rounded">
+                  <div key={idx} className="flex items-center justify-between p-2 bg-[var(--bg-card)] border border-emerald-300 rounded">
                     <div className="font-mono text-sm">
                       {idx > 0 && <span className="mr-2 text-orange-600">{filter.logicalOperator}</span>}
                       {filter.field} {filter.operator} {filter.value}

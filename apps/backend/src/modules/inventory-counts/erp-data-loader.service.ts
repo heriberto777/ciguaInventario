@@ -164,6 +164,7 @@ export class ERPDataLoaderService {
                             ...(item.brand && { brand: item.brand }),
                             ...(item.category && { category: item.category }),
                             ...(item.subcategory && { subcategory: item.subcategory }),
+                            ...(item.lot && { lot: item.lot }),
                         },
                         update: {
                             itemName: item.itemName || item.itemCode,
@@ -178,6 +179,7 @@ export class ERPDataLoaderService {
                             ...(item.brand && { brand: item.brand }),
                             ...(item.category && { category: item.category }),
                             ...(item.subcategory && { subcategory: item.subcategory }),
+                            ...(item.lot && { lot: item.lot }),
                         },
                     });
                     insertedCount++;
@@ -325,6 +327,8 @@ export class ERPDataLoaderService {
                 countedQty: 0,
                 costPrice: Number(item[itemsMapReverse['costPrice']] || 0),
                 salePrice: Number(item[itemsMapReverse['salePrice']] || 0),
+                lot: String(stockMap.get(String(item[itemsMapReverse['itemCode']] || '').toLowerCase())?.[stockMapReverse['lot']] || '').trim() ||
+                    String(item[itemsMapReverse['lot']] || '').trim() || null,
             }));
 
             for (const item of normalized) {

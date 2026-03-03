@@ -19,8 +19,10 @@ import SettingsPage from '@/pages/SettingsPage';
 import InventoryDashboardPage from '@/pages/InventoryDashboardPage';
 import InventoryCountPage from '@/pages/InventoryCountPage';
 import VarianceReportsPage from '@/pages/VarianceReportsPage';
+import AuditHubPage from '@/pages/AuditHubPage';
 import WarehousesPage from '@/pages/WarehousesPage';
 import ItemClassificationsPage from '@/pages/ItemClassificationsPage';
+import BrandingSettingsPage from '@/pages/BrandingSettingsPage';
 import { PrivateRoute } from '@/components/PrivateRoute';
 import '@/index.css';
 
@@ -43,26 +45,32 @@ function App() {
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
         if (!key) continue;
+
+        // No tocar keys de sistema o de auth si parecen válidas
+        if (key === 'auth-store' || key === 'theme-store') {
+          const val = localStorage.getItem(key);
+          if (val && val.includes('<!DOCTYPE')) {
+            keysToClear.push(key);
+          }
+          continue;
+        }
+
         const value = localStorage.getItem(key);
         if (!value) continue;
 
         const trimmed = value.trim();
 
-        // Detección de valores que NO son JSON pero deberían serlo
-        const shouldBeJson = key.includes('store') || key.startsWith('inventory_count_');
+        // Detección de valores que NO son JSON pero deberían serlo (o que rompen el parser)
+        const shouldBeJson = key.includes('store') || key.startsWith('inventory_count_') || key.startsWith('cigua_');
 
-        if (shouldBeJson) {
+        if (shouldBeJson || trimmed.startsWith('{') || trimmed.startsWith('[')) {
           try {
-            if (!trimmed || trimmed === '') {
-              keysToClear.push(key);
-              continue;
+            if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+              JSON.parse(trimmed);
             }
-            JSON.parse(value);
           } catch (e) {
-            // Solo borramos si contiene caracteres sospechosos de error de red o de parseo fallido de objeto
-            if (trimmed.includes('<!DOCTYPE') || trimmed.includes('@keyframes') || (trimmed.startsWith('{') && !trimmed.endsWith('}'))) {
-              keysToClear.push(key);
-            }
+            console.warn(`Detectado JSON corrupto en key [${key}], agregando a cola de limpieza.`);
+            keysToClear.push(key);
           }
         }
       }
@@ -93,6 +101,7 @@ function App() {
           <Route path="/admin/erp-connections" element={<PrivateRoute><ERPConnectionsPage /></PrivateRoute>} />
           <Route path="/admin/classifications" element={<PrivateRoute><ItemClassificationsPage /></PrivateRoute>} />
           <Route path="/admin/ai-config" element={<PrivateRoute><AIConfigPage /></PrivateRoute>} />
+          <Route path="/admin/branding" element={<PrivateRoute><BrandingSettingsPage /></PrivateRoute>} />
 
           {/* Inventory Routes */}
           <Route path="/inventory" element={<PrivateRoute><InventoryDashboardPage /></PrivateRoute>} />
@@ -100,6 +109,7 @@ function App() {
           <Route path="/inventory/hub" element={<PrivateRoute><InventoryDashboardNavPage /></PrivateRoute>} />
           <Route path="/inventory/counts" element={<PrivateRoute><InventoryCountPage /></PrivateRoute>} />
           <Route path="/inventory/variances" element={<PrivateRoute><VarianceReportsPage /></PrivateRoute>} />
+          <Route path="/inventory/audit" element={<PrivateRoute><AuditHubPage /></PrivateRoute>} />
           <Route path="/inventory/warehouses" element={<PrivateRoute><WarehousesPage /></PrivateRoute>} />
           <Route path="/inventory/chat-ai" element={<PrivateRoute><AIChatPage /></PrivateRoute>} />
 

@@ -26,17 +26,22 @@ import { varianceReportsRoutes } from './modules/variance-reports/routes';
 import { adjustmentsRoutes } from './modules/adjustments/routes';
 import { itemClassificationsRoutes } from './modules/item-classifications/routes';
 import { reportsRoutes } from './modules/reports/routes';
+import { appConfigRoutes } from './modules/app-config/routes';
 import { errorHandler } from './utils/errors';
 
 export async function createApp() {
+  const isProduction = process.env.NODE_ENV === 'production';
+
   const logger = pino({
     level: process.env.LOG_LEVEL || 'info',
-    transport: {
-      target: 'pino-pretty',
-      options: {
-        colorize: true,
+    ...(isProduction ? {} : {
+      transport: {
+        target: 'pino-pretty',
+        options: {
+          colorize: true,
+        },
       },
-    },
+    }),
   });
 
   const app = Fastify({
@@ -46,10 +51,6 @@ export async function createApp() {
   // Register plugins
   await app.register(envPlugin);
 
-  // Register cookie before auth
-  await app.register(import('@fastify/cookie'), {
-    secret: (app as any).config?.JWT_SECRET || process.env.JWT_SECRET,
-  });
 
   await app.register(cors, {
     origin: process.env.NODE_ENV === 'production'
@@ -90,6 +91,7 @@ export async function createApp() {
   await app.register(adjustmentsRoutes, { prefix: '/api' });
   await app.register(itemClassificationsRoutes, { prefix: '/api' });
   await app.register(reportsRoutes, { prefix: '/api/reports' });
+  await app.register(appConfigRoutes, { prefix: '/api' });
 
 
   // Swagger documentation

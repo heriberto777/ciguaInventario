@@ -10,6 +10,7 @@ import { InventoryCountsTable } from '@/components/inventory/InventoryCountsTabl
 import { NewVersionModal } from '@/components/inventory/NewVersionModal';
 import { NotificationModal } from '@/components/atoms/NotificationModal';
 import { ConfirmModal } from '@/components/atoms/ConfirmModal';
+import { ProcessingModal } from '@/components/atoms/ProcessingModal';
 import { useAuthStore } from '@/store/auth';
 
 const apiClient = getApiClient();
@@ -25,6 +26,7 @@ interface InventoryCount {
   status: string;
   currentVersion: number;
   totalVersions: number;
+  finalizedVersion?: number;
   warehouseId: string;
   locationId?: string;
   createdAt: string;
@@ -49,6 +51,7 @@ interface CountItem {
   category?: string;
   subcategory?: string;
   brand?: string;
+  lot?: string;
 }
 
 interface Warehouse {
@@ -181,10 +184,54 @@ export default function InventoryCountPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [countIdToDelete, setCountIdToDelete] = useState<string | null>(null);
 
-  // Estados para sincronización con ERP
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [syncStatus, setSyncStatus] = useState<'syncing' | 'closing' | 'done' | 'error'>('syncing');
-  const [syncMessage, setSyncMessage] = useState('');
+  // Estado de procesamiento global
+  const [processing, setProcessing] = useState<{
+    isOpen: boolean;
+    message: string;
+    status: 'processing' | 'success' | 'error';
+  }>({
+    isOpen: false,
+    message: '',
+    status: 'processing',
+  });
+
+  const showProcessing = (message: string) => setProcessing({ isOpen: true, message, status: 'processing' });
+  const stopProcessing = () => setProcessing(prev => ({ ...prev, isOpen: false }));
+  const successProcessing = (message: string) => setProcessing({ isOpen: true, message, status: 'success' });
+  const errorProcessing = (message: string) => setProcessing({ isOpen: true, message, status: 'error' });
+
+  // Modal de confirmación genérico para acciones
+  const [actionConfirm, setActionConfirm] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    isDangerous?: boolean;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => { },
+    isDangerous: false,
+  });
+
+  const handleActionWithConfirm = (
+    title: string,
+    message: string,
+    onConfirm: () => void,
+    isDangerous: boolean = false
+  ) => {
+    setActionConfirm({
+      isOpen: true,
+      title,
+      message,
+      onConfirm: () => {
+        onConfirm();
+        setActionConfirm(prev => ({ ...prev, isOpen: false }));
+      },
+      isDangerous,
+    });
+  };
 
   // Permisos y Roles
   const user = useAuthStore((state) => state.user);
@@ -193,6 +240,7 @@ export default function InventoryCountPage() {
   const isSuperAdmin = roles.includes('SuperAdmin');
 
   const hasSystemView = isSuperAdmin || permissions.includes('inventory:view_qty') || permissions.includes('inventory:manage');
+  const hasVarianceView = isSuperAdmin || permissions.includes('inventory:view_variances') || permissions.includes('inventory:manage');
   const canManageUsers = isSuperAdmin || permissions.includes('users:manage');
   const canSyncERP = isSuperAdmin || permissions.includes('inventory:sync_erp') || permissions.includes('inventory:manage') || permissions.includes('inventory:sync');
   const canEditSettings = isSuperAdmin || permissions.includes('inventory:edit_settings') || permissions.includes('inventory:manage');
@@ -411,10 +459,15 @@ export default function InventoryCountPage() {
       setView('process');
       refetchCounts();
     },
+    onError: (error: any) => {
+      const errorMsg = error.response?.data?.error?.message || error.message || 'No se pudo iniciar el conteo.';
+      showNotification('error', 'Error', errorMsg);
+    }
   });
 
   const completeCountMutation = useMutation({
     mutationFn: async (countId: string) => {
+      showProcessing('Guardando cambios y marcando como entregado...');
       const response = await apiClient.post(`/inventory-counts/${countId}/complete`, {});
       localStorage.removeItem(STORAGE_KEY(countId));
       localStorage.removeItem('active_count_id');
@@ -424,11 +477,14 @@ export default function InventoryCountPage() {
       setSelectedCount(count);
       setCountItems(count.countItems || []);
       refetchCounts();
+      stopProcessing();
     },
+    onError: () => errorProcessing('No se pudo completar el conteo.')
   });
 
   const finalizeCountMutation = useMutation({
     mutationFn: async (countId: string) => {
+      showProcessing('Finalizando administrativamente y generando consolidado...');
       const response = await apiClient.post(`/inventory-counts/${countId}/finalize`, {});
       return response.data as InventoryCount;
     },
@@ -436,12 +492,16 @@ export default function InventoryCountPage() {
       setSelectedCount(count);
       setCountItems(count.countItems || []);
       refetchCounts();
-      showNotification('success', '✅ Finalizado', 'Conteo finalizado administrativamente.');
+      successProcessing('Conteo finalizado administrativamente.');
+      setTimeout(stopProcessing, 1500);
     },
+    onError: () => errorProcessing('No se pudo finalizar el conteo.')
   });
+
 
   const createVersionMutation = useMutation({
     mutationFn: async (countId: string) => {
+      showProcessing('Creando nueva versión de conteo...');
       await apiClient.post(`/inventory-counts/${countId}/new-version`, {});
       localStorage.removeItem(STORAGE_KEY(countId));
       const getResponse = await apiClient.get(`/inventory-counts/${countId}`);
@@ -452,6 +512,7 @@ export default function InventoryCountPage() {
       setCountItems(count.countItems || []);
       setView('process');
       refetchCounts();
+      stopProcessing();
       setNewVersionData({
         versionNumber: count.currentVersion,
         itemsCount: count.countItems?.length || 0,
@@ -459,27 +520,29 @@ export default function InventoryCountPage() {
       });
       setShowNewVersionModal(true);
     },
+    onError: (error: any) => {
+      const errorMsg = error.response?.data?.error?.message || error.message || 'No se pudo crear la nueva versión.';
+      errorProcessing(errorMsg);
+      setTimeout(stopProcessing, 3000);
+    }
   });
 
   const sendToERPMutation = useMutation({
     mutationFn: async (countId: string) => {
-      setIsSyncing(true);
-      setSyncStatus('syncing');
-      setSyncMessage('Consolidando datos y preparando envío al ERP...');
+      showProcessing('Consolidando datos y preparando envío al ERP...');
       const response = await apiClient.post(`/inventory-counts/${countId}/send-to-erp`, {});
-      setSyncStatus('closing');
-      setSyncMessage('Sincronización exitosa. Actualizando estado del conteo...');
+      setProcessing(prev => ({ ...prev, message: 'Sincronización exitosa. Actualizando estado del conteo...' }));
       localStorage.removeItem(STORAGE_KEY(countId));
       localStorage.removeItem('active_count_id');
       return response.data;
     },
     onSuccess: (data) => {
-      setSyncStatus('done');
-      setSyncMessage('Proceso completado correctamente.');
+      successProcessing('Proceso completado correctamente.');
       setTimeout(() => {
-        setIsSyncing(false);
+        stopProcessing();
         setSelectedCount(null);
         setCountItems([]);
+        refetchCounts();
         setView('list');
         const title = data.success ? '✅ Sincronización Exitosa' : '⚠️ Sincronización Parcial';
         const detail = data.itemsFailed > 0
@@ -489,13 +552,15 @@ export default function InventoryCountPage() {
       }, 1500);
     },
     onError: (error: any) => {
-      setSyncStatus('error');
-      setSyncMessage(error.response?.data?.error || 'Error crítico durante la sincronización.');
+      const errorData = error.response?.data?.error;
+      const message = typeof errorData === 'object' ? (errorData.message || JSON.stringify(errorData)) : (errorData || error.message || 'Error crítico durante la sincronización.');
+      errorProcessing(message);
     }
   });
 
   const handleExportExcel = async (countId: string) => {
     try {
+      showProcessing('Generando archivo Excel...');
       const url = `/inventory-counts/${countId}/export-excel`;
       const response = await apiClient.get(url, { responseType: 'blob' });
       const blob = new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -506,23 +571,34 @@ export default function InventoryCountPage() {
       document.body.appendChild(link);
       link.click();
       link.remove();
-      showNotification('success', '📥 Exportando', 'Tu descarga debería comenzar en breve.');
+      successProcessing('Archivo generado correctamente.');
+
+      // Refrescar estado porque el backend lo marca como FINALIZED tras exportar
+      refetchCounts();
+      if (countId === selectedCount?.id) {
+        fetchCountFromServer(countId);
+      }
+
+      setTimeout(stopProcessing, 1500);
     } catch (error) {
       console.error('Error al exportar Excel:', error);
-      showNotification('error', '❌ Error', 'No se pudo generar el archivo Excel.');
+      errorProcessing('No se pudo generar el archivo Excel.');
     }
   };
 
   const deleteMutation = useMutation({
     mutationFn: async (countId: string) => {
+      showProcessing('Eliminando conteo del servidor...');
       await apiClient.delete(`/inventory-counts/${countId}/delete`);
     },
     onSuccess: () => {
       refetchCounts();
       setView('list');
       setShowDeleteConfirm(false);
-      showNotification('success', '✅ Eliminado', 'Conteo eliminado correctamente');
+      successProcessing('Conteo eliminado correctamente');
+      setTimeout(stopProcessing, 1500);
     },
+    onError: () => errorProcessing('No se pudo eliminar el conteo.')
   });
 
   const reactivateCountMutation = useMutation({
@@ -644,7 +720,7 @@ export default function InventoryCountPage() {
       setView('process');
     } catch (error) {
       console.error('Error cargando conteo:', error);
-      alert('Error al cargar el conteo');
+      showNotification('error', 'Error', 'No se pudo cargar el conteo');
     }
   }, []);
 
@@ -746,7 +822,7 @@ export default function InventoryCountPage() {
         <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-6">
           <span className="text-4xl">🔍</span>
         </div>
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Conteo no encontrado</h2>
+        <h2 className="text-2xl font-bold text-[var(--text-primary)] mb-2">Conteo no encontrado</h2>
         <p className="text-gray-600 mb-8 max-w-md">
           El conteo que intentas acceder no existe o ha sido eliminado.
           Esto puede suceder si se reinició la base de datos o si el enlace es obsoleto.
@@ -762,259 +838,251 @@ export default function InventoryCountPage() {
   if (view === 'list') {
     return (
       <div className="w-full">
-        <div className="border-b bg-white p-6">
-          <div className="flex justify-between items-center">
-            <h1 className="text-3xl font-bold">Conteo Físico</h1>
+        <div className="border-b border-border-default bg-card p-8">
+          <div className="flex justify-between items-center max-w-7xl mx-auto">
+            <div>
+              <h1 className="text-3xl font-black text-primary tracking-tight">Conteo Físico</h1>
+              <p className="text-muted text-xs font-bold uppercase tracking-widest mt-1">Gestión de existencias y auditoría</p>
+            </div>
             {canCreate && (
-              <Button onClick={() => setView('create')} variant="primary">
+              <Button onClick={() => setView('create')} variant="primary" className="shadow-lg shadow-accent-primary/20">
                 + Nuevo Conteo
               </Button>
             )}
           </div>
         </div>
 
-        <div className="p-6 bg-gray-50">
-          {counts.length === 0 ? (
-            <div className="text-center py-12 bg-white rounded-lg border">
-              <p className="text-gray-500">No hay conteos aún</p>
-            </div>
-          ) : (
-            <div className="bg-white rounded-lg border overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b bg-gray-50">
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Número</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Código</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700">Estado</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700">Versión</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700">Items</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Creado</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {counts.map((count) => (
-                    <tr key={count.id} className="border-b hover:bg-gray-50">
-                      <td className="px-4 py-3 font-semibold text-gray-900">{count.sequenceNumber}</td>
-                      <td className="px-4 py-3 text-sm text-gray-600">{count.code}</td>
-                      <td className="px-4 py-3 text-center">
-                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${count.status === 'COMPLETED' ? 'bg-green-100 text-green-700' :
-                          count.status === 'SUBMITTED' ? 'bg-purple-100 text-purple-700' :
-                            count.status === 'ACTIVE' ? 'bg-blue-100 text-blue-700' :
-                              count.status === 'ON_HOLD' ? 'bg-yellow-100 text-yellow-700' :
-                                count.status === 'CLOSED' ? 'bg-gray-100 text-gray-700' :
-                                  count.status === 'CANCELLED' ? 'bg-red-100 text-red-700' :
-                                    'bg-gray-100 text-gray-700'
-                          }`}>
-                          {count.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-center font-semibold">{count.currentVersion}</td>
-                      <td className="px-4 py-3 text-center font-semibold">{count.countItems?.length || 0}</td>
-                      <td className="px-4 py-3 text-sm text-gray-600">{new Date(count.createdAt).toLocaleDateString('es-ES')}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex gap-2 justify-center flex-wrap">
-                          {/* DRAFT STATE */}
-                          {count.status === 'DRAFT' && (
-                            <>
-                              <Button onClick={() => handleProcessCount(count.id)} variant="primary" size="sm">
-                                📋 Procesar
-                              </Button>
-                              {canDelete && (
-                                <Button onClick={() => { setCountIdToDelete(count.id); setShowDeleteConfirm(true); }} variant="danger" size="sm">
-                                  🗑 Eliminar
-                                </Button>
-                              )}
-                            </>
-                          )}
-
-                          {/* ACTIVE STATE */}
-                          {count.status === 'ACTIVE' && (
-                            <>
-                              <Button onClick={() => handleProcessCount(count.id)} variant="primary" size="sm">
-                                📝 Procesar
-                              </Button>
-                              <Button onClick={() => completeCountMutation.mutate(count.id)} variant="success" size="sm">
-                                ✓ Finalizar
-                              </Button>
-                              <Button onClick={() => pauseMutation.mutate(count.id)} variant="secondary" size="sm">
-                                ⏸ Pausar
-                              </Button>
-                              {canDelete && (
-                                <Button onClick={() => { setCountIdToDelete(count.id); setShowDeleteConfirm(true); }} variant="danger" size="sm">
-                                  🗑 Eliminar
-                                </Button>
-                              )}
-                            </>
-                          )}
-
-                          {/* ON_HOLD STATE */}
-                          {count.status === 'ON_HOLD' && (
-                            <>
-                              <Button onClick={() => handleProcessCount(count.id)} variant="primary" size="sm">
-                                ▶ Continuar
-                              </Button>
-                              <Button onClick={() => completeCountMutation.mutate(count.id)} variant="success" size="sm">
-                                ✓ Finalizar
-                              </Button>
-                            </>
-                          )}
-
-                          {/* SUBMITTED STATE */}
-                          {count.status === 'SUBMITTED' && (
-                            <>
-                              <Button onClick={() => handleProcessCount(count.id)} variant="primary" size="sm">
-                                👁 Ver
-                              </Button>
-                              <Button onClick={() => finalizeCountMutation.mutate(count.id)} variant="success" size="sm" disabled={finalizeCountMutation.isPending}>
-                                🏆 Finalizar
-                              </Button>
-                              {canCreate && (
-                                <Button onClick={() => createVersionMutation.mutate(count.id)} variant="secondary" size="sm" disabled={createVersionMutation.isPending}>
-                                  🔄 Versión
-                                </Button>
-                              )}
-                              {canExport && (
-                                <Button onClick={() => handleExportExcel(count.id)} variant="secondary" size="sm">
-                                  📊 Excel
-                                </Button>
-                              )}
-                              {canDelete && (
-                                <Button onClick={() => { setCountIdToDelete(count.id); setShowDeleteConfirm(true); }} variant="danger" size="sm">
-                                  🗑 Eliminar
-                                </Button>
-                              )}
-                            </>
-                          )}
-
-                          {/* COMPLETED STATE */}
-                          {count.status === 'COMPLETED' && (
-                            <>
-                              {canCreate && (
-                                <Button onClick={() => createVersionMutation.mutate(count.id)} variant="secondary" size="sm">
-                                  🔄 Versión
-                                </Button>
-                              )}
-                              {canExport && (
-                                <Button onClick={() => handleExportExcel(count.id)} variant="secondary" size="sm">
-                                  📊 Excel
-                                </Button>
-                              )}
-                              {canSyncERP && (
-                                <Button onClick={() => sendToERPMutation.mutate(count.id)} variant="primary" size="sm">
-                                  🚀 ERP
-                                </Button>
-                              )}
-                            </>
-                          )}
-
-                          {/* IN_PROGRESS STATE */}
-                          {count.status === 'IN_PROGRESS' && (
-                            <>
-                              <Button onClick={() => handleProcessCount(count.id)} variant="primary" size="sm">
-                                📝 Recontar
-                              </Button>
-                              <Button onClick={() => completeCountMutation.mutate(count.id)} variant="success" size="sm">
-                                ✓ Finalizar
-                              </Button>
-                            </>
-                          )}
-
-                          {/* CLOSED STATE */}
-                          {count.status === 'CLOSED' && (
-                            <>
-                              {canExport && (
-                                <Button onClick={() => handleExportExcel(count.id)} variant="secondary" size="sm">
-                                  📊 Excel
-                                </Button>
-                              )}
-                              {canReopen && (
-                                <Button onClick={() => reactivateCountMutation.mutate(count.id)} variant="secondary" size="sm">
-                                  🔓 Reactivar
-                                </Button>
-                              )}
-                              {canDelete && (
-                                <Button onClick={() => { setCountIdToDelete(count.id); setShowDeleteConfirm(true); }} variant="danger" size="sm">
-                                  🗑 Eliminar
-                                </Button>
-                              )}
-                            </>
-                          )}
-
-                          {/* CANCELLED STATE */}
-                          {count.status === 'CANCELLED' && canDelete && (
-                            <Button onClick={() => { setCountIdToDelete(count.id); setShowDeleteConfirm(true); }} variant="danger" size="sm">
-                              🗑 Eliminar
-                            </Button>
-                          )}
-                        </div>
-                      </td>
+        <div className="p-8 bg-app min-h-[calc(100vh-140px)]">
+          <div className="max-w-7xl mx-auto">
+            {counts.length === 0 ? (
+              <div className="text-center py-20 bg-card rounded-xl border border-border-default shadow-sm">
+                <div className="text-4xl mb-4">Empty</div>
+                <p className="text-muted font-bold uppercase tracking-widest text-xs">No hay conteos aún</p>
+              </div>
+            ) : (
+              <div className="bg-card rounded-xl border border-border-default overflow-hidden shadow-xl">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-border-default bg-hover/30">
+                      <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-[0.2em] text-muted">Número</th>
+                      <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-[0.2em] text-muted">Código</th>
+                      <th className="px-6 py-4 text-center text-[10px] font-black uppercase tracking-[0.2em] text-muted">Estado</th>
+                      <th className="px-6 py-4 text-center text-[10px] font-black uppercase tracking-[0.2em] text-muted">Versión</th>
+                      <th className="px-6 py-4 text-center text-[10px] font-black uppercase tracking-[0.2em] text-muted">Items</th>
+                      <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-[0.2em] text-muted">Creado</th>
+                      <th className="px-6 py-4 text-center text-[10px] font-black uppercase tracking-[0.2em] text-muted">Acciones</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+                  </thead>
+                  <tbody>
+                    {counts.map((count) => (
+                      <tr key={count.id} className="border-b border-border-default hover:bg-hover/50 transition-all group">
+                        <td className="px-4 py-3 font-bold text-[var(--text-primary)]">{count.sequenceNumber}</td>
+                        <td className="px-4 py-3 text-sm text-[var(--text-secondary)]">{count.code}</td>
+                        <td className="px-4 py-3 text-center">
+                          <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider border ${count.status === 'COMPLETED' ? 'bg-success/10 text-success border-success/20' :
+                            count.status === 'SUBMITTED' ? 'bg-accent-secondary/10 text-accent-secondary border-accent-secondary/20' :
+                              count.status === 'ACTIVE' ? 'bg-accent-primary/10 text-accent-primary border-accent-primary/20' :
+                                count.status === 'ON_HOLD' ? 'bg-warning/10 text-warning border-warning/20' :
+                                  count.status === 'CLOSED' ? 'bg-muted/10 text-muted border-border-default' :
+                                    count.status === 'FINALIZED' ? 'bg-success/20 text-success border-success/30' :
+                                      count.status === 'CANCELLED' ? 'bg-danger/10 text-danger border-danger/20' :
+                                        'bg-hover text-muted border-border-default'
+                            }`}>
+                            {count.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-center font-bold text-[var(--text-primary)]">{count.currentVersion}</td>
+                        <td className="px-4 py-3 text-center font-bold text-[var(--text-primary)]">{count.countItems?.length || 0}</td>
+                        <td className="px-4 py-3 text-sm text-[var(--text-muted)]">{new Date(count.createdAt).toLocaleDateString('es-ES')}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex gap-2 justify-center flex-wrap">
+                            {/* DRAFT STATE */}
+                            {count.status === 'DRAFT' && (
+                              <>
+                                <Button onClick={() => handleProcessCount(count.id)} variant="primary" size="sm">
+                                  📋 Procesar
+                                </Button>
+                                {canDelete && (
+                                  <Button onClick={() => { setCountIdToDelete(count.id); setShowDeleteConfirm(true); }} variant="danger" size="sm">
+                                    🗑 Eliminar
+                                  </Button>
+                                )}
+                              </>
+                            )}
 
-        {/* Sync Progress Modal */}
-        {isSyncing && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 flex flex-col items-center text-center animate-in fade-in zoom-in duration-300">
-              {syncStatus === 'syncing' && (
-                <>
-                  <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
-                  <h3 className="text-xl font-bold text-gray-900 mb-2">Sincronizando con ERP</h3>
-                  <p className="text-gray-600">{syncMessage}</p>
-                </>
-              )}
-              {syncStatus === 'closing' && (
-                <>
-                  <div className="w-16 h-16 border-4 border-green-500 border-t-transparent rounded-full animate-spin mb-6"></div>
-                  <h3 className="text-xl font-bold text-gray-900 mb-2">Finalizando Conteo</h3>
-                  <p className="text-gray-600">{syncMessage}</p>
-                </>
-              )}
-              {syncStatus === 'done' && (
-                <>
-                  <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-6 scale-110 animate-bounce">
-                    <span className="text-3xl">✅</span>
-                  </div>
-                  <h3 className="text-xl font-bold text-gray-900 mb-2">¡Completado!</h3>
-                  <p className="text-gray-600">{syncMessage}</p>
-                  <Button onClick={() => setIsSyncing(false)} className="mt-6">Cerrar</Button>
-                </>
-              )}
-              {syncStatus === 'error' && (
-                <>
-                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-6">
-                    <span className="text-3xl">⚠️</span>
-                  </div>
-                  <h3 className="text-xl font-bold text-red-700 mb-2">Error de Sincronización</h3>
-                  <p className="text-gray-600 mb-6">{syncMessage}</p>
-                  <Button onClick={() => setIsSyncing(false)} variant="danger">Cerrar y Revisar</Button>
-                </>
-              )}
-            </div>
+                            {/* ACTIVE STATE */}
+                            {count.status === 'ACTIVE' && (
+                              <>
+                                <Button onClick={() => handleProcessCount(count.id)} variant="primary" size="sm">
+                                  📝 Procesar
+                                </Button>
+                                <Button onClick={() => completeCountMutation.mutate(count.id)} variant="success" size="sm" isLoading={completeCountMutation.isPending}>
+                                  ✓ Finalizar
+                                </Button>
+                                <Button onClick={() => pauseMutation.mutate(count.id)} variant="secondary" size="sm" isLoading={pauseMutation.isPending}>
+                                  ⏸ Pausar
+                                </Button>
+                                {canDelete && (
+                                  <Button onClick={() => { setCountIdToDelete(count.id); setShowDeleteConfirm(true); }} variant="danger" size="sm">
+                                    🗑 Eliminar
+                                  </Button>
+                                )}
+                              </>
+                            )}
+
+                            {/* ON_HOLD STATE */}
+                            {count.status === 'ON_HOLD' && (
+                              <>
+                                <Button onClick={() => handleProcessCount(count.id)} variant="primary" size="sm">
+                                  ▶ Continuar
+                                </Button>
+                                <Button onClick={() => completeCountMutation.mutate(count.id)} variant="success" size="sm">
+                                  ✓ Finalizar
+                                </Button>
+                              </>
+                            )}
+
+                            {/* SUBMITTED STATE */}
+                            {count.status === 'SUBMITTED' && (
+                              <>
+                                <Button onClick={() => handleProcessCount(count.id)} variant="primary" size="sm">
+                                  👁 Ver
+                                </Button>
+                                <Button onClick={() => finalizeCountMutation.mutate(count.id)} variant="success" size="sm" isLoading={finalizeCountMutation.isPending}>
+                                  🏆 Finalizar
+                                </Button>
+                                {canCreate && (
+                                  <Button onClick={() => createVersionMutation.mutate(count.id)} variant="secondary" size="sm" isLoading={createVersionMutation.isPending}>
+                                    🔄 Versión
+                                  </Button>
+                                )}
+                                {canExport && (
+                                  <Button onClick={() => handleExportExcel(count.id)} variant="secondary" size="sm">
+                                    📊 Excel
+                                  </Button>
+                                )}
+                                {canDelete && (
+                                  <Button onClick={() => { setCountIdToDelete(count.id); setShowDeleteConfirm(true); }} variant="danger" size="sm">
+                                    🗑 Eliminar
+                                  </Button>
+                                )}
+                              </>
+                            )}
+
+                            {/* COMPLETED STATE */}
+                            {count.status === 'COMPLETED' && (
+                              <>
+                                {canCreate && (
+                                  <Button onClick={() => createVersionMutation.mutate(count.id)} variant="secondary" size="sm" isLoading={createVersionMutation.isPending}>
+                                    🔄 Versión
+                                  </Button>
+                                )}
+                                {canExport && (
+                                  <Button onClick={() => handleExportExcel(count.id)} variant="secondary" size="sm">
+                                    📊 Excel
+                                  </Button>
+                                )}
+                                {canSyncERP && (
+                                  <Button onClick={() => sendToERPMutation.mutate(count.id)} variant="primary" size="sm" isLoading={sendToERPMutation.isPending}>
+                                    🚀 ERP
+                                  </Button>
+                                )}
+                              </>
+                            )}
+
+                            {/* IN_PROGRESS STATE */}
+                            {count.status === 'IN_PROGRESS' && (
+                              <>
+                                <Button onClick={() => handleProcessCount(count.id)} variant="primary" size="sm">
+                                  📝 Recontar
+                                </Button>
+                                <Button onClick={() => completeCountMutation.mutate(count.id)} variant="success" size="sm">
+                                  ✓ Finalizar
+                                </Button>
+                              </>
+                            )}
+
+                            {/* FINALIZED STATE */}
+                            {count.status === 'FINALIZED' && (
+                              <>
+                                <Button onClick={() => handleProcessCount(count.id)} variant="primary" size="sm">
+                                  👁 Ver
+                                </Button>
+                                {canExport && (
+                                  <Button onClick={() => handleExportExcel(count.id)} variant="secondary" size="sm">
+                                    📊 Excel
+                                  </Button>
+                                )}
+                                {canSyncERP && (
+                                  <Button onClick={() => sendToERPMutation.mutate(count.id)} variant="primary" size="sm" isLoading={sendToERPMutation.isPending}>
+                                    🚀 ERP
+                                  </Button>
+                                )}
+                              </>
+                            )}
+
+                            {/* CLOSED STATE */}
+                            {count.status === 'CLOSED' && (
+                              <>
+                                {canExport && (
+                                  <Button onClick={() => handleExportExcel(count.id)} variant="secondary" size="sm">
+                                    📊 Excel
+                                  </Button>
+                                )}
+                                {canReopen && (
+                                  <Button onClick={() => reactivateCountMutation.mutate(count.id)} variant="secondary" size="sm" isLoading={reactivateCountMutation.isPending}>
+                                    🔓 Reactivar
+                                  </Button>
+                                )}
+                                {canDelete && (
+                                  <Button onClick={() => { setCountIdToDelete(count.id); setShowDeleteConfirm(true); }} variant="danger" size="sm">
+                                    🗑 Eliminar
+                                  </Button>
+                                )}
+                              </>
+                            )}
+
+                            {/* CANCELLED STATE */}
+                            {count.status === 'CANCELLED' && canDelete && (
+                              <Button onClick={() => { setCountIdToDelete(count.id); setShowDeleteConfirm(true); }} variant="danger" size="sm">
+                                🗑 Eliminar
+                              </Button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-        )}
 
-        <ConfirmModal
-          isOpen={showDeleteConfirm}
-          onConfirm={() => { if (countIdToDelete) deleteMutation.mutate(countIdToDelete); }}
-          onCancel={() => { setShowDeleteConfirm(false); setCountIdToDelete(null); }}
-          title="⚠️ Eliminar Conteo"
-          message="¿Estás seguro de que deseas eliminar este conteo? Esta acción no se puede deshacer."
-          isDangerous={true}
-        />
+          {/* Modal de Procesamiento Global */}
+          <ProcessingModal
+            isOpen={processing.isOpen}
+            message={processing.message}
+            status={processing.status}
+            onClose={processing.status !== 'processing' ? stopProcessing : undefined}
+          />
 
-        <NotificationModal
-          isOpen={notification.isOpen}
-          onClose={() => setNotification({ ...notification, isOpen: false })}
-          type={notification.type}
-          title={notification.title}
-          message={notification.message}
-        />
+          <ConfirmModal
+            isOpen={showDeleteConfirm}
+            onConfirm={() => { if (countIdToDelete) deleteMutation.mutate(countIdToDelete); }}
+            onCancel={() => { setShowDeleteConfirm(false); setCountIdToDelete(null); }}
+            title="⚠️ Eliminar Conteo"
+            message="¿Estás seguro de que deseas eliminar este conteo? Esta acción no se puede deshacer."
+            isDangerous={true}
+          />
+
+          <NotificationModal
+            isOpen={notification.isOpen}
+            onClose={() => setNotification({ ...notification, isOpen: false })}
+            type={notification.type}
+            title={notification.title}
+            message={notification.message}
+          />
+        </div>
       </div>
     );
   }
@@ -1022,6 +1090,7 @@ export default function InventoryCountPage() {
   // CREATE VIEW
   if (view === 'create') {
     const isFormValid = warehouseId && (creationMode === 'erp' ? mappingId : excelFile);
+
     const downloadTemplate = async () => {
       try {
         const response = await apiClient.get('/inventory-counts/excel-template', { responseType: 'blob' });
@@ -1032,42 +1101,57 @@ export default function InventoryCountPage() {
         document.body.appendChild(link);
         link.click();
         link.remove();
-      } catch (error) { console.error('Error downloading template:', error); }
+      } catch (error) {
+        console.error('Error downloading template:', error);
+      }
     };
 
     return (
-      <div className="w-full h-full flex items-center justify-center p-6 bg-gradient-to-br from-gray-50 to-gray-100">
-        <div className="border rounded-lg p-8 max-w-md w-full bg-white shadow-lg">
-          <h2 className="text-2xl font-bold mb-2">📝 Crear Nuevo Conteo</h2>
-          <p className="text-sm text-gray-500 mb-6">Completa todos los campos requeridos</p>
+      <div className="w-full h-full flex items-center justify-center p-8 bg-app">
+        <div className="border border-border-default rounded-2xl p-10 max-w-lg w-full bg-card shadow-2xl relative overflow-hidden">
+          {/* Decorative glow */}
+          <div className="absolute top-0 right-0 w-32 h-32 bg-accent-primary/5 rounded-full blur-3xl -mr-16 -mt-16"></div>
 
-          <div className="space-y-4">
+          <h2 className="text-3xl font-black text-primary mb-2 tracking-tight">📝 Nuevo Conteo</h2>
+          <p className="text-xs font-bold text-muted uppercase tracking-widest mb-10">Configuración de auditoría física</p>
+
+          <div className="space-y-8">
             <div>
-              <Label htmlFor="warehouse" className="font-semibold">📦 Almacén <span className="text-red-500">*</span></Label>
+              <Label htmlFor="warehouse" className="text-[10px] font-black uppercase tracking-[0.2em] text-muted mb-3 block">📦 Almacén de Origen</Label>
               <select
                 id="warehouse" value={warehouseId}
                 onChange={(e) => { setWarehouseId(e.target.value); setLocationId(''); }}
-                className={`w-full mt-2 border rounded-md px-3 py-2 focus:outline-none focus:ring-2 ${warehouseId ? 'border-green-300 focus:ring-green-500 bg-green-50' : 'border-gray-300'}`}
+                className={`w-full bg-hover/50 border border-border-default rounded-2xl px-5 py-4 text-primary focus:outline-none focus:ring-2 focus:ring-accent-primary/20 transition-all font-medium appearance-none`}
               >
                 <option value="">Selecciona un almacén</option>
                 {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
               </select>
             </div>
 
-            <div className="py-2">
-              <Label className="font-semibold mb-2 block">🎯 Método de Carga</Label>
-              <div className="flex gap-2">
-                <button onClick={() => setCreationMode('erp')} className={`flex-1 py-2 px-3 rounded-md border text-sm transition-all ${creationMode === 'erp' ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-700'}`}>🔗 ERP Mapping</button>
-                <button onClick={() => setCreationMode('excel')} className={`flex-1 py-2 px-3 rounded-md border text-sm transition-all ${creationMode === 'excel' ? 'bg-green-600 text-white shadow-md' : 'bg-white text-gray-700'}`}>📊 Excel File</button>
+            <div>
+              <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted mb-3 block">🎯 Método de Recopilación</Label>
+              <div className="flex gap-3 bg-hover/30 p-1.5 rounded-2xl border border-border-default">
+                <button
+                  onClick={() => setCreationMode('erp')}
+                  className={`flex-1 py-3 px-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${creationMode === 'erp' ? 'bg-accent-primary text-white shadow-lg' : 'text-muted hover:text-primary'}`}
+                >
+                  🔗 ERP Sync
+                </button>
+                <button
+                  onClick={() => setCreationMode('excel')}
+                  className={`flex-1 py-3 px-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${creationMode === 'excel' ? 'bg-accent-secondary text-white shadow-lg' : 'text-muted hover:text-primary'}`}
+                >
+                  📊 Excel Load
+                </button>
               </div>
             </div>
 
             {creationMode === 'erp' && (
-              <div>
-                <Label htmlFor="mapping" className="font-semibold">🔗 Mapeo de Datos <span className="text-red-500">*</span></Label>
+              <div className="animate-in slide-in-from-top-2 duration-300">
+                <Label htmlFor="mapping" className="text-[10px] font-black uppercase tracking-[0.2em] text-muted mb-3 block">🔗 Mapeo de Integración</Label>
                 <select
                   id="mapping" value={mappingId} onChange={(e) => setMappingId(e.target.value)}
-                  className={`w-full mt-2 border rounded-md px-3 py-2 focus:outline-none focus:ring-2 ${mappingId ? 'border-green-300 bg-green-50' : 'border-gray-300'}`}
+                  className={`w-full bg-hover/50 border border-border-default rounded-2xl px-5 py-4 text-primary focus:outline-none focus:ring-2 focus:ring-accent-primary/20 transition-all font-medium appearance-none`}
                 >
                   <option value="">Selecciona un mapeo</option>
                   {availableMappings.map((mapping: any) => <option key={mapping.id} value={mapping.id}>{mapping.datasetType}</option>)}
@@ -1076,32 +1160,45 @@ export default function InventoryCountPage() {
             )}
 
             {creationMode === 'excel' && (
-              <div className="space-y-3">
+              <div className="space-y-4 animate-in slide-in-from-top-2 duration-300">
                 <div className="flex items-center justify-between">
-                  <Label className="font-semibold">📊 Archivo Excel <span className="text-red-500">*</span></Label>
-                  <button onClick={downloadTemplate} className="text-xs text-blue-600 hover:underline">📥 Descargar Plantilla</button>
+                  <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted block">📊 Archivo de Datos</Label>
+                  <button onClick={downloadTemplate} className="text-[10px] font-black uppercase tracking-widest text-accent-primary hover:underline">📥 Download Template</button>
                 </div>
                 <div
-                  className={`border-2 border-dashed rounded-lg p-6 text-center transition-all ${excelFile ? 'border-green-400 bg-green-50' : 'border-gray-300 bg-gray-50'}`}
+                  className={`border-2 border-dashed rounded-2xl p-10 text-center transition-all group ${excelFile ? 'border-success bg-success/5' : 'border-border-default bg-hover/20 hover:border-accent-primary/50'}`}
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={(e) => { e.preventDefault(); if (e.dataTransfer.files?.[0]) setExcelFile(e.dataTransfer.files[0]); }}
                 >
                   <input type="file" id="excel-upload" accept=".xlsx,.xls" className="hidden" onChange={(e) => setExcelFile(e.target.files?.[0] || null)} />
-                  <Label htmlFor="excel-upload" className="cursor-pointer">
-                    {excelFile ? <p className="text-sm font-medium text-green-700">📄 {excelFile.name}</p> : <p className="text-sm text-gray-600 font-medium">Haz click o arrastra (.xlsx)</p>}
+                  <Label htmlFor="excel-upload" className="cursor-pointer block">
+                    {excelFile ? (
+                      <div className="space-y-2">
+                        <p className="text-2xl">📄</p>
+                        <p className="text-sm font-black text-success uppercase truncate max-w-xs mx-auto">{excelFile.name}</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <p className="text-2xl group-hover:scale-110 transition-transform">📁</p>
+                        <p className="text-[10px] text-muted font-black uppercase tracking-widest">Haz click o arrastra (.xlsx)</p>
+                      </div>
+                    )}
                   </Label>
                 </div>
                 {excelPreview && (
-                  <div className="mt-4 border rounded-md overflow-hidden bg-white max-h-40 overflow-y-auto">
-                    <table className="w-full text-[10px]">
-                      <thead className="bg-gray-50 border-b">
-                        <tr><th className="px-2 py-1 text-left">Item</th><th className="px-2 py-1 text-right">Cant.</th></tr>
+                  <div className="mt-4 border border-border-default rounded-2xl overflow-hidden bg-hover/30 max-h-40 overflow-y-auto shadow-inner">
+                    <table className="w-full text-[10px] font-bold">
+                      <thead className="bg-card/50 border-b border-border-default sticky top-0">
+                        <tr>
+                          <th className="px-4 py-2 text-left uppercase text-muted tracking-widest">Item</th>
+                          <th className="px-4 py-2 text-right uppercase text-muted tracking-widest">Cant.</th>
+                        </tr>
                       </thead>
-                      <tbody>
+                      <tbody className="divide-y divide-border-default/50">
                         {excelPreview.preview.map((item, i) => (
-                          <tr key={i} className="border-b">
-                            <td className="px-2 py-1 truncate">{item.itemName}</td>
-                            <td className="px-2 py-1 text-right">{item.systemQty}</td>
+                          <tr key={i} className="hover:bg-card/30">
+                            <td className="px-4 py-2 text-primary truncate max-w-[150px]">{item.itemName}</td>
+                            <td className="px-4 py-2 text-right text-accent-primary">{item.systemQty}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -1112,99 +1209,172 @@ export default function InventoryCountPage() {
             )}
 
             <div>
-              <Label htmlFor="location">📍 Ubicación <span className="text-gray-400">(opcional)</span></Label>
-              <select id="location" value={locationId} onChange={(e) => setLocationId(e.target.value)} className="w-full mt-2 border border-gray-300 rounded-md px-3 py-2">
+              <Label htmlFor="location" className="text-[10px] font-black uppercase tracking-[0.2em] text-muted mb-3 block">📍 Pasillo / Ubicación <span className="text-[8px] opacity-50">(OPCIONAL)</span></Label>
+              <select
+                id="location" value={locationId} onChange={(e) => setLocationId(e.target.value)}
+                className="w-full bg-hover/50 border border-border-default rounded-2xl px-5 py-4 text-primary focus:outline-none focus:ring-2 focus:ring-accent-primary/20 transition-all font-medium appearance-none"
+              >
                 <option value="">Todas las ubicaciones</option>
                 {locations.map((l: any) => <option key={l.id} value={l.id}>{l.code}</option>)}
               </select>
             </div>
 
-            <div className="flex gap-2 pt-6 border-t">
-              <Button onClick={() => createCountMutation.mutate()} disabled={!isFormValid || createCountMutation.isPending || uploadingExcel} variant="primary" className="flex-1">
+            <div className="flex gap-3 pt-6 border-t border-border-default">
+              <Button
+                onClick={() => createCountMutation.mutate()}
+                disabled={!isFormValid || createCountMutation.isPending || uploadingExcel}
+                variant="primary"
+                className="flex-1 py-6 rounded-2xl shadow-xl shadow-accent-primary/20"
+              >
                 {createCountMutation.isPending || uploadingExcel ? '⏳ Procesando...' : '✓ Crear Conteo'}
               </Button>
-              <Button onClick={() => { setView('list'); setExcelFile(null); }} variant="secondary" className="flex-1">✕ Cancelar</Button>
+              <Button
+                onClick={() => { setView('list'); setExcelFile(null); }}
+                variant="secondary"
+                className="flex-1 py-6 rounded-2xl"
+              >
+                ✕ Cancelar
+              </Button>
             </div>
           </div>
         </div>
+        <ProcessingModal
+          isOpen={processing.isOpen}
+          message={processing.message}
+          status={processing.status}
+          onClose={processing.status !== 'processing' ? stopProcessing : undefined}
+        />
       </div>
     );
   }
-
   // PROCESS VIEW
   if (view === 'process' && selectedCount) {
     return (
-      <div className="w-full h-full flex flex-col bg-gray-50">
-        <div className="flex-shrink-0 border-b bg-white px-6 py-4">
-          <div className="flex justify-between items-start">
+      <div className="w-full h-full flex flex-col bg-app">
+        <div className="flex-shrink-0 border-b border-border-default bg-card px-8 py-6">
+          <div className="max-w-7xl mx-auto flex justify-between items-start">
             <div>
-              <h1 className="text-3xl font-bold">{selectedCount.sequenceNumber}</h1>
-              <p className="text-sm text-gray-500">{selectedCount.code}</p>
+              <h1 className="text-4xl font-black text-primary tracking-tighter">{selectedCount.sequenceNumber}</h1>
+              <p className="text-xs font-bold text-muted uppercase tracking-[0.2em] mt-1">{selectedCount.code}</p>
             </div>
-            <span className={`px-3 py-1 rounded-full text-xs font-semibold ${selectedCount.status === 'COMPLETED' ? 'bg-green-100 text-green-700' :
-              selectedCount.status === 'SUBMITTED' ? 'bg-purple-100 text-purple-700' :
-                selectedCount.status === 'ACTIVE' ? 'bg-blue-100 text-blue-700' :
-                  selectedCount.status === 'ON_HOLD' ? 'bg-yellow-100 text-yellow-700' :
-                    'bg-gray-100 text-gray-700'
+            <span className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-[0.15em] border ${selectedCount.status === 'COMPLETED' ? 'bg-success/10 text-success border-success/20' :
+              selectedCount.status === 'SUBMITTED' ? 'bg-accent-secondary/10 text-accent-secondary border-accent-secondary/20' :
+                selectedCount.status === 'FINALIZED' ? 'bg-success/20 text-success border-success/40' :
+                  selectedCount.status === 'ACTIVE' ? 'bg-accent-primary/10 text-accent-primary border-accent-primary/20' :
+                    selectedCount.status === 'ON_HOLD' ? 'bg-warning/10 text-warning border-warning/20' :
+                      'bg-hover text-muted border-border-default'
               }`}>
               {selectedCount.status}
             </span>
           </div>
         </div>
 
-        <div className="flex-shrink-0 border-b bg-white px-6 py-4">
-          <div className="flex gap-2 flex-wrap">
+        <div className="flex-shrink-0 border-b border-border-default bg-card px-8 py-4">
+          <div className="max-w-7xl mx-auto flex gap-3 flex-wrap">
             {selectedCount.status === 'DRAFT' && (
               <>
-                <Button onClick={() => startCountMutation.mutate(selectedCount.id)} variant="primary">✓ Iniciar Conteo</Button>
+                <Button onClick={() => handleActionWithConfirm(
+                  '✓ Iniciar Conteo',
+                  '¿Estás seguro de que deseas iniciar este conteo? Esto permitirá que el personal empiece a registrar cantidades.',
+                  () => startCountMutation.mutate(selectedCount.id)
+                )} variant="primary">✓ Iniciar Conteo</Button>
                 {canDelete && (
-                  <Button onClick={() => cancelCountMutation.mutate(selectedCount.id)} variant="danger">✕ Cancelar</Button>
+                  <Button onClick={() => handleActionWithConfirm(
+                    '✕ Cancelar Conteo',
+                    '¿Estás seguro de que deseas cancelar este conteo? Esta acción es irreversible.',
+                    () => cancelCountMutation.mutate(selectedCount.id),
+                    true
+                  )} variant="danger">✕ Cancelar</Button>
                 )}
               </>
             )}
             {selectedCount.status === 'ACTIVE' && (
               <>
-                <Button onClick={() => completeCountMutation.mutate(selectedCount.id)} variant="primary">✓ Finalizar</Button>
+                <Button onClick={() => handleActionWithConfirm(
+                  '✓ Finalizar Conteo',
+                  '¿Has terminado de registrar todos los artículos? Una vez finalizado, el conteo pasará a revisión.',
+                  () => completeCountMutation.mutate(selectedCount.id)
+                )} variant="primary">✓ Finalizar</Button>
                 <Button onClick={() => pauseMutation.mutate(selectedCount.id)} variant="secondary">⏸ Pausar</Button>
                 {canDelete && (
-                  <Button onClick={() => cancelCountMutation.mutate(selectedCount.id)} variant="danger">✕ Cancelar</Button>
+                  <Button onClick={() => handleActionWithConfirm(
+                    '✕ Cancelar Conteo',
+                    '¿Estás seguro de que deseas cancelar este conteo activo?',
+                    () => cancelCountMutation.mutate(selectedCount.id),
+                    true
+                  )} variant="danger">✕ Cancelar</Button>
                 )}
               </>
             )}
             {selectedCount.status === 'ON_HOLD' && (
               <>
                 <Button onClick={() => resumeMutation.mutate(selectedCount.id)} variant="secondary">▶ Reanudar</Button>
-                <Button onClick={() => completeCountMutation.mutate(selectedCount.id)} variant="primary" disabled={completeCountMutation.isPending}>✓ Finalizar / Entregar</Button>
+                <Button onClick={() => handleActionWithConfirm(
+                  '✓ Finalizar / Entregar',
+                  '¿Deseas finalizar y entregar este conteo que estaba en pausa?',
+                  () => completeCountMutation.mutate(selectedCount.id)
+                )} variant="primary" disabled={completeCountMutation.isPending}>✓ Finalizar / Entregar</Button>
                 {canDelete && (
-                  <Button onClick={() => cancelCountMutation.mutate(selectedCount.id)} variant="danger">✕ Cancelar</Button>
+                  <Button onClick={() => handleActionWithConfirm(
+                    '✕ Cancelar Conteo',
+                    '¿Estás seguro de que deseas cancelar este conteo?',
+                    () => cancelCountMutation.mutate(selectedCount.id),
+                    true
+                  )} variant="danger">✕ Cancelar</Button>
                 )}
               </>
             )}
             {selectedCount.status === 'SUBMITTED' && (
               <>
-                <Button onClick={() => finalizeCountMutation.mutate(selectedCount.id)} variant="primary" disabled={finalizeCountMutation.isPending}>🏆 Finalizar Conteo</Button>
-                <Button onClick={() => createVersionMutation.mutate(selectedCount.id)} variant="secondary" disabled={createVersionMutation.isPending}>🔄 Crear Nueva Versión (Recontar)</Button>
+                <Button onClick={() => handleActionWithConfirm(
+                  '🏆 Finalizar Conteo',
+                  '¿Estás seguro de finalizar definitivamente este conteo? Se generarán los reportes finales.',
+                  () => finalizeCountMutation.mutate(selectedCount.id)
+                )} variant="primary" disabled={finalizeCountMutation.isPending}>🏆 Finalizar Conteo</Button>
+                <Button onClick={() => handleActionWithConfirm(
+                  '🔄 Crear Nueva Versión',
+                  'Se guardará la versión actual y se iniciará un nuevo reconteo para los artículos seleccionados. ¿Continuar?',
+                  () => createVersionMutation.mutate(selectedCount.id)
+                )} variant="secondary" disabled={createVersionMutation.isPending}>🔄 Crear Nueva Versión (Recontar)</Button>
                 {canExport && (
                   <Button onClick={() => handleExportExcel(selectedCount.id)} variant="secondary">📥 Exportar Excel</Button>
                 )}
                 {canDelete && (
-                  <Button onClick={() => cancelCountMutation.mutate(selectedCount.id)} variant="danger">✕ Cancelar</Button>
+                  <Button onClick={() => handleActionWithConfirm(
+                    '✕ Cancelar Conteo',
+                    '¿Estás seguro de que deseas cancelar?',
+                    () => cancelCountMutation.mutate(selectedCount.id),
+                    true
+                  )} variant="danger">✕ Cancelar</Button>
                 )}
               </>
             )}
-            {selectedCount.status === 'COMPLETED' && (
+            {(selectedCount.status === 'COMPLETED' || selectedCount.status === 'FINALIZED') && (
               <>
-                {canCreate && (
-                  <Button onClick={() => createVersionMutation.mutate(selectedCount.id)} variant="secondary">🔄 Crear Versión</Button>
+                {selectedCount.status === 'COMPLETED' && canCreate && (
+                  <Button onClick={() => handleActionWithConfirm(
+                    '🔄 Crear Nueva Versión',
+                    '¿Deseas abrir una nueva versión de este conteo completado para corregir discrepancias?',
+                    () => createVersionMutation.mutate(selectedCount.id)
+                  )} variant="secondary">🔄 Crear Versión</Button>
                 )}
                 {canExport && (
                   <Button onClick={() => handleExportExcel(selectedCount.id)} variant="secondary">📥 Exportar Excel</Button>
                 )}
                 {canSyncERP && (
-                  <Button onClick={() => sendToERPMutation.mutate(selectedCount.id)} variant="primary">🚀 Enviar a ERP</Button>
+                  <Button onClick={() => handleActionWithConfirm(
+                    '🚀 Enviar a ERP',
+                    `Se enviarán los datos de la versión ${selectedCount.finalizedVersion || selectedCount.currentVersion} al ERP. ¿Continuar?`,
+                    () => sendToERPMutation.mutate(selectedCount.id)
+                  )} variant="primary" disabled={sendToERPMutation.isPending}>🚀 Enviar a ERP</Button>
                 )}
                 {canDelete && (
-                  <Button onClick={() => cancelCountMutation.mutate(selectedCount.id)} variant="danger">✕ Cancelar</Button>
+                  <Button onClick={() => handleActionWithConfirm(
+                    '✕ Cancelar Conteo',
+                    '¿Estás seguro de cancelar este conteo?',
+                    () => cancelCountMutation.mutate(selectedCount.id),
+                    true
+                  )} variant="danger">✕ Cancelar</Button>
                 )}
               </>
             )}
@@ -1212,137 +1382,165 @@ export default function InventoryCountPage() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
-          <div className="bg-white border-b p-6">
-            <div className="flex gap-4 mb-6">
-              <div className="flex-1 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                <p className="text-xs font-semibold text-yellow-700 uppercase">Varianzas</p>
-                <p className="text-4xl font-bold text-yellow-600">{filteredItems.filter(i => getVariance(i).variance !== 0).length}</p>
-              </div>
-              <div className="flex-1 bg-green-50 border border-green-200 rounded-lg p-4">
-                <p className="text-xs font-semibold text-green-700 uppercase">Bajo</p>
-                <p className="text-4xl font-bold text-green-600">{filteredItems.filter(i => getVariance(i).variance < 0).length}</p>
-              </div>
-              <div className="flex-1 bg-red-50 border border-red-200 rounded-lg p-4">
-                <p className="text-xs font-semibold text-red-700 uppercase">Sobre</p>
-                <p className="text-4xl font-bold text-red-600">{filteredItems.filter(i => getVariance(i).variance > 0).length}</p>
+        <div className="flex-1 overflow-y-auto custom-scrollbar">
+          <div className="max-w-7xl mx-auto w-full">
+            <div className="bg-card border-b border-border-default p-8">
+              {hasVarianceView && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                  <div className="bg-warning/5 border border-warning/10 rounded-2xl p-6 shadow-sm">
+                    <p className="text-[10px] font-black text-warning uppercase tracking-[0.2em] mb-1">Varianzas</p>
+                    <p className="text-4xl font-black text-warning">{filteredItems.filter(i => getVariance(i).variance !== 0).length}</p>
+                  </div>
+                  <div className="bg-success/5 border border-success/10 rounded-2xl p-6 shadow-sm">
+                    <p className="text-[10px] font-black text-success uppercase tracking-[0.2em] mb-1">Bajo</p>
+                    <p className="text-4xl font-black text-success">{filteredItems.filter(i => getVariance(i).variance < 0).length}</p>
+                  </div>
+                  <div className="bg-danger/5 border border-danger/10 rounded-3xl p-6 shadow-sm">
+                    <p className="text-[10px] font-black text-danger uppercase tracking-[0.2em] mb-1">Sobre</p>
+                    <p className="text-4xl font-black text-danger">{filteredItems.filter(i => getVariance(i).variance > 0).length}</p>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-3">
+                <Input
+                  ref={searchInputRef}
+                  placeholder="🔍 Escanea o busca por código/descripción... (Barcode ready)"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onKeyDown={handleSearchKeyDown}
+                  autoFocus
+                />
+                <div className="flex gap-2 flex-wrap">
+                  <select
+                    value={filterCategory}
+                    onChange={(e) => setFilterCategory(e.target.value)}
+                    style={selectStyle}
+                  >
+                    <option value="">📁 Todas las Categorías</option>
+                    {categories.map((c) => (
+                      <option key={c.value} value={c.value}>{c.label}</option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={filterSubcategory}
+                    onChange={(e) => setFilterSubcategory(e.target.value)}
+                    style={selectStyle}
+                  >
+                    <option value="">📂 Todas las Subcategorías</option>
+                    {subcategories.map((s) => (
+                      <option key={s.value} value={s.value}>{s.label}</option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={filterBrand}
+                    onChange={(e) => setFilterBrand(e.target.value)}
+                    style={selectStyle}
+                  >
+                    <option value="">🏷️ Todas las Marcas</option>
+                    {brands.map((b) => (
+                      <option key={b.value} value={b.value}>{b.label}</option>
+                    ))}
+                  </select>
+
+                  {hasVarianceView && (
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={filterVarianceOnly} onChange={(e) => setFilterVarianceOnly(e.target.checked)} className="rounded w-4 h-4" />
+                      <span className="text-sm font-medium">Solo variado</span>
+                    </label>
+                  )}
+                </div>
               </div>
             </div>
 
-            <div className="space-y-3">
-              <Input
-                ref={searchInputRef}
-                placeholder="🔍 Escanea o busca por código/descripción... (Barcode ready)"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                onKeyDown={handleSearchKeyDown}
-                autoFocus
-              />
-              <div className="flex gap-2 flex-wrap">
-                <select
-                  value={filterCategory}
-                  onChange={(e) => setFilterCategory(e.target.value)}
-                  style={selectStyle}
-                >
-                  <option value="">📁 Todas las Categorías</option>
-                  {categories.map((c) => (
-                    <option key={c.value} value={c.value}>{c.label}</option>
-                  ))}
-                </select>
-
-                <select
-                  value={filterSubcategory}
-                  onChange={(e) => setFilterSubcategory(e.target.value)}
-                  style={selectStyle}
-                >
-                  <option value="">📂 Todas las Subcategorías</option>
-                  {subcategories.map((s) => (
-                    <option key={s.value} value={s.value}>{s.label}</option>
-                  ))}
-                </select>
-
-                <select
-                  value={filterBrand}
-                  onChange={(e) => setFilterBrand(e.target.value)}
-                  style={selectStyle}
-                >
-                  <option value="">🏷️ Todas las Marcas</option>
-                  {brands.map((b) => (
-                    <option key={b.value} value={b.value}>{b.label}</option>
-                  ))}
-                </select>
-
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={filterVarianceOnly} onChange={(e) => setFilterVarianceOnly(e.target.checked)} className="rounded w-4 h-4" />
-                  <span className="text-sm font-medium">Solo variado</span>
-                </label>
-              </div>
-            </div>
-          </div>
-
-          <div className="p-4">
-            <div className="bg-white rounded-lg border overflow-hidden">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Item</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">UOM</th>
-                    {hasSystemView && <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Sistema</th>}
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Conteo</th>
-                    {hasSystemView && <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Varianza</th>}
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700">Estado</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredItems.map((item, index) => {
-                    const { variance, percent } = getVariance(item);
-                    return (
-                      <tr key={item.id} className={`border-b hover:bg-gray-50 ${variance !== 0 ? 'bg-yellow-50' : ''}`}>
-                        <td className="px-4 py-3">
-                          <p className="font-mono text-sm font-bold">{item.itemCode}</p>
-                          <p className="text-xs text-gray-500 truncate max-w-[200px]">{item.itemName}</p>
-                        </td>
-                        <td className="px-4 py-3 text-right text-sm">{item.uom}</td>
-                        {hasSystemView && <td className="px-4 py-3 text-right font-medium">{item.systemQty}</td>}
-                        <td className="px-4 py-3">
-                          <Input
-                            ref={index === 0 ? firstItemQtyRef : null}
-                            type="number" value={item.countedQty ?? ''}
-                            onChange={(e) => handleItemChange(item.id, parseFloat(e.target.value) || 0)}
-                            onKeyDown={(e) => handleQtyKeyDown(e, item.id)}
-                            className="w-24 text-right ml-auto"
-                          />
-                        </td>
-                        {hasSystemView && (
-                          <td className={`px-4 py-3 text-right font-bold ${variance < 0 ? 'text-green-600' : variance > 0 ? 'text-red-600' : 'text-gray-400'}`}>
-                            {variance >= 0 ? '+' : ''}{variance.toFixed(1)} <br />
-                            <span className="text-[10px]">({percent.toFixed(1)}%)</span>
+            <div className="p-8">
+              <div className="bg-card rounded-2xl border border-border-default overflow-hidden shadow-2xl">
+                <table className="w-full">
+                  <thead className="bg-hover/30 border-b border-border-default">
+                    <tr>
+                      <th className="px-6 py-5 text-left text-[10px] font-black uppercase tracking-[0.2em] text-muted">Item</th>
+                      <th className="px-6 py-5 text-left text-[10px] font-black uppercase tracking-[0.2em] text-muted">Lote</th>
+                      <th className="px-6 py-5 text-right text-[10px] font-black uppercase tracking-[0.2em] text-muted">UOM</th>
+                      {hasSystemView && <th className="px-6 py-5 text-right text-[10px] font-black uppercase tracking-[0.2em] text-muted">Sistema</th>}
+                      <th className="px-6 py-5 text-right text-[10px] font-black uppercase tracking-[0.2em] text-muted">Conteo</th>
+                      {hasVarianceView && <th className="px-6 py-5 text-right text-[10px] font-black uppercase tracking-[0.2em] text-muted">Varianza</th>}
+                      <th className="px-6 py-5 text-center text-[10px] font-black uppercase tracking-[0.2em] text-muted">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredItems.map((item, index) => {
+                      const { variance, percent } = getVariance(item);
+                      return (
+                        <tr key={item.id} className={`border-b border-border-default/50 hover:bg-hover/40 transition-colors ${variance !== 0 ? 'bg-warning/5' : ''}`}>
+                          <td className="px-6 py-5">
+                            <p className="font-mono text-sm font-black text-primary">{item.itemCode}</p>
+                            <p className="text-[10px] text-muted font-bold uppercase tracking-wider truncate max-w-[250px] mt-1">{item.itemName}</p>
                           </td>
-                        )}
-                        <td className="px-4 py-3 text-center text-xs">
-                          {syncingItemIds.has(item.id) ? '⟳' : syncedItemIds.has(item.id) ? '✓' : ''}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                          <td className="px-6 py-5">
+                            <span className="px-2 py-1 rounded-lg bg-hover text-[10px] font-black uppercase tracking-widest text-muted border border-border-default">
+                              {item.lot || 'ND'}
+                            </span>
+                          </td>
+                          <td className="px-6 py-5 text-right font-bold text-secondary text-sm">{item.uom}</td>
+                          {hasSystemView && <td className="px-6 py-5 text-right font-black text-primary">{item.systemQty}</td>}
+                          <td className="px-6 py-5">
+                            <Input
+                              ref={index === 0 ? firstItemQtyRef : null}
+                              type="number" value={item.countedQty ?? ''}
+                              onChange={(e) => handleItemChange(item.id, parseFloat(e.target.value) || 0)}
+                              onKeyDown={(e) => handleQtyKeyDown(e, item.id)}
+                              className="w-28 text-right ml-auto bg-card border-border-default h-12 rounded-xl font-black text-lg focus:ring-accent-primary/20"
+                            />
+                          </td>
+                          {hasVarianceView && (
+                            <td className={`px-6 py-5 text-right font-black ${variance < 0 ? 'text-success' : variance > 0 ? 'text-danger' : 'text-muted/30'}`}>
+                              <div className="flex flex-col items-end">
+                                <span className="text-base">{variance >= 0 ? '+' : ''}{variance.toFixed(1)}</span>
+                                <span className="text-[10px] opacity-70 tracking-tighter">({percent.toFixed(1)}%)</span>
+                              </div>
+                            </td>
+                          )}
+                          <td className="px-6 py-5 text-center">
+                            {syncingItemIds.has(item.id) ? (
+                              <div className="w-5 h-5 border-2 border-accent-primary/20 border-t-accent-primary rounded-full animate-spin mx-auto"></div>
+                            ) : syncedItemIds.has(item.id) ? (
+                              <span className="text-success text-xl">✓</span>
+                            ) : null}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
-        </div>
 
-        <NotificationModal
-          isOpen={notification.isOpen}
-          onClose={() => setNotification({ ...notification, isOpen: false })}
-          type={notification.type} title={notification.title} message={notification.message}
-        />
-
-        {newVersionData && (
-          <NewVersionModal
-            isOpen={showNewVersionModal} onClose={() => { setShowNewVersionModal(false); setNewVersionData(null); }}
-            versionNumber={newVersionData.versionNumber} itemsCount={newVersionData.itemsCount} previousVersion={newVersionData.previousVersion}
+          <ConfirmModal
+            isOpen={actionConfirm.isOpen}
+            onConfirm={actionConfirm.onConfirm}
+            onCancel={() => setActionConfirm(prev => ({ ...prev, isOpen: false }))}
+            title={actionConfirm.title}
+            message={actionConfirm.message}
+            isDangerous={actionConfirm.isDangerous}
           />
-        )}
+
+          <NotificationModal
+            isOpen={notification.isOpen}
+            onClose={() => setNotification({ ...notification, isOpen: false })}
+            type={notification.type} title={notification.title} message={notification.message}
+          />
+
+          <ProcessingModal
+            isOpen={processing.isOpen}
+            message={processing.message}
+            status={processing.status}
+            onClose={processing.status !== 'processing' ? stopProcessing : undefined}
+          />
+
+        </div>
       </div>
     );
   }

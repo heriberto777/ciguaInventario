@@ -1,0 +1,23 @@
+[
+  "user",
+  "company",
+  "role",
+  "permission",
+  "rolePermission",
+  "userRole",
+  "eRPConnection",
+  "mappingConfig",
+  "session",
+  "auditLog",
+  "warehouse",
+  "warehouse_Location",
+  "inventoryCount",
+  "inventoryCount_Item",
+  "varianceReport",
+  "inventoryAdjustment",
+  "inventorySyncHistory",
+  "itemClassification",
+  "aIConfig",
+  "aIChatMessage",
+  "appConfig"
+]

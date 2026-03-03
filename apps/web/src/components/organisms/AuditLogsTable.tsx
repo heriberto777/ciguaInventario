@@ -3,6 +3,9 @@ import { Button } from '@/components/atoms/Button';
 
 interface AuditLog {
   id: string;
+  companyId: string;
+  userId: string | null;
+  userAgent: string | null;
   action: string;
   resource: string;
   resourceId: string;

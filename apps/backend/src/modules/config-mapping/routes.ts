@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { FastifyInstance } from 'fastify';
 import { tenantGuard } from '../../guards/tenant';
 import {

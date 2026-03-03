@@ -71,16 +71,15 @@ const InventoryDashboardPage: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {stats?.counts?.slice(0, 5).map(count => (
+                  {stats?.counts?.slice(0, 5).map((count: any) => (
                     <tr key={count.id} className="border-t">
                       <td className="px-4 py-2 font-semibold">{count.code}</td>
                       <td className="px-4 py-2">{count.warehouse?.name}</td>
                       <td className="px-4 py-2">
-                        <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                          count.status === 'COMPLETED'
+                        <span className={`px-2 py-1 rounded text-xs font-semibold ${count.status === 'COMPLETED'
                             ? 'bg-green-100 text-green-800'
                             : 'bg-yellow-100 text-yellow-800'
-                        }`}>
+                          }`}>
                           {count.status}
                         </span>
                       </td>
@@ -98,7 +97,7 @@ const InventoryDashboardPage: React.FC = () => {
           <div className="bg-white rounded-lg shadow p-6">
             <h2 className="text-xl font-semibold mb-4">Top Varianzas</h2>
             <div className="space-y-3">
-              {stats?.highVariance?.slice(0, 5).map(item => (
+              {stats?.highVariance?.slice(0, 5).map((item: any) => (
                 <div key={item.id} className="bg-red-50 p-3 rounded">
                   <p className="font-semibold text-sm">{item.itemCode}</p>
                   <p className="text-xs text-gray-600 mb-1">{item.itemName}</p>

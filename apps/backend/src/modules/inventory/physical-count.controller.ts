@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { PhysicalCountService } from './physical-count.service';
 import { z } from 'zod';

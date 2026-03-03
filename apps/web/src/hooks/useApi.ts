@@ -64,6 +64,42 @@ export function useLogin() {
   });
 }
 
+export function useAppConfig() {
+  return useQuery({
+    queryKey: ['app-config'],
+    queryFn: async () => {
+      const response = await getApiClient().get('/settings/app-config');
+      return response.data.data;
+    },
+    staleTime: 600000, // 10 minutes
+  });
+}
+
+export function usePublicAppConfig(companyName: string = 'default') {
+  return useQuery({
+    queryKey: ['public-app-config', companyName],
+    queryFn: async () => {
+      const response = await getApiClient().get(`/public/app-config/${companyName}`);
+      return response.data.data;
+    },
+    staleTime: 600000,
+  });
+}
+
+export function useUpdateAppConfig() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: any) => {
+      const response = await getApiClient().patch('/settings/app-config', data);
+      return response.data.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['app-config'] });
+      queryClient.invalidateQueries({ queryKey: ['public-app-config'] });
+    },
+  });
+}
+
 export function useLogout() {
   const queryClient = useQueryClient();
 

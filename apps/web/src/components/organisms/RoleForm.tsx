@@ -97,7 +97,7 @@ export const RoleForm: React.FC<RoleFormProps> = ({
               id="description"
               placeholder="Describe las responsabilidades de este rol..."
               {...register('description')}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              className="w-full px-3 py-2 border border-[var(--border-default)] rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-[var(--bg-app)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
               rows={4}
             />
           </div>
@@ -105,20 +105,20 @@ export const RoleForm: React.FC<RoleFormProps> = ({
 
         <div className="space-y-4">
           <Label>Permisos Asignados ({selectedPermissions.length}) *</Label>
-          <div className="mt-2 space-y-4 border border-gray-300 rounded-md p-4 max-h-[400px] overflow-y-auto bg-gray-50">
+          <div className="mt-2 space-y-4 border border-[var(--border-default)] rounded-md p-4 max-h-[400px] overflow-y-auto bg-[var(--bg-hover)]">
             {permissions.length === 0 ? (
               <p className="text-sm text-gray-500 text-center py-4">No hay permisos disponibles</p>
             ) : (
               Object.entries(groupedPermissions).map(([category, perms]) => (
                 <div key={category} className="space-y-2">
-                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider border-b border-gray-200 pb-1">
+                  <h3 className="text-xs font-black text-[var(--text-muted)] uppercase tracking-wider border-b border-[var(--border-default)] pb-1 mb-2">
                     {category}
                   </h3>
                   <div className="grid grid-cols-1 gap-2">
                     {perms.map((permission) => (
                       <label
                         key={permission.id}
-                        className="flex items-start space-x-3 p-2 rounded hover:bg-white cursor-pointer transition-colors"
+                        className="flex items-start space-x-3 p-2 rounded hover:bg-[var(--bg-card)] cursor-pointer transition-colors border border-transparent hover:border-[var(--border-default)]"
                       >
                         <input
                           type="checkbox"
@@ -126,12 +126,12 @@ export const RoleForm: React.FC<RoleFormProps> = ({
                           {...register('permissionIds')}
                           className="mt-1 h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
                         />
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">
+                        <div className="flex-1">
+                          <p className="text-sm font-bold text-[var(--text-primary)]">
                             {permission.name}
                           </p>
                           {permission.description && (
-                            <p className="text-xs text-gray-500">
+                            <p className="text-xs text-[var(--text-secondary)]">
                               {permission.description}
                             </p>
                           )}

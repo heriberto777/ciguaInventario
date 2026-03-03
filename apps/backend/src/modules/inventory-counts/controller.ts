@@ -37,12 +37,11 @@ export class InventoryCountController {
   async listCounts(request: FastifyRequest, reply: FastifyReply) {
     const user = (request as any).user;
     const companyId = user.companyId;
-    const { warehouseId, status, page = 1, pageSize = 20 } = request.query as {
-      warehouseId?: string;
-      status?: string;
-      page?: number;
-      pageSize?: number;
-    };
+    const query = request.query as any;
+    const warehouseId = query.warehouseId as string;
+    const status = query.status as string;
+    const page = query.page ? parseInt(query.page as string, 10) : 1;
+    const pageSize = query.pageSize ? parseInt(query.pageSize as string, 10) : 20;
 
     const result = await this.service.listCounts(companyId, warehouseId, status, page, pageSize);
 
@@ -181,9 +180,9 @@ export class InventoryCountController {
       const loadResult = await this.service.bulkLoadItemsFromExcel(countId, companyId, items);
 
       return reply.send({
-        message: `Se cargaron ${loadResult.loaded} artículos desde "${filename}"`,
+        message: `Se cargaron ${loadResult.loaded} y se actualizaron ${loadResult.updated} artículos desde "${filename}"`,
         loaded: loadResult.loaded,
-        skipped: loadResult.skipped,
+        updated: loadResult.updated,
         rowErrors: rowErrors.length > 20 ? rowErrors.slice(0, 20) : rowErrors,
       });
     } catch (err: any) {
@@ -322,6 +321,20 @@ export class InventoryCountController {
 
     reply.send({
       message: 'Conteo completado',
+      count: updated,
+    });
+  }
+
+  async finalizePhysicalCount(request: FastifyRequest, reply: FastifyReply) {
+    const user = (request as any).user;
+    const companyId = user.companyId;
+    const userId = user.id || user.userId;
+    const { countId } = request.params as { countId: string };
+
+    const updated = await this.service.countState.finalizePhysicalCount(countId, companyId, userId);
+
+    reply.send({
+      message: 'Conteo finalizado físicamente (Versión bloqueada)',
       count: updated,
     });
   }

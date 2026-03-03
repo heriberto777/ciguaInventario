@@ -87,8 +87,8 @@ export class InventoryCountRepository {
         ...(warehouseId && { warehouseId }),
         ...(status && { status }),
       },
-      skip,
-      take,
+      skip: Math.max(0, parseInt(skip.toString(), 10)),
+      take: Math.max(1, parseInt(take.toString(), 10)),
       include: {
         warehouse: true,
         countItems: true,
@@ -101,9 +101,21 @@ export class InventoryCountRepository {
   }
 
   async addCountItem(countId: string, data: AddCountItemDTO) {
-    const countedQty = data.countedQty ?? 0;           // aún no contado → 0 por defecto
+    const countedQty = data.countedQty ?? 0;
     const variance = countedQty - data.systemQty;
     const variancePercent = data.systemQty > 0 ? (variance / data.systemQty) * 100 : 0;
+
+    // Obtener la compañía para el enriquecimiento
+    const count = await this.fastify.prisma.inventoryCount.findUnique({
+      where: { id: countId },
+      select: { companyId: true }
+    });
+    const companyId = count?.companyId || '';
+
+    // Enriquecer clasificaciones: Si existe una descripción oficial, usarla. Si no, preservar el valor original.
+    const brand = await this.getClassificationDescription(companyId, data.brand, 'BRAND');
+    const category = await this.getClassificationDescription(companyId, data.category, 'CATEGORY');
+    const subcategory = await this.getClassificationDescription(companyId, data.subcategory, 'SUBCATEGORY');
 
     console.log('[addCountItem] Creating item with data:', {
       countId,
@@ -131,9 +143,10 @@ export class InventoryCountRepository {
         ...(data.salePrice != null && { salePrice: data.salePrice }),
         ...(data.barCodeInv && { barCodeInv: data.barCodeInv }),
         ...(data.barCodeVt && { barCodeVt: data.barCodeVt }),
-        ...(data.brand && { brand: data.brand }),
-        ...(data.category && { category: data.category }),
-        ...(data.subcategory && { subcategory: data.subcategory }),
+        brand: brand || data.brand,
+        category: category || data.category,
+        subcategory: subcategory || data.subcategory,
+        lot: data.lot,
       },
     });
 
@@ -190,6 +203,7 @@ export class InventoryCountRepository {
         ...(data.systemQty !== undefined && { systemQty: data.systemQty }),
         ...(data.countedQty !== undefined && { countedQty: data.countedQty }),
         ...(data.notes && { notes: data.notes }),
+        ...(data.lot && { lot: data.lot }),
       },
     });
 
@@ -269,6 +283,18 @@ export class InventoryCountRepository {
   }
 
   async createCountItem(countId: string, locationId: string, data: any) {
+    // Obtener la compañía para el enriquecimiento
+    const count = await this.fastify.prisma.inventoryCount.findUnique({
+      where: { id: countId },
+      select: { companyId: true }
+    });
+    const companyId = count?.companyId || '';
+
+    // Enriquecer clasificaciones
+    const brand = await this.getClassificationDescription(companyId, data.brand, 'BRAND');
+    const category = await this.getClassificationDescription(companyId, data.category, 'CATEGORY');
+    const subcategory = await this.getClassificationDescription(companyId, data.subcategory, 'SUBCATEGORY');
+
     return this.fastify.prisma.inventoryCount_Item.create({
       data: {
         countId,
@@ -279,19 +305,38 @@ export class InventoryCountRepository {
         uom: data.uom ?? 'PZ',
         baseUom: data.baseUom ?? 'PZ',
         systemQty: data.systemQty ?? 0,
-        countedQty: null,           // El operario lo llenará en el conteo físico
+        countedQty: null,
         status: 'PENDING',
         notes: data.notes,
-        // Campos enriquecidos — solo se insertan si el mapping los incluye
         ...(data.costPrice != null && { costPrice: data.costPrice }),
         ...(data.salePrice != null && { salePrice: data.salePrice }),
         ...(data.barCodeInv && { barCodeInv: data.barCodeInv }),
         ...(data.barCodeVt && { barCodeVt: data.barCodeVt }),
-        ...(data.brand && { brand: data.brand }),
-        ...(data.category && { category: data.category }),
-        ...(data.subcategory && { subcategory: data.subcategory }),
+        brand: brand || data.brand,
+        category: category || data.category,
+        subcategory: subcategory || data.subcategory,
+        lot: data.lot,
       },
     });
+  }
+
+  /**
+   * Obtiene la descripción de una clasificación basada en su código y tipo.
+   * Si no se encuentra, retorna null.
+   */
+  private async getClassificationDescription(companyId: string, code: string | undefined, groupType: string): Promise<string | null> {
+    if (!code || !companyId || code.trim() === '') return null;
+
+    const classification = await this.fastify.prisma.itemClassification.findFirst({
+      where: {
+        companyId,
+        code: code.trim().toUpperCase(),
+        groupType: groupType as any,
+      },
+      select: { description: true }
+    });
+
+    return classification?.description || null;
   }
 
 
@@ -349,5 +394,38 @@ export class InventoryCountRepository {
       ...count,
       countItems: (count.countItems || []).map((item: any) => this.mapCountItem(item)),
     };
+  }
+
+  /**
+   * Obtiene la lista consolidada de items para un conteo, tomando la versión más reciente
+   * disponible para cada combinación de itemCode + locationId.
+   */
+  async getLatestItemsByVersion(countId: string, maxVersion: number) {
+    const allItems = await this.fastify.prisma.inventoryCount_Item.findMany({
+      where: {
+        countId,
+        version: { lte: maxVersion },
+      },
+      orderBy: [
+        { itemCode: 'asc' },
+        { locationId: 'asc' },
+        { version: 'desc' },
+      ],
+      include: {
+        location: true,
+      }
+    });
+
+    // Consolidar: Al estar ordenado por versión desc, el primero que encontremos para cada par
+    // (itemCode, locationId) es el más reciente de ese ítem.
+    const seen = new Set<string>();
+    const consolidated = allItems.filter((item: any) => {
+      const key = `${item.itemCode}-${item.locationId}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    return consolidated.map((item: any) => this.mapCountItem(item));
   }
 }

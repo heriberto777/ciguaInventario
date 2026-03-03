@@ -1,13 +1,20 @@
 import { FastifyInstance } from 'fastify';
 import { InventoryCountController } from './controller';
 import { InventoryCountService } from './service';
+import { InventoryCountRepository } from './repository';
 import { InventoryVersionController } from './version-controller';
 import { InventoryVersionService } from './version-service';
 import { tenantGuard } from '../../guards/tenant';
 
 export async function inventoryCountsRoutes(fastify: FastifyInstance) {
+  const repository = new InventoryCountRepository(fastify);
   const service = new InventoryCountService(fastify);
   const controller = new InventoryCountController(service);
+
+  // Registrar repositorio en el objeto fastify para acceso desde sub-servicios
+  if (!(fastify as any).inventoryCountRepository) {
+    fastify.decorate('inventoryCountRepository', repository);
+  }
 
   const versionService = new InventoryVersionService(fastify);
   const versionController = new InventoryVersionController(versionService);
@@ -139,6 +146,11 @@ export async function inventoryCountsRoutes(fastify: FastifyInstance) {
   // Finalize inventory count (SUBMITTED → COMPLETED)
   fastify.post('/inventory-counts/:id/finalize', { preHandler: tenantGuard }, (request, reply) =>
     controller.finalizeCount(request, reply)
+  );
+
+  // Finalize Physical Count (Marca versión definitiva y bloquea reconteos)
+  fastify.post('/inventory-counts/:countId/finalize-physical', { preHandler: tenantGuard }, (request, reply) =>
+    controller.finalizePhysicalCount(request, reply)
   );
 
   // Close inventory count (COMPLETED → CLOSED)

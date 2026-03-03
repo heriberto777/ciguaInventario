@@ -53,6 +53,7 @@ model Company {
   users           User[]
   varianceReports VarianceReport[]
   warehouses      Warehouse[]
+  appConfig       AppConfig?
 }
 
 model Role {
@@ -227,9 +228,10 @@ model InventoryCount {
   sequenceNumber String                 @unique @map("sequenceNumber_idx")
   description    String?
   status         String                 @default("DRAFT")
-  currentVersion Int                    @default(1)
-  totalVersions  Int                    @default(1)
-  createdBy      String                 @default("system")
+  currentVersion  Int                    @default(1)
+  totalVersions   Int                    @default(1)
+  finalizedVersion Int?
+  createdBy       String                 @default("system")
   startedBy      String?
   startedAt      DateTime               @default(now())
   completedBy    String?
@@ -272,6 +274,7 @@ model InventoryCount_Item {
   baseUom          String             @default("PZ")
   systemQty        Decimal
   countedQty       Decimal?
+  lot              String?
   version          Int                @default(1)
   status           String             @default("PENDING")
   hasVariance      Boolean            @default(false)
@@ -349,6 +352,7 @@ model InventorySyncHistory {
   id          String         @id @default(cuid())
   companyId   String
   countId     String
+  version     Int            @default(1)
   status      String
   strategy    String
   itemsSynced Int
@@ -414,6 +418,22 @@ model AIChatMessage {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([companyId, userId])
+}
+
+model AppConfig {
+  id              String   @id @default(cuid())
+  companyId       String   @unique
+  appTitle        String                   @default("Cigua Inventory")
+  logoUrl         String?
+  primaryColor    String?                  @default("#6366f1")
+  secondaryColor  String?                  @default("#8b5cf6")
+  faviconUrl      String?
+  loginMessage    String?
+  footerText      String?
+  updatedAt       DateTime                 @updatedAt
+  company         Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
 }
 
 enum ItemClassificationGroup {

@@ -163,8 +163,8 @@ Error: ${errorMessage}`;
     return (
       <div className="text-center py-8">
         <div className="animate-spin inline-block w-6 h-6 border-4 border-blue-600 border-t-transparent rounded-full mb-2"></div>
-        <p>🔄 Conectando con BD del ERP...</p>
-        <p className="text-sm text-gray-600 mt-2">Esto puede tomar unos segundos.</p>
+        <p className="text-[var(--text-primary)]">🔄 Conectando con BD del ERP...</p>
+        <p className="text-sm text-[var(--text-secondary)] mt-2">Esto puede tomar unos segundos.</p>
       </div>
     );
   }
@@ -184,28 +184,28 @@ Error: ${errorMessage}`;
       )}
 
       {/* Tabla Principal */}
-      <div className="bg-white p-4 border border-gray-200 rounded-lg shadow-sm">
-        <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+      <div className="bg-[var(--bg-card)] p-4 border border-[var(--border-default)] rounded-lg shadow-sm">
+        <h3 className="text-lg font-bold text-[var(--text-primary)] mb-4 flex items-center gap-2">
           <span className="text-xl">📊</span> Tabla Principal
         </h3>
 
         {availableTables.length > 0 ? (
           <div className="space-y-3">
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">🔍</span>
               <input
                 type="text"
                 placeholder="Buscar tabla..."
                 value={mainTableSearch}
                 onChange={(e) => setMainTableSearch(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                className="w-full pl-9 pr-4 py-2 border border-[var(--border-default)] bg-[var(--bg-app)] text-[var(--text-primary)] rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none placeholder:text-[var(--text-muted)]"
               />
             </div>
             <select
               value={config.mainTable}
               size={5}
               onChange={(e) => handleSelectMainTable(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white text-sm focus:ring-2 focus:ring-blue-500 outline-none min-h-[120px]"
+              className="w-full px-4 py-2 border border-[var(--border-default)] rounded-lg bg-[var(--bg-app)] text-[var(--text-primary)] text-sm focus:ring-2 focus:ring-blue-500 outline-none min-h-[120px]"
             >
               <option value="">-- Selecciona una tabla --</option>
               {filteredMainTables.slice(0, 100).map((table) => (
@@ -218,18 +218,34 @@ Error: ${errorMessage}`;
               )}
             </select>
             {filteredMainTables.length === 0 && mainTableSearch && (
-              <p className="text-xs text-orange-600">No se encontraron tablas que coincidan con "{mainTableSearch}"</p>
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-xs text-blue-700 mb-2">No se encontró la tabla "{mainTableSearch}".</p>
+                <button
+                  onClick={() => handleSelectMainTable(mainTableSearch)}
+                  className="w-full py-1.5 bg-blue-600 text-white text-xs font-semibold rounded hover:bg-blue-700 transition-colors"
+                >
+                  Usar "{mainTableSearch}" manualmente
+                </button>
+              </div>
+            )}
+            {mainTableSearch && filteredMainTables.length > 0 && (
+              <button
+                onClick={() => handleSelectMainTable(mainTableSearch)}
+                className="text-[10px] text-blue-600 hover:underline"
+              >
+                Usar búsqueda como texto libre
+              </button>
             )}
           </div>
         ) : (
           <div className="space-y-2">
-            {!error && <p className="text-sm text-gray-600 animate-pulse">Cargando tablas disponibles...</p>}
+            {!error && <p className="text-sm text-[var(--text-secondary)] animate-pulse">Cargando tablas disponibles...</p>}
             <input
               type="text"
               value={config.mainTable}
               onChange={(e) => handleSelectMainTable(e.target.value)}
               placeholder="Ej: ARTICULO, dbo.ITEMS, etc."
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+              className="w-full px-4 py-2 border border-[var(--border-default)] rounded-lg bg-[var(--bg-app)] text-[var(--text-primary)] text-sm focus:ring-2 focus:ring-blue-500 outline-none"
             />
           </div>
         )}
@@ -244,7 +260,7 @@ Error: ${errorMessage}`;
       {/* Alias de Tabla Principal */}
       {config.mainTable && (
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-bold text-[var(--text-secondary)] mb-1 uppercase tracking-tight">
             📌 Alias de tabla principal (ej: a, c, art)
           </label>
           <input
@@ -253,7 +269,7 @@ Error: ${errorMessage}`;
             onChange={(e) => onChange(config.mainTable, config.joins, e.target.value)}
             placeholder="Ej: a, c, art"
             maxLength={10}
-            className="w-full px-4 py-2 border border-gray-300 rounded bg-white"
+            className="w-full px-4 py-2 border border-[var(--border-default)] rounded bg-[var(--bg-app)] text-[var(--text-primary)]"
           />
           <p className="text-xs text-gray-500 mt-1">
             Este alias se usará en los JOINs, filtros y selección de columnas
@@ -264,7 +280,7 @@ Error: ${errorMessage}`;
       {/* JOINs */}
       <div>
         <div className="flex justify-between items-center mb-3">
-          <h3 className="text-lg font-semibold">🔗 JOINs (Opcional)</h3>
+          <h3 className="text-lg font-bold text-[var(--text-primary)]">🔗 JOINs (Opcional)</h3>
           <button
             onClick={handleAddJoin}
             className="px-3 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-600"
@@ -274,16 +290,16 @@ Error: ${errorMessage}`;
         </div>
 
         {config.joins.length === 0 ? (
-          <p className="text-gray-500 py-4">Sin JOINs agregados. Click en "+ Agregar JOIN" para añadir.</p>
+          <p className="text-[var(--text-muted)] py-4 italic">Sin JOINs agregados. Click en "+ Agregar JOIN" para añadir.</p>
         ) : (
           <div className="space-y-4">
             {config.joins.map((join, index) => {
               const joinError = validateJoin(join, index);
               return (
-                <div key={index} className={`p-4 border rounded ${joinError ? 'border-red-400 bg-red-50' : 'border-gray-300 bg-gray-50'}`}>
+                <div key={index} className={`p-4 border rounded-xl overflow-hidden transition-all ${joinError ? 'border-red-500/50 bg-red-500/5' : 'border-[var(--border-default)] bg-[var(--bg-hover)]'}`}>
                   <div className="flex justify-between items-start mb-3">
-                    <h4 className="font-semibold">
-                      JOIN #{index + 1} {joinError && <span className="text-red-600 text-sm ml-2">⚠️ {joinError}</span>}
+                    <h4 className="font-bold text-[var(--text-primary)]">
+                      JOIN #{index + 1} {joinError && <span className="text-red-500 text-[10px] font-bold uppercase ml-2 px-2 py-0.5 bg-red-500/10 rounded">⚠️ {joinError}</span>}
                     </h4>
                     <button
                       onClick={() => handleRemoveJoin(index)}
@@ -296,13 +312,13 @@ Error: ${errorMessage}`;
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {/* Tabla */}
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="block text-sm font-bold text-[var(--text-secondary)] mb-1 uppercase tracking-tight">
                         Tabla
                       </label>
                       {availableTables.length > 0 ? (
                         <div className="space-y-2">
                           <div className="relative">
-                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">🔍</span>
+                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] text-xs">🔍</span>
                             <input
                               type="text"
                               placeholder="Filtrar..."
@@ -312,7 +328,7 @@ Error: ${errorMessage}`;
                                 newTerms[index] = e.target.value;
                                 setJoinSearchTerms(newTerms);
                               }}
-                              className="w-full pl-7 pr-4 py-1 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-blue-500 outline-none"
+                              className="w-full pl-7 pr-4 py-1 border border-[var(--border-default)] bg-[var(--bg-app)] text-[var(--text-primary)] rounded text-xs focus:ring-1 focus:ring-blue-500 outline-none"
                             />
                           </div>
                           <select
@@ -320,7 +336,7 @@ Error: ${errorMessage}`;
                             onChange={(e) =>
                               handleUpdateJoin(index, { table: e.target.value })
                             }
-                            className="w-full px-3 py-2 border border-gray-300 rounded text-sm bg-white"
+                            className="w-full px-3 py-2 border border-[var(--border-default)] bg-[var(--bg-app)] text-[var(--text-primary)] rounded text-sm outline-none"
                           >
                             <option value="">-- Selecciona tabla --</option>
                             {availableTables
@@ -345,14 +361,14 @@ Error: ${errorMessage}`;
                             handleUpdateJoin(index, { table: e.target.value })
                           }
                           placeholder="Ej: EXISTENCIA_BODEGA"
-                          className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+                          className="w-full px-3 py-2 border border-[var(--border-default)] bg-[var(--bg-app)] text-[var(--text-primary)] rounded text-sm"
                         />
                       )}
                     </div>
 
                     {/* Alias */}
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="block text-sm font-bold text-[var(--text-secondary)] mb-1 uppercase tracking-tight">
                         Alias (ej: eb, ap)
                       </label>
                       <input
@@ -362,13 +378,13 @@ Error: ${errorMessage}`;
                           handleUpdateJoin(index, { alias: e.target.value })
                         }
                         placeholder="eb"
-                        className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+                        className="w-full px-3 py-2 border border-[var(--border-default)] bg-[var(--bg-app)] text-[var(--text-primary)] rounded text-sm"
                       />
                     </div>
 
                     {/* Tipo JOIN */}
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="block text-sm font-bold text-[var(--text-secondary)] mb-1 uppercase tracking-tight">
                         Tipo
                       </label>
                       <select
@@ -378,7 +394,7 @@ Error: ${errorMessage}`;
                             joinType: e.target.value as TableJoin['joinType'],
                           })
                         }
-                        className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+                        className="w-full px-3 py-2 border border-[var(--border-default)] bg-[var(--bg-app)] text-[var(--text-primary)] rounded text-sm"
                       >
                         <option value="INNER">INNER JOIN</option>
                         <option value="LEFT">LEFT JOIN</option>
@@ -390,7 +406,7 @@ Error: ${errorMessage}`;
 
                   {/* Condición JOIN */}
                   <div className="mt-3">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-bold text-[var(--text-secondary)] mb-1 uppercase tracking-tight">
                       Condición (ej: ARTICULO.id = eb.articulo_id)
                     </label>
                     <input
@@ -400,7 +416,7 @@ Error: ${errorMessage}`;
                         handleUpdateJoin(index, { joinCondition: e.target.value })
                       }
                       placeholder="ARTICULO.id = eb.articulo_id"
-                      className={`w-full px-3 py-2 border rounded text-sm font-mono ${joinError ? 'border-red-400' : 'border-gray-300'}`}
+                      className={`w-full px-3 py-2 border rounded-lg text-sm font-mono bg-[var(--bg-app)] text-[var(--text-primary)] outline-none focus:ring-2 focus:ring-blue-500/50 ${joinError ? 'border-red-500/50' : 'border-[var(--border-default)]'}`}
                     />
                     {!joinError && join.joinCondition && (
                       <p className="text-xs text-green-600 mt-1">✓ Condición válida</p>
@@ -415,8 +431,8 @@ Error: ${errorMessage}`;
 
       {/* Preview SQL */}
       {config.mainTable && (
-        <div>
-          <h3 className="text-lg font-semibold mb-3">📝 Preview SQL</h3>
+        <div className="border-t border-[var(--border-default)] pt-6">
+          <h3 className="text-lg font-bold text-[var(--text-primary)] mb-3">📝 Preview SQL</h3>
           <div className="p-4 bg-gray-900 text-green-400 rounded font-mono text-sm overflow-auto">
             <pre>
               {(() => {

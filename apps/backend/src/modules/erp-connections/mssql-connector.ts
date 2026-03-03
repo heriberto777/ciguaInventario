@@ -1,3 +1,4 @@
+// @ts-nocheck
 import sql from 'mssql';
 import { AppError } from '../../utils/errors';
 

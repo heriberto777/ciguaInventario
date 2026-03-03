@@ -10,10 +10,10 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     const baseStyles = 'font-semibold rounded transition-colors duration-200';
 
     const variantStyles = {
-      primary: 'bg-blue-500 hover:bg-blue-600 text-white',
-      secondary: 'bg-gray-200 hover:bg-gray-300 text-gray-900',
-      danger: 'bg-red-500 hover:bg-red-600 text-white',
-      success: 'bg-green-500 hover:bg-green-600 text-white',
+      primary: 'bg-[var(--primary-600)] hover:bg-[var(--primary-700)] text-white',
+      secondary: 'bg-[var(--bg-hover)] hover:bg-[var(--border-default)] text-[var(--text-primary)] border border-[var(--border-default)]',
+      danger: 'bg-[var(--danger-600)] hover:bg-[var(--danger-700)] text-white',
+      success: 'bg-[var(--success-600)] hover:bg-[var(--success-700)] text-white',
     };
 
     const sizeStyles = {

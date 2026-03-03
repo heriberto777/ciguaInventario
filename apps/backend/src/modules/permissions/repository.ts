@@ -28,7 +28,7 @@ export const permissionsRepository = {
     category?: string;
   }) {
     const skip = filters.skip || 0;
-    const take = filters.take || 10;
+    const take = filters.take || 1000;
 
     const where: any = {};
 

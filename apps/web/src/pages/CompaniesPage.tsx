@@ -170,141 +170,140 @@ export const CompaniesContent: React.FC = () => {
 
   return (
     <div className="space-y-6">
-        {/* Header */}
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Companies</h1>
-            <p className="text-gray-600 mt-1">Manage multi-tenant companies</p>
+      {/* Header */}
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold text-[var(--text-primary)]">Companies</h1>
+          <p className="text-[var(--text-secondary)] mt-1">Manage multi-tenant companies</p>
+        </div>
+        <Button
+          onClick={() => {
+            setEditingCompany(null);
+            setShowForm(!showForm);
+            setError(null);
+          }}
+          disabled={showForm}
+        >
+          {showForm ? 'Cancel' : 'Create Company'}
+        </Button>
+      </div>
+
+      {/* Error Alert */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-800">
+          <div className="flex justify-between items-start">
+            <div>
+              <h3 className="font-semibold">Error</h3>
+              <p className="text-sm mt-1">{error}</p>
+            </div>
+            <button
+              onClick={() => setError(null)}
+              className="text-red-600 hover:text-red-800"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Form */}
+      {showForm && (
+        <div className="bg-[var(--bg-card)] rounded-lg border border-[var(--border-default)] shadow-sm p-6">
+          <h2 className="text-xl font-semibold mb-4 text-[var(--text-primary)]">
+            {editingCompany ? 'Edit Company' : 'Create New Company'}
+          </h2>
+          <CompanyForm
+            onSubmit={editingCompany ? handleUpdate : handleCreate}
+            initialData={
+              editingCompany
+                ? {
+                  name: editingCompany.name,
+                  description: editingCompany.description,
+                  email: editingCompany.email,
+                  phone: editingCompany.phone,
+                  website: editingCompany.website,
+                  address: editingCompany.address,
+                  city: editingCompany.city,
+                  country: editingCompany.country,
+                }
+                : undefined
+            }
+            isLoading={
+              createMutation.isPending || updateMutation.isPending
+            }
+          />
+        </div>
+      )}
+
+      {/* Search */}
+      <div className="bg-[var(--bg-card)] rounded-lg border border-[var(--border-default)] shadow-sm p-4">
+        <input
+          type="text"
+          placeholder="Search companies by name or email..."
+          value={searchTerm}
+          onChange={(e) => {
+            setSearchTerm(e.target.value);
+            setCurrentPage(0);
+          }}
+          className="w-full px-4 py-2 bg-[var(--bg-app)] text-[var(--text-primary)] border border-[var(--border-default)] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      </div>
+
+      {/* Table */}
+      <div className="bg-[var(--bg-card)] rounded-lg border border-[var(--border-default)] shadow-sm overflow-hidden">
+        <CompaniesTable
+          companies={companiesData?.data || []}
+          isLoading={companiesLoading}
+          onEdit={(company) => {
+            setEditingCompany(company);
+            setShowForm(true);
+          }}
+          onDelete={handleDelete}
+        />
+      </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex justify-center gap-2">
+          <Button
+            variant="secondary"
+            onClick={() => setCurrentPage(Math.max(0, currentPage - 1))}
+            disabled={currentPage === 0}
+          >
+            Previous
+          </Button>
+          <div className="flex items-center gap-2">
+            {Array.from({ length: totalPages }, (_, i) => (
+              <button
+                key={i}
+                onClick={() => setCurrentPage(i)}
+                className={`px-3 py-2 rounded ${currentPage === i
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
+                  }`}
+              >
+                {i + 1}
+              </button>
+            ))}
           </div>
           <Button
-            onClick={() => {
-              setEditingCompany(null);
-              setShowForm(!showForm);
-              setError(null);
-            }}
-            disabled={showForm}
+            variant="secondary"
+            onClick={() => setCurrentPage(Math.min(totalPages - 1, currentPage + 1))}
+            disabled={currentPage === totalPages - 1}
           >
-            {showForm ? 'Cancel' : 'Create Company'}
+            Next
           </Button>
         </div>
+      )}
 
-        {/* Error Alert */}
-        {error && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-800">
-            <div className="flex justify-between items-start">
-              <div>
-                <h3 className="font-semibold">Error</h3>
-                <p className="text-sm mt-1">{error}</p>
-              </div>
-              <button
-                onClick={() => setError(null)}
-                className="text-red-600 hover:text-red-800"
-              >
-                ✕
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Form */}
-        {showForm && (
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-xl font-semibold mb-4">
-              {editingCompany ? 'Edit Company' : 'Create New Company'}
-            </h2>
-            <CompanyForm
-              onSubmit={editingCompany ? handleUpdate : handleCreate}
-              initialData={
-                editingCompany
-                  ? {
-                      name: editingCompany.name,
-                      description: editingCompany.description,
-                      email: editingCompany.email,
-                      phone: editingCompany.phone,
-                      website: editingCompany.website,
-                      address: editingCompany.address,
-                      city: editingCompany.city,
-                      country: editingCompany.country,
-                    }
-                  : undefined
-              }
-              isLoading={
-                createMutation.isPending || updateMutation.isPending
-              }
-            />
-          </div>
-        )}
-
-        {/* Search */}
-        <div className="bg-white rounded-lg shadow p-4">
-          <input
-            type="text"
-            placeholder="Search companies by name or email..."
-            value={searchTerm}
-            onChange={(e) => {
-              setSearchTerm(e.target.value);
-              setCurrentPage(0);
-            }}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
+      {/* Status messages */}
+      {deleteMutation.isError && (
+        <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded">
+          Error deleting company. Please try again.
         </div>
-
-        {/* Table */}
-        <div className="bg-white rounded-lg shadow">
-          <CompaniesTable
-            companies={companiesData?.data || []}
-            isLoading={companiesLoading}
-            onEdit={(company) => {
-              setEditingCompany(company);
-              setShowForm(true);
-            }}
-            onDelete={handleDelete}
-          />
-        </div>
-
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex justify-center gap-2">
-            <Button
-              variant="secondary"
-              onClick={() => setCurrentPage(Math.max(0, currentPage - 1))}
-              disabled={currentPage === 0}
-            >
-              Previous
-            </Button>
-            <div className="flex items-center gap-2">
-              {Array.from({ length: totalPages }, (_, i) => (
-                <button
-                  key={i}
-                  onClick={() => setCurrentPage(i)}
-                  className={`px-3 py-2 rounded ${
-                    currentPage === i
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
-                  }`}
-                >
-                  {i + 1}
-                </button>
-              ))}
-            </div>
-            <Button
-              variant="secondary"
-              onClick={() => setCurrentPage(Math.min(totalPages - 1, currentPage + 1))}
-              disabled={currentPage === totalPages - 1}
-            >
-              Next
-            </Button>
-          </div>
-        )}
-
-        {/* Status messages */}
-        {deleteMutation.isError && (
-          <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded">
-            Error deleting company. Please try again.
-          </div>
-        )}
-      </div>
-    );
+      )}
+    </div>
+  );
 };
 
 export const CompaniesPage: React.FC = () => {

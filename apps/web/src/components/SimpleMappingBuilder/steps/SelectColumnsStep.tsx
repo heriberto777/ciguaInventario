@@ -138,7 +138,7 @@ export const SelectColumnsStep: React.FC<SelectColumnsStepProps> = ({
         </div>
       )}
 
-      <p className="text-gray-700">
+      <p className="text-[var(--text-secondary)]">
         Selecciona las columnas que necesitas traer del ERP. Solo las seleccionadas se
         incluirán en la consulta.
       </p>
@@ -154,7 +154,7 @@ export const SelectColumnsStep: React.FC<SelectColumnsStepProps> = ({
             tableData.columns.length > 0;
 
           return (
-            <div key={tableData.table} className="border border-gray-300 rounded p-4">
+            <div key={tableData.table} className="border border-[var(--border-default)] rounded-xl p-5 bg-[var(--bg-card)] shadow-sm">
               {/* Tabla Header */}
               <div className="flex items-center gap-3 mb-3">
                 <input
@@ -163,10 +163,10 @@ export const SelectColumnsStep: React.FC<SelectColumnsStepProps> = ({
                   onChange={() => handleSelectAllFromTable(tableData.table)}
                   className="w-4 h-4 text-blue-600"
                 />
-                <h3 className="font-semibold text-lg text-blue-600">
-                  {tableData.table} (alias: <span className="text-orange-600">{tableData.alias}</span>)
+                <h3 className="font-bold text-lg text-blue-500">
+                  {tableData.table} (alias: <span className="text-orange-500">{tableData.alias}</span>)
                 </h3>
-                <span className="text-sm text-gray-600">
+                <span className="text-sm text-[var(--text-muted)] font-bold">
                   ({tableSelectionCount} de {tableData.columns.length} seleccionadas)
                 </span>
               </div>
@@ -188,15 +188,15 @@ export const SelectColumnsStep: React.FC<SelectColumnsStepProps> = ({
                         className="w-4 h-4 text-blue-600"
                       />
                       <div>
-                        <span className="text-sm">
+                        <span className="text-sm font-bold text-[var(--text-primary)]">
                           {column.name}
                           {column.isPrimaryKey && (
-                            <span className="ml-1 text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded">
+                            <span className="ml-1 text-[10px] bg-amber-500/10 text-amber-500 px-2 py-0.5 rounded font-black uppercase">
                               PK
                             </span>
                           )}
                         </span>
-                        <span className="text-xs text-gray-500 ml-1">
+                        <span className="text-[10px] text-[var(--text-muted)] font-bold ml-1 uppercase">
                           ({column.type})
                         </span>
                       </div>
@@ -212,11 +212,14 @@ export const SelectColumnsStep: React.FC<SelectColumnsStepProps> = ({
       {/* Resumen */}
       {config.selectedColumns.length > 0 && (
         <div>
-          <h3 className="text-lg font-semibold mb-3">✓ Columnas Seleccionadas ({config.selectedColumns.length})</h3>
-          <div className="p-4 bg-blue-50 border border-blue-200 rounded">
-            <ul className="space-y-1">
+          <h3 className="text-lg font-bold text-[var(--text-primary)] mb-3 flex items-center gap-2">
+            <span className="bg-green-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black">✓</span>
+            Columnas Seleccionadas ({config.selectedColumns.length})
+          </h3>
+          <div className="p-4 bg-blue-500/5 border border-blue-500/20 rounded-xl">
+            <ul className="grid grid-cols-2 md:grid-cols-3 gap-2">
               {config.selectedColumns.map((col) => (
-                <li key={col} className="text-sm text-gray-700">
+                <li key={col} className="text-xs text-blue-500 font-bold bg-blue-500/10 px-2 py-1 rounded border border-blue-500/10 truncate">
                   ✓ {col}
                 </li>
               ))}
@@ -227,9 +230,9 @@ export const SelectColumnsStep: React.FC<SelectColumnsStepProps> = ({
 
       {/* Preview SQL */}
       {config.selectedColumns.length > 0 && (
-        <div>
-          <h3 className="text-lg font-semibold mb-3">📝 Preview SQL</h3>
-          <div className="p-4 bg-gray-900 text-green-400 rounded font-mono text-sm overflow-auto max-h-48">
+        <div className="border-t border-[var(--border-default)] pt-6">
+          <h3 className="text-lg font-bold text-[var(--text-primary)] mb-3">📝 Preview SQL</h3>
+          <div className="p-4 bg-gray-900 text-green-400 rounded-xl font-mono text-xs overflow-auto max-h-48 border border-white/5 shadow-2xl">
             <pre>
               {`SELECT\n  ${config.selectedColumns.join(',\n  ')}\nFROM ...`}
             </pre>
@@ -238,7 +241,7 @@ export const SelectColumnsStep: React.FC<SelectColumnsStepProps> = ({
       )}
 
       {config.selectedColumns.length === 0 && (
-        <div className="p-4 bg-yellow-50 border border-yellow-200 text-yellow-800 rounded">
+        <div className="p-4 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-lg text-sm font-bold animate-pulse">
           ⚠️ Debes seleccionar al menos una columna para continuar.
         </div>
       )}

@@ -65,7 +65,7 @@ export const RolesContent: React.FC = () => {
   const { data: permissionsData } = useQuery<{ data: Permission[] }>({
     queryKey: ['permissions'],
     queryFn: async () => {
-      const response = await getApiClient().get('/permissions');
+      const response = await getApiClient().get('/permissions?take=1000');
       return response.data;
     },
   });
@@ -170,8 +170,8 @@ export const RolesContent: React.FC = () => {
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Roles</h1>
-          <p className="text-gray-600 mt-1">Manage roles and permissions</p>
+          <h1 className="text-3xl font-black text-[var(--text-primary)]">Roles</h1>
+          <p className="text-[var(--text-secondary)] mt-1">Manage roles and permissions</p>
         </div>
         <Button
           onClick={() => {
@@ -204,7 +204,7 @@ export const RolesContent: React.FC = () => {
 
       {/* Form */}
       {showForm && (
-        <div className="bg-white rounded-lg shadow p-6">
+        <div className="bg-[var(--bg-card)] rounded-lg border border-[var(--border-default)] shadow p-6">
           <h2 className="text-xl font-semibold mb-4">
             {editingRole ? 'Edit Role' : 'Create New Role'}
           </h2>
@@ -228,7 +228,7 @@ export const RolesContent: React.FC = () => {
       )}
 
       {/* Search */}
-      <div className="bg-white rounded-lg shadow p-4">
+      <div className="bg-[var(--bg-card)] rounded-lg border border-[var(--border-default)] shadow p-4">
         <input
           type="text"
           placeholder="Search roles..."
@@ -237,12 +237,12 @@ export const RolesContent: React.FC = () => {
             setSearchTerm(e.target.value);
             setCurrentPage(0);
           }}
-          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-4 py-2 border border-[var(--border-default)] bg-[var(--bg-app)] text-[var(--text-primary)] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-[var(--text-muted)]"
         />
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-lg shadow">
+      <div className="bg-[var(--bg-card)] rounded-lg border border-[var(--border-default)] shadow">
         <RolesTable
           roles={rolesData?.data || []}
           isLoading={rolesLoading}

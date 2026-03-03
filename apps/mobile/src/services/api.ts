@@ -70,13 +70,19 @@ export async function initializeApiClient(baseURL: string) {
           await AsyncStorage.setItem('auth_token', newAccessToken);
           await AsyncStorage.setItem('refresh_token', newRefreshToken);
 
-          // Actualizar request original y reintentar
+          // Actualizar request original y reintentar usando el cliente oficial
           originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
-          return axios(originalRequest);
-        } catch (refreshError) {
-          console.error('❌ Refresh token failed or expired:', refreshError);
-          // Si el refresco falla, procedemos al logout
-          if (logoutCallback) {
+          return apiClient!(originalRequest);
+        } catch (refreshError: any) {
+          const status = refreshError.response?.status;
+          console.error('❌ [API] Refresh token failed or expired:', {
+            status,
+            message: refreshError.message
+          });
+
+          // Solo desloguear si es un error de autenticación explícito (401)
+          if (status === 401 && logoutCallback) {
+            console.warn('🔒 [API] Session expired. Redirecting to login.');
             logoutCallback();
           }
           return Promise.reject(refreshError);

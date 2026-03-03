@@ -5,6 +5,7 @@ import { getApiClient } from '@/services/api';
 import { Button } from '@/components/atoms/Button';
 import { Label } from '@/components/atoms/Label';
 import { Input } from '@/components/atoms/Input';
+import { NotificationModal } from '@/components/atoms/NotificationModal';
 
 const apiClient = getApiClient();
 
@@ -16,6 +17,18 @@ export function AIConfigPage() {
         baseUrl: '',
         systemPrompt: '',
         isActive: true
+    });
+
+    const [notification, setNotification] = useState<{
+        isOpen: boolean;
+        type: 'success' | 'error' | 'warning' | 'info';
+        title: string;
+        message: string;
+    }>({
+        isOpen: false,
+        type: 'info',
+        title: '',
+        message: '',
     });
 
     const { data: config, isLoading, refetch } = useQuery({
@@ -32,8 +45,21 @@ export function AIConfigPage() {
     const mutation = useMutation({
         mutationFn: (data: any) => apiClient.post('/reports/ai-config', data),
         onSuccess: () => {
-            alert('Configuración guardada correctamente');
+            setNotification({
+                isOpen: true,
+                type: 'success',
+                title: '✅ Configuración Guardada',
+                message: 'La configuración de IA ha sido actualizada correctamente.'
+            });
             refetch();
+        },
+        onError: (error: any) => {
+            setNotification({
+                isOpen: true,
+                type: 'error',
+                title: '❌ Error',
+                message: error.response?.data?.error || 'No se pudo guardar la configuración.'
+            });
         }
     });
 
@@ -46,10 +72,10 @@ export function AIConfigPage() {
 
     return (
         <AdminLayout title="Configuración de Inteligencia Artificial">
-            <div className="max-w-2xl mx-auto bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                <div className="p-6 border-b border-gray-100 bg-gray-50">
-                    <h3 className="font-bold text-gray-800">Proveedor de LLM</h3>
-                    <p className="text-sm text-gray-500">Configura la conexión con tu modelo de lenguaje preferido.</p>
+            <div className="max-w-2xl mx-auto bg-[var(--bg-card)] rounded-xl shadow-sm border border-[var(--border-default)] overflow-hidden">
+                <div className="p-6 border-b border-[var(--border-default)] bg-[var(--bg-hover)]">
+                    <h3 className="font-bold text-[var(--text-primary)]">Proveedor de LLM</h3>
+                    <p className="text-sm text-[var(--text-secondary)]">Configura la conexión con tu modelo de lenguaje preferido.</p>
                 </div>
 
                 <form onSubmit={handleSubmit} className="p-6 space-y-6">
@@ -118,6 +144,14 @@ export function AIConfigPage() {
                     </div>
                 </form>
             </div>
+
+            <NotificationModal
+                isOpen={notification.isOpen}
+                onClose={() => setNotification({ ...notification, isOpen: false })}
+                type={notification.type}
+                title={notification.title}
+                message={notification.message}
+            />
         </AdminLayout>
     );
 }

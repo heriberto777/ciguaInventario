@@ -125,8 +125,8 @@ export const UsersContent: React.FC = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Gestión de Usuarios</h1>
-          <p className="text-gray-600 mt-1">Crea y administra los usuarios y sus roles.</p>
+          <h1 className="text-3xl font-bold text-[var(--text-primary)]">Gestión de Usuarios</h1>
+          <p className="text-[var(--text-secondary)] mt-1">Crea y administra los usuarios y sus roles.</p>
         </div>
         <button
           onClick={() => {

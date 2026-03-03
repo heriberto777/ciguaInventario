@@ -42,6 +42,25 @@ export class VarianceReportRepository {
       }
     }
 
+    if (filters.status) {
+      if (filters.status === 'SUBMITTED') {
+        // Filtro especial: varianzas de conteos en estado SUBMITTED
+        where.count = {
+          status: 'SUBMITTED'
+        };
+      } else {
+        where.status = filters.status;
+      }
+    }
+
+    if (filters.brand || filters.category || filters.subCategory) {
+      where.countItem = {
+        ...(filters.brand && { brand: filters.brand }),
+        ...(filters.category && { category: filters.category }),
+        ...(filters.subCategory && { subcategory: filters.subCategory }),
+      };
+    }
+
     const [variances, total] = await Promise.all([
       this.fastify.prisma.varianceReport.findMany({
         where,
@@ -62,8 +81,11 @@ export class VarianceReportRepository {
       this.fastify.prisma.varianceReport.count({ where }),
     ]);
 
+    // Enriquecimiento de clasificaciones para reportes existentes
+    const enrichedVariances = await Promise.all(variances.map(v => this.enrichVariance(v, companyId)));
+
     return {
-      data: variances,
+      data: enrichedVariances,
       total,
       page: filters.page,
       pageSize: filters.pageSize,
@@ -77,7 +99,7 @@ export class VarianceReportRepository {
       select: { currentVersion: true }
     });
 
-    return this.fastify.prisma.varianceReport.findMany({
+    const variances = await this.fastify.prisma.varianceReport.findMany({
       where: {
         countId,
         companyId,
@@ -90,6 +112,8 @@ export class VarianceReportRepository {
         createdAt: 'desc',
       },
     });
+
+    return Promise.all(variances.map(v => this.enrichVariance(v, companyId)));
   }
 
   async approveVariance(id: string, data: ApproveVarianceDTO) {
@@ -177,5 +201,47 @@ export class VarianceReportRepository {
       },
       take: 20,
     });
+  }
+  /**
+   * Enriquece un reporte de varianza con las descripciones oficiales de sus clasificaciones.
+   */
+  private async enrichVariance(variance: any, companyId: string) {
+    if (!variance.countItem) return variance;
+
+    const item = variance.countItem;
+
+    // Si ya parece ser una descripción (más de 10 caracteres o contiene espacios), lo dejamos.
+    // Pero mejor consultamos siempre para estar seguros de tener la "Oficial".
+
+    const [brandDesc, catDesc, subDesc] = await Promise.all([
+      this.getClassificationDescription(companyId, item.brand, 'BRAND'),
+      this.getClassificationDescription(companyId, item.category, 'CATEGORY'),
+      this.getClassificationDescription(companyId, item.subcategory, 'SUBCATEGORY'),
+    ]);
+
+    return {
+      ...variance,
+      countItem: {
+        ...item,
+        brand: brandDesc ? `${brandDesc} (${item.brand})` : item.brand,
+        category: catDesc ? `${catDesc} (${item.category})` : item.category,
+        subcategory: subDesc ? `${subDesc} (${item.subcategory})` : item.subcategory,
+      }
+    };
+  }
+
+  private async getClassificationDescription(companyId: string, code: string | undefined, groupType: string): Promise<string | null> {
+    if (!code || !companyId || code.trim() === '') return null;
+
+    const classification = await this.fastify.prisma.itemClassification.findFirst({
+      where: {
+        companyId,
+        code: code.trim().toUpperCase(),
+        groupType: groupType as any,
+      },
+      select: { description: true }
+    });
+
+    return classification?.description || null;
   }
 }

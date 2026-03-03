@@ -44,7 +44,7 @@ export const InventoryCountItemForm: React.FC<InventoryCountItemFormProps> = ({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="bg-white p-4 rounded-lg shadow">
+    <form onSubmit={handleSubmit} className="bg-[var(--bg-card)] p-4 rounded-lg shadow border border-[var(--border-default)]">
       <h3 className="text-lg font-semibold mb-4">Agregar Artículo al Conteo</h3>
 
       <div className="grid grid-cols-2 gap-4 mb-4">

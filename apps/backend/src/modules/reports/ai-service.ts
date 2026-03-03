@@ -90,18 +90,21 @@ export class AIInsightsService {
      */
     private getDatabaseSchemaContext() {
         return `
-TABLAS (Relaciones):
-- InventoryCount: { id, code, sequenceNumber, status, currentVersion, warehouseId, createdAt }
-- InventoryCount_Item: { id, countId, itemCode, itemName, category, brand, systemQty, countedQty, hasVariance, costPrice, salePrice, version }
-- VarianceReport: { id, countId, itemCode, itemName, systemQty, countedQty, difference, variancePercent, status, reason }
-- ItemClassification: { code, description, groupType }
+TABLAS Y CAMPOS DISPONIBLES (Snapshot Detallado):
+- InventoryCount: { id, code, sequenceNumber, status, currentVersion, warehouseId, startedAt, completedAt }
+  Relaciones: warehouse, countItems (items del conteo), variances (reportes de varianza)
+- InventoryCount_Item: { id, countId, itemCode, itemName, category, brand, subcategory, systemQty, countedQty, lot, version, status, hasVariance, costPrice, salePrice }
+  Relaciones: count (conteo padre), location (ubicación física)
+- VarianceReport: { id, countId, countItemId, itemCode, itemName, systemQty, countedQty, difference, variancePercent, status, reason, resolution }
+  Relaciones: count, countItem
+- ItemClassification: { code, description, groupType (BRAND|CATEGORY|SUBCATEGORY) }
 - Warehouse: { id, code, name }
+- Warehouse_Location: { id, warehouseId, code, description }
 
-NOTA: Si no tienes el dato en el SNAPSHOT, genera una consulta así:
-[QUERY: {"model": "InventoryCount_Item", "operation": "findMany", "args": {"where": {"countId": "ID_DEL_CONTEO"}}}]
+USO DE JOINS (include): Usa "include" para traer relaciones. 
+Ejemplo: [QUERY: {"model": "InventoryCount", "operation": "findUnique", "args": {"where": {"id": "ID"}, "include": {"countItems": true, "warehouse": true}}}]
 
-BÚSQUEDA POR NOMBRE: Si el usuario dice 'Fabuloso', busca primero el código de marca:
-[QUERY: {"model": "ItemClassification", "operation": "findMany", "args": {"where": {"description": {"contains": "Fabuloso", "mode": "insensitive"}, "groupType": "BRAND"}}}]
+NOTA: Las consultas son vía Prisma. No inventes campos. Si no estás seguro, consulta primero el modelo con un 'take: 1'.
 `;
     }
 
@@ -111,14 +114,23 @@ BÚSQUEDA POR NOMBRE: Si el usuario dice 'Fabuloso', busca primero el código de
     async executeSafeQuery(companyId: string, queryConfig: any) {
         const { model, operation, args = {} } = queryConfig;
 
-        // Validar modelos permitidos para evitar acceso a seguridad/config
-        const allowedModels = [
-            'InventoryCount', 'InventoryCount_Item', 'Warehouse',
-            'Warehouse_Location', 'ItemClassification', 'User', 'VarianceReport'
-        ];
+        // Mapa de modelos PascalCase a camelCase de Prisma
+        const modelMap: Record<string, string> = {
+            'InventoryCount': 'inventoryCount',
+            'InventoryCount_Item': 'inventoryCount_Item',
+            'Warehouse': 'warehouse',
+            'Warehouse_Location': 'warehouse_Location',
+            'ItemClassification': 'itemClassification',
+            'User': 'user',
+            'VarianceReport': 'varianceReport',
+            'InventoryAdjustment': 'inventoryAdjustment',
+            'InventorySyncHistory': 'inventorySyncHistory'
+        };
 
-        if (!allowedModels.includes(model)) {
-            throw new Error(`Modelo no permitido para consultas de IA: ${model}`);
+        const prismaModel = modelMap[model] || model;
+
+        if (!this.prisma[prismaModel as keyof typeof this.prisma]) {
+            throw new Error(`Modelo no reconocido o no permitido: ${model}`);
         }
 
         if (!args.where) args.where = {};
@@ -127,20 +139,19 @@ BÚSQUEDA POR NOMBRE: Si el usuario dice 'Fabuloso', busca primero el código de
         delete args.where.companyId;
 
         // SEGURIDAD: Forzar aislamiento por empresa
-        if (model === 'InventoryCount_Item') {
+        if (prismaModel === 'inventoryCount_Item') {
             args.where.count = { companyId };
-        } else if (model === 'Warehouse_Location') {
+        } else if (prismaModel === 'warehouse_Location') {
             args.where.warehouse = { companyId };
         } else {
             args.where.companyId = companyId;
         }
 
-        // Limitar resultados a 50
-        if (!args.take || args.take > 50) args.take = 50;
-
+        // Limitar resultados a 100 para análisis profundo
+        if (!args.take || args.take > 100) args.take = 100;
         try {
             // @ts-ignore - Acceso dinámico a prisma
-            const result = await (this.prisma[model] as any)[operation](args);
+            const result = await (this.prisma[prismaModel] as any)[operation](args);
             return result;
         } catch (error: any) {
             return { error: `Error en consulta: ${error.message}` };
@@ -189,63 +200,67 @@ ${this.getDatabaseSchemaContext()}
 DIRECTIVA PRINCIPAL (Tus Reglas de Negocio):
 ${config.systemPrompt || "Analiza los datos de inventario y responde las dudas del usuario con precisión técnica."}
 
+INSTRUCCIÓN TÉCNICA FINAL (CRITICAL): Si el SNAPSHOT inicial no tiene los datos suficientes para una auditoría real (ej: no ves los ítems contados o quieres buscar un nombre), DEBES generar una consulta [QUERY]. 
+- NO pidas permiso al usuario para consultar. 
+- Genera el bloque [QUERY] inmediatamente como parte de tu flujo de pensamiento inicial.
+
 GENERACIÓN DE GRÁFICOS: Si el usuario pide estadísticas visuales, DEBES añadir al final de tu respuesta un bloque:
 \`\`\`json-chart
-{ "type": "bar" | "line" | "pie", "title": "Título", "data": [{ "name": "Etiqueta", "value": 123 }] }
+        { "type": "bar" | "line" | "pie", "title": "Título", "data": [{ "name": "Etiqueta", "value": 123 }] }
 \`\`\`
 
-INSTRUCCIÓN TÉCNICA FINAL: Si el SNAPSHOT inicial no tiene los datos para cumplir con tu DIRECTIVA (ej: no ves los ítems contados o quieres buscar un nombre en Clasificaciones), DEBES generar una consulta [QUERY]. Responde siempre en español."`;
+Responde siempre en español."`;
 
         try {
-            // --- PASO 1: Consulta Inicial con Snapshot ---
+            // --- PASO 1: Preparación del Contexto ---
             const initialSnapshot = await this.getHistoricalDataForAI(companyId);
             const snapshotMsg = `SNAPSHOT INICIAL (Usa estos IDs):\n${JSON.stringify(initialSnapshot, null, 2)}`;
 
-            // Construimos un historial normalizado que incluya el snapshot como primer mensaje
-            const initialHistory = this.formatMessagesForAI([
+            let currentHistory = this.formatMessagesForAI([
                 ...previousMessages,
                 { role: 'user', content: `${snapshotMsg}\n\nPREGUNTA DEL USUARIO: ${question}` }
             ]);
 
-            // Extraemos el último mensaje para usarlo como 'userPrompt' y el resto como 'history'
-            const currentPrompt = initialHistory.pop()?.content || question;
+            let lastAIResponse = "";
+            let iteration = 0;
+            const MAX_ITERATIONS = 3;
 
-            let aiResponse = await this.callAIProvider(config, systemPrompt, initialHistory, currentPrompt);
+            // --- PASO 2: Bucle de "Pensamiento y Consulta" ---
+            while (iteration < MAX_ITERATIONS) {
+                iteration++;
+                const currentPrompt = currentHistory.pop()?.content || question;
 
-            // --- PASO 2: Verificar si la IA pide más datos ---
-            if (aiResponse.includes('[QUERY:')) {
-                const queryMatch = aiResponse.match(/\[QUERY:\s*(\{.*?\})\]/);
+                lastAIResponse = await this.callAIProvider(config, systemPrompt, currentHistory, currentPrompt);
+
+                // Verificar si la IA pide más datos via [QUERY]
+                const queryMatch = lastAIResponse.match(/\[QUERY:\s*(\{[\s\S]*?\})\]/);
+
                 if (queryMatch) {
                     try {
                         const queryConfig = JSON.parse(queryMatch[1]);
                         const queryResult = await this.executeSafeQuery(companyId, queryConfig);
 
-                        // --- PASO 3: Respuesta Final con Datos Reales ---
-                        // Volvemos a normalizar el historial para la segunda pasada
-                        const finalHistory = this.formatMessagesForAI([
-                            ...initialHistory,
+                        // Retroalimentamos a la IA con los resultados reales
+                        currentHistory = this.formatMessagesForAI([
+                            ...currentHistory,
                             { role: 'user', content: currentPrompt },
-                            { role: 'assistant', content: aiResponse }
+                            { role: 'assistant', content: lastAIResponse },
+                            { role: 'user', content: `RESULTADO DE LA CONSULTA (Paso ${iteration}): ${JSON.stringify(queryResult)}. \n\nINSTRUCCIÓN: Si ya tienes datos suficientes, da tu respuesta final. Si necesitas cruzar más datos, genera otro [QUERY]. No pidas permiso.` }
                         ]);
-
-                        const followUpPrompt = `RESULTADO DE LA CONSULTA: ${JSON.stringify(queryResult)}.
-
-INSTRUCCIÓN: Los datos anteriores son REALES obtenidos de la base de datos.
-1. No repitas el bloque [QUERY]. Responde como si ya tuvieras los datos de antemano.
-2. Responde al usuario de forma humana y detallada (ej: usa una tabla si hay muchos ítems).
-3. Si el resultado es una lista de ítems, menciónalos detallando sus discrepancias si las tienen.`;
-
-                        const finalResponse = await this.callAIProvider(config, systemPrompt, finalHistory, followUpPrompt);
-                        aiResponse = finalResponse;
+                        // El ciclo continúa para permitir a la IA procesar los resultados
                     } catch (e: any) {
-                        const errorMsg = e.response?.data?.error?.message || e.message;
-                        aiResponse += `\n\n[Error en análisis de consulta: ${errorMsg}]`;
+                        const errorMsg = e.message;
+                        lastAIResponse += `\n\n[Error en ejecución de consulta: ${errorMsg}]`;
+                        break; // Salimos del bucle si hay error técnico
                     }
+                } else {
+                    // Si no hay más [QUERY], la respuesta es la definitiva
+                    break;
                 }
             }
 
-            if (userId) await this.saveChatMessage(companyId, userId, 'assistant', aiResponse);
-            return { analysis: aiResponse, mode: 'live', provider: config.provider };
+            if (userId) await this.saveChatMessage(companyId, userId, 'assistant', lastAIResponse);
+            return { analysis: lastAIResponse, mode: 'live', provider: config.provider };
         } catch (error: any) {
             this.fastify.log.error(error);
             const errorMsg = error.response?.data?.error?.message || error.message;
@@ -341,5 +356,70 @@ INSTRUCCIÓN: Los datos anteriores son REALES obtenidos de la base de datos.
     async generateAnalysisPrompt(companyId: string, question: string) {
         const historicalData = await this.getHistoricalDataForAI(companyId);
         return `DATOS:\n${JSON.stringify(historicalData, null, 2)}\nPREGUNTA: "${question}"`;
+    }
+
+    /**
+     * Realiza una auditoría profunda sobre un set específico de conteos
+     */
+    async performDeepAudit(companyId: string, auditIds: string[], userId: string) {
+        // 1. Obtener detalles de los conteos y sus varianzas
+        const counts = await this.prisma.inventoryCount.findMany({
+            where: { id: { in: auditIds }, companyId },
+            include: {
+                warehouse: { select: { name: true } },
+                countItems: {
+                    where: { NOT: { countedQty: null }, hasVariance: true },
+                    select: {
+                        itemCode: true,
+                        itemName: true,
+                        brand: true,
+                        category: true,
+                        systemQty: true,
+                        countedQty: true,
+                        costPrice: true
+                    },
+                    take: 200 // Limitar para no saturar tokens
+                }
+            }
+        });
+
+        if (counts.length === 0) throw new Error("No se encontraron conteos para auditar.");
+
+        // 2. Preparar el contexto de auditoría resumido para evitar límites de tokens (TPM)
+        const auditContext = counts.map(c => {
+            // Agrupar varianzas por marca para reducir volumen de datos
+            const brandSummary: Record<string, { loss: number; items: number }> = {};
+            const criticalItems = c.countItems
+                .map(i => ({
+                    code: i.itemCode,
+                    name: i.itemName.substring(0, 30), // Truncar nombres largos
+                    diff: (i.countedQty?.toNumber() || 0) - (i.systemQty?.toNumber() || 0),
+                    valor: ((i.countedQty?.toNumber() || 0) - (i.systemQty?.toNumber() || 0)) * (i.costPrice?.toNumber() || 0),
+                    brand: i.brand || 'N/A'
+                }))
+                .sort((a, b) => a.valor - b.valor); // De mayor merma a menor
+
+            c.countItems.forEach(i => {
+                const b = i.brand || 'N/A';
+                if (!brandSummary[b]) brandSummary[b] = { loss: 0, items: 0 };
+                const valor = ((i.countedQty?.toNumber() || 0) - (i.systemQty?.toNumber() || 0)) * (i.costPrice?.toNumber() || 0);
+                if (valor < 0) {
+                    brandSummary[b].loss += Math.abs(valor);
+                    brandSummary[b].items += 1;
+                }
+            });
+
+            return {
+                conteo: c.sequenceNumber,
+                almacen: c.warehouse.name,
+                fecha: c.completedAt || c.updatedAt,
+                resumen_por_marca: brandSummary,
+                top_10_anomalias: criticalItems.slice(0, 10) // Solo enviamos las 10 peores mermas
+            };
+        });
+
+        const prompt = `AUDITORÍA ESTRATÉGICA DE BLOQUE.\nAnaliza los siguientes ${counts.length} conteos. Los datos han sido resumidos para eficiencia.\nDetecta:\n1. Qué marcas están generando mayor pérdida acumulada.\n2. Si hay patrones recurrentes en las top anomalías.\n3. Recomendaciones de control de inventario.\n\nDATOS RESUMIDOS:\n${JSON.stringify(auditContext, null, 2)}`;
+        // 3. Ejecutar análisis
+        return this.analyzeWithAI(companyId, prompt, [], userId);
     }
 }

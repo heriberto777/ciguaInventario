@@ -31,7 +31,7 @@ export const CompaniesTable: React.FC<CompaniesTableProps> = ({
 
   if (companies.length === 0) {
     return (
-      <div className="text-center py-8 text-gray-500">
+      <div className="text-center py-8 text-[var(--text-muted)]">
         No companies found. Create one to get started.
       </div>
     );
@@ -40,25 +40,25 @@ export const CompaniesTable: React.FC<CompaniesTableProps> = ({
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-left text-sm">
-        <thead className="bg-gray-100 border-b">
+        <thead className="bg-[var(--bg-hover)] border-b border-[var(--border-default)]">
           <tr>
-            <th className="px-4 py-3 font-semibold">Name</th>
-            <th className="px-4 py-3 font-semibold">Email</th>
-            <th className="px-4 py-3 font-semibold">Location</th>
-            <th className="px-4 py-3 font-semibold">Users</th>
-            <th className="px-4 py-3 font-semibold">Status</th>
-            <th className="px-4 py-3 font-semibold">Created</th>
-            <th className="px-4 py-3 font-semibold">Actions</th>
+            <th className="px-4 py-3 font-semibold text-[var(--text-primary)]">Name</th>
+            <th className="px-4 py-3 font-semibold text-[var(--text-primary)]">Email</th>
+            <th className="px-4 py-3 font-semibold text-[var(--text-primary)]">Location</th>
+            <th className="px-4 py-3 font-semibold text-[var(--text-primary)]">Users</th>
+            <th className="px-4 py-3 font-semibold text-[var(--text-primary)]">Status</th>
+            <th className="px-4 py-3 font-semibold text-[var(--text-primary)]">Created</th>
+            <th className="px-4 py-3 font-semibold text-[var(--text-primary)]">Actions</th>
           </tr>
         </thead>
         <tbody>
           {companies.map((company) => (
-            <tr key={company.id} className="border-b hover:bg-gray-50">
-              <td className="px-4 py-3 font-semibold text-gray-900">
+            <tr key={company.id} className="border-b border-[var(--border-default)] hover:bg-[var(--bg-hover)]">
+              <td className="px-4 py-3 font-semibold text-[var(--text-primary)]">
                 {company.name}
               </td>
-              <td className="px-4 py-3 text-gray-600">{company.email}</td>
-              <td className="px-4 py-3 text-gray-600">
+              <td className="px-4 py-3 text-[var(--text-secondary)]">{company.email}</td>
+              <td className="px-4 py-3 text-[var(--text-secondary)]">
                 {company.city && company.country
                   ? `${company.city}, ${company.country}`
                   : company.city || company.country || '-'}
@@ -70,16 +70,15 @@ export const CompaniesTable: React.FC<CompaniesTableProps> = ({
               </td>
               <td className="px-4 py-3">
                 <span
-                  className={`inline-block px-2 py-1 rounded text-xs font-semibold ${
-                    company.isActive
+                  className={`inline-block px-2 py-1 rounded text-xs font-semibold ${company.isActive
                       ? 'bg-green-100 text-green-800'
                       : 'bg-red-100 text-red-800'
-                  }`}
+                    }`}
                 >
                   {company.isActive ? 'Active' : 'Inactive'}
                 </span>
               </td>
-              <td className="px-4 py-3 text-xs">
+              <td className="px-4 py-3 text-xs text-[var(--text-muted)]">
                 {new Date(company.createdAt).toLocaleDateString()}
               </td>
               <td className="px-4 py-3 space-x-1">

@@ -11,6 +11,8 @@ export async function itemClassificationsRoutes(app: FastifyInstance) {
 
     // Listado (con filtro opcional ?groupType=CATEGORY|SUBCATEGORY|BRAND|OTHER)
     app.get('/item-classifications', auth, (req, rep) => controller.list(req, rep));
+    // Plantilla Excel
+    app.get('/item-classifications/excel-template', auth, (req, rep) => controller.getExcelTemplate(req, rep));
     // Detalle
     app.get('/item-classifications/:id', auth, (req, rep) => controller.getOne(req, rep));
     // Crear

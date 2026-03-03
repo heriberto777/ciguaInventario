@@ -9,13 +9,13 @@ interface ConnectionTestPanelProps {
 }
 
 export function ConnectionTestPanel({ mappingId }: ConnectionTestPanelProps) {
-  const { mutate: testMapping, isLoading, data: result } = useTestMapping();
+  const { mutate: testMapping, isPending, data: result } = useTestMapping();
   const [error, setError] = useState<string | null>(null);
 
   const handleTest = () => {
     setError(null);
     testMapping(
-      { mappingId, limitRows: 10 },
+      { mappingId, limitRows: 10, erpConnectionId: 'temporary-id' }, // TODO: Get real ID from context
       {
         onError: (err: any) => {
           setError(err.response?.data?.error?.message || 'Test failed');
@@ -26,16 +26,16 @@ export function ConnectionTestPanel({ mappingId }: ConnectionTestPanelProps) {
 
   const columns = result?.data?.[0]
     ? Object.keys(result.data[0]).map((key) => ({
-        header: key,
-        key: key as any,
-      }))
+      header: key,
+      key: key as any,
+    }))
     : [];
 
   return (
     <Card title="Test Connection">
       <div className="space-y-4">
-        <Button onClick={handleTest} disabled={isLoading}>
-          {isLoading ? 'Testing...' : 'Run Test'}
+        <Button onClick={handleTest} disabled={isPending}>
+          {isPending ? 'Testing...' : 'Run Test'}
         </Button>
 
         {error && (

@@ -250,7 +250,11 @@ export class InventoryVersionService {
       throw new AppError(404, 'Inventory count not found');
     }
 
-    // ✅ Aceptar SUBMITTED, COMPLETED o APPROVED
+    // ✅ Aceptar SUBMITTED, COMPLETED o APPROVED (pero NO CLOSED)
+    if (count.status === 'CLOSED' || count.finalizedVersion) {
+      throw new AppError(400, 'No se pueden crear nuevas versiones para un conteo ya cerrado o finalizado físicamente');
+    }
+
     if (count.status !== 'SUBMITTED' && count.status !== 'COMPLETED' && count.status !== 'APPROVED') {
       throw new AppError(
         400,

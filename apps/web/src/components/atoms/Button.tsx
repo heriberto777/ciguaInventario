@@ -4,6 +4,7 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   children: ReactNode;
   variant?: 'primary' | 'secondary' | 'danger' | 'success';
   size?: 'sm' | 'md' | 'lg';
+  isLoading?: boolean;
 }
 
 export function Button({
@@ -11,29 +12,35 @@ export function Button({
   variant = 'primary',
   size = 'md',
   className = '',
+  isLoading = false,
+  disabled,
   ...props
 }: ButtonProps) {
   const baseStyles =
-    'font-semibold rounded transition-colors duration-200 disabled:opacity-50';
+    'font-semibold rounded transition-all duration-200 disabled:opacity-50 flex items-center justify-center gap-2';
 
   const variantStyles = {
-    primary: 'bg-blue-600 text-white hover:bg-blue-700 font-bold shadow-sm',
-    secondary: 'bg-gray-200 text-gray-800 hover:bg-gray-300 font-bold shadow-sm',
-    danger: 'bg-red-600 text-white hover:bg-red-700 font-bold shadow-sm',
-    success: 'bg-green-600 text-white hover:bg-green-700 font-bold shadow-sm',
+    primary: 'bg-[var(--accent-primary)] text-white hover:bg-[var(--accent-hover)] font-bold shadow-sm',
+    secondary: 'bg-[var(--bg-hover)] text-[var(--text-primary)] hover:bg-[var(--border-default)] font-bold shadow-sm border border-[var(--border-default)]',
+    danger: 'bg-[var(--color-danger)] text-white hover:opacity-90 font-bold shadow-sm',
+    success: 'bg-[var(--color-success)] text-white hover:opacity-90 font-bold shadow-sm',
   };
 
   const sizeStyles = {
-    sm: 'px-3 py-1 text-sm',
-    md: 'px-4 py-2 text-base',
-    lg: 'px-6 py-3 text-lg',
+    sm: 'px-3 py-1.5 text-xs',
+    md: 'px-4 py-2 text-sm',
+    lg: 'px-6 py-3 text-base',
   };
 
   return (
     <button
       className={`${baseStyles} ${variantStyles[variant]} ${sizeStyles[size]} ${className}`}
+      disabled={disabled || isLoading}
       {...props}
     >
+      {isLoading && (
+        <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+      )}
       {children}
     </button>
   );

@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import * as XLSX from 'xlsx';
 import {
     CreateClassificationDto,
     UpdateClassificationDto,
@@ -160,5 +161,25 @@ export class ItemClassificationsService {
         if (toSync.length === 0) return { created: 0, updated: 0, skipped: 0, total: 0 };
 
         return this.bulkImport(companyId, { items: toSync, upsert: true });
+    }
+
+    generateTemplateBuffer(): Buffer {
+        const wb = XLSX.utils.book_new();
+
+        const headers = ['CLASIFICACION', 'DESCRIPCION', 'AGRUPACION'];
+        const exampleRows = [
+            ['C10', 'BODY CARE', 1],
+            ['G11', 'TOILET SOAPS', 2],
+            ['M01', 'Palmolive', 3],
+        ];
+
+        const wsData = [headers, ...exampleRows];
+        const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+        // Ancho de columnas
+        ws['!cols'] = [15, 30, 12].map(w => ({ wch: w }));
+
+        XLSX.utils.book_append_sheet(wb, ws, 'Clasificaciones');
+        return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
     }
 }

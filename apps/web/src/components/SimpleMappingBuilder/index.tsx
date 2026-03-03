@@ -70,10 +70,20 @@ export const SimpleMappingBuilder: React.FC<SimpleMappingBuilderProps> = ({
   // pueden llegar como objetos JSON. Garantizamos que siempre sean arrays.
   function normalizeArrayField<T>(value: any, fallback: T[]): T[] {
     if (Array.isArray(value)) return value;
-    if (value && typeof value === 'object') {
-      // Puede ser un objeto JSON con índices numéricos como {"0": {...}, "1": {...} }
+    if (value === null || value === undefined) return fallback;
+    if (typeof value === 'object') {
+      // Si es un objeto JSON con índices numéricos como {"0": {...}, "1": {...} }
+      // O si es un objeto que contiene una propiedad que es el array (común en Prisma/Drizzle)
       const values = Object.values(value);
-      return values.length > 0 ? (values as T[]) : fallback;
+      return (values.length > 0 && typeof values[0] === 'object') ? (values as T[]) : fallback;
+    }
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value);
+        return Array.isArray(parsed) ? parsed : fallback;
+      } catch {
+        return fallback;
+      }
     }
     return fallback;
   }
@@ -234,7 +244,7 @@ export const SimpleMappingBuilder: React.FC<SimpleMappingBuilderProps> = ({
   };
 
   return (
-    <div className="w-full bg-white rounded-lg shadow-lg p-6">
+    <div className="w-full bg-[var(--bg-card)] rounded-lg shadow-lg p-6 border border-[var(--border-default)]">
       {/* Header */}
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-gray-800">{getStepTitle(step)}</h2>

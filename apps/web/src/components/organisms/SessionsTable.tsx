@@ -49,7 +49,7 @@ export const SessionsTable: React.FC<SessionsTableProps> = ({
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-left text-sm">
-        <thead className="bg-gray-100 border-b">
+        <thead className="bg-[var(--bg-hover)] border-b border-[var(--border-default)]">
           <tr>
             <th className="px-4 py-3 font-semibold">User</th>
             <th className="px-4 py-3 font-semibold">Browser</th>
@@ -61,11 +61,11 @@ export const SessionsTable: React.FC<SessionsTableProps> = ({
         </thead>
         <tbody>
           {sessions.map((session) => (
-            <tr key={session.id} className="border-b hover:bg-gray-50">
-              <td className="px-4 py-3 font-semibold text-gray-900">
+            <tr key={session.id} className="border-b border-[var(--border-default)] hover:bg-[var(--bg-hover)] transition-colors">
+              <td className="px-4 py-3 font-bold text-[var(--text-primary)]">
                 {session.userName}
               </td>
-              <td className="px-4 py-3 text-gray-600">
+              <td className="px-4 py-3 text-[var(--text-secondary)]">
                 {parseUserAgent(session.userAgent)}
               </td>
               <td className="px-4 py-3 font-mono text-xs">
@@ -76,11 +76,10 @@ export const SessionsTable: React.FC<SessionsTableProps> = ({
               </td>
               <td className="px-4 py-3">
                 <span
-                  className={`inline-block px-2 py-1 rounded text-xs font-semibold ${
-                    session.isActive
-                      ? 'bg-green-100 text-green-800'
-                      : 'bg-gray-100 text-gray-800'
-                  }`}
+                  className={`inline-block px-2 py-1 rounded text-xs font-semibold ${session.isActive
+                      ? 'bg-green-500/10 text-green-500 border border-green-500/20'
+                      : 'bg-[var(--bg-hover)] text-[var(--text-secondary)] border border-[var(--border-default)]'
+                    }`}
                 >
                   {session.isActive ? 'Active' : 'Inactive'}
                 </span>

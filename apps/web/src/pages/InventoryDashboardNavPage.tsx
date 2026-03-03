@@ -42,6 +42,24 @@ export const InventoryDashboardNavPage: React.FC = () => {
       route: '/admin/mapping',
       status: 'ready',
     },
+    {
+      id: 'inventory-reports',
+      title: '📄 Reportes de Inventario',
+      description: 'Genera reportes financieros y operativos detallados por marca y categoría.',
+      icon: '📄',
+      color: '#ec4899',
+      route: '/reports',
+      status: 'ready',
+    },
+    {
+      id: 'audit-hub',
+      title: '🤖 Auditoría Inteligente IA',
+      description: 'Análisis estratégico de múltiples conteos, tendencias de mermas y auditoría con IA.',
+      icon: '🤖',
+      color: '#10b981',
+      route: '/inventory/audit',
+      status: 'ready',
+    },
   ];
 
   const styles = {
@@ -200,6 +218,10 @@ export const InventoryDashboardNavPage: React.FC = () => {
         </div>
         <div style={styles.flowStep}>
           <span>📈 Análisis</span>
+          <span style={styles.arrow}>→</span>
+        </div>
+        <div style={styles.flowStep}>
+          <span>🤖 Auditoría IA</span>
           <span style={styles.arrow}>→</span>
         </div>
         <div style={styles.flowStep}>

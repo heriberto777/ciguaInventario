@@ -170,9 +170,8 @@ export const FieldMappingBuilder: React.FC<FieldMappingBuilderProps> = ({
                   draggable
                   onDragStart={() => setDraggedField(field)}
                   onDragEnd={() => setDraggedField(null)}
-                  className={`p-2 bg-white border border-gray-300 rounded cursor-move hover:bg-blue-50 ${
-                    draggedField?.name === field.name ? 'opacity-50' : ''
-                  }`}
+                  className={`p-2 bg-[var(--bg-card)] border border-[var(--border-default)] rounded cursor-move hover:bg-[var(--bg-hover)] ${draggedField?.name === field.name ? 'opacity-50' : ''
+                    }`}
                 >
                   <div className="font-mono text-sm">{field.table}.{field.name}</div>
                   <div className="text-xs text-gray-500">{field.type}</div>
@@ -203,11 +202,10 @@ export const FieldMappingBuilder: React.FC<FieldMappingBuilderProps> = ({
                       setDraggedField(null);
                     }
                   }}
-                  className={`p-3 rounded border-2 border-dashed transition ${
-                    isMapped
+                  className={`p-3 rounded border-2 border-dashed transition ${isMapped
                       ? 'bg-green-100 border-green-400'
-                      : 'bg-white border-gray-300 hover:border-green-400'
-                  }`}
+                      : 'bg-[var(--bg-card)] border-[var(--border-default)] hover:border-emerald-400'
+                    }`}
                 >
                   <div className="flex justify-between items-start">
                     <div>
@@ -264,24 +262,24 @@ export const FieldMappingBuilder: React.FC<FieldMappingBuilderProps> = ({
             <div className="text-xs text-gray-500 mt-2">
               {mappings.filter(m => !targetFields.some(tf => tf.name === m.targetField))
                 .length > 0 && (
-                <div>
-                  <strong>Campos adicionales:</strong>
-                  {mappings.map(
-                    (m) =>
-                      !targetFields.some(tf => tf.name === m.targetField) && (
-                        <div key={m.targetField} className="text-gray-600">
-                          {m.targetField} ← {m.sourceField}
-                          <button
-                            onClick={() => removeMapping(m.targetField)}
-                            className="ml-2 text-red-600"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      )
-                  )}
-                </div>
-              )}
+                  <div>
+                    <strong>Campos adicionales:</strong>
+                    {mappings.map(
+                      (m) =>
+                        !targetFields.some(tf => tf.name === m.targetField) && (
+                          <div key={m.targetField} className="text-gray-600">
+                            {m.targetField} ← {m.sourceField}
+                            <button
+                              onClick={() => removeMapping(m.targetField)}
+                              className="ml-2 text-red-600"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        )
+                    )}
+                  </div>
+                )}
             </div>
           </div>
         </div>

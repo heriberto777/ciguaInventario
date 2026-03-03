@@ -18,19 +18,71 @@ async function main() {
 
   console.log('✓ Empresa creada:', company.name);
 
-  // Crear permisos
+  // --- LISTA MAESTRA DE PERMISOS (EXHAUSTIVA) ---
   const permissions = [
-    // Inventario
-    { name: 'inventory:view_qty', category: 'inventory', description: 'Permite ver cantidades del sistema y varianzas' },
-    { name: 'inventory:sync', category: 'inventory', description: 'Permite sincronizar conteos con el ERP' },
-    { name: 'inventory:edit_settings', category: 'inventory', description: 'Permite editar configuraciones de conteo' },
-    { name: 'inventory:manage', category: 'inventory', description: 'Gestión completa de inventario' },
+    // SEGURIDAD Y USUARIOS
+    { name: 'users:view', category: 'seguridad', description: 'Ver lista de usuarios' },
+    { name: 'users:create', category: 'seguridad', description: 'Crear nuevos usuarios' },
+    { name: 'users:edit', category: 'seguridad', description: 'Editar usuarios existentes' },
+    { name: 'users:delete', category: 'seguridad', description: 'Eliminar usuarios' },
+    { name: 'roles:view', category: 'seguridad', description: 'Ver roles del sistema' },
+    { name: 'roles:manage', category: 'seguridad', description: 'Gestionar roles y asignarles permisos' },
+    { name: 'permissions:view', category: 'seguridad', description: 'Ver lista de permisos' },
+    { name: 'sessions:view', category: 'seguridad', description: 'Ver sesiones activas' },
+    { name: 'sessions:delete', category: 'seguridad', description: 'Cerrar sesiones de forma remota' },
 
-    // Sistema / Administración
-    { name: 'users:manage', category: 'users', description: 'Permite gestionar usuarios y roles' },
-    { name: 'audit:view', category: 'audit', description: 'Ver logs de auditoría' },
-    { name: 'companies:manage', category: 'companies', description: 'Administrar empresas' },
-    { name: 'erp:manage', category: 'erp', description: 'Configurar conexiones y mapeos ERP' },
+    // ALMACENES Y LOGÍSTICA
+    { name: 'warehouses:view', category: 'almacenes', description: 'Ver almacenes' },
+    { name: 'warehouses:manage', category: 'almacenes', description: 'Crear y editar almacenes' },
+    { name: 'locations:view', category: 'almacenes', description: 'Ver ubicaciones (estantes/pasillos)' },
+    { name: 'locations:manage', category: 'almacenes', description: 'Gestionar ubicaciones físicas' },
+    { name: 'classifications:view', category: 'almacenes', description: 'Ver categorías y marcas' },
+    { name: 'classifications:manage', category: 'almacenes', description: 'Gestionar clasificaciones de artículos' },
+
+    // INVENTARIO (PROCESOS)
+    { name: 'inv_counts:view', category: 'inventario', description: 'Ver procesos de conteo' },
+    { name: 'inv_counts:create', category: 'inventario', description: 'Crear nuevos conteos' },
+    { name: 'inv_counts:edit', category: 'inventario', description: 'Editar cabecera de conteos' },
+    { name: 'inv_counts:delete', category: 'inventario', description: 'Borrar borradores de conteo' },
+    { name: 'inv_counts:execute', category: 'inventario', description: 'Registrar conteos físicos (App/Web)' },
+    { name: 'inv_counts:pause', category: 'inventario', description: 'Pausar conteos activos' },
+    { name: 'inv_counts:resume', category: 'inventario', description: 'Reanudar conteos pausados' },
+    { name: 'inv_counts:complete', category: 'inventario', description: 'Entregar conteo para revisión' },
+    { name: 'inv_counts:approve', category: 'inventario', description: 'Aprobar varianzas de conteo' },
+    { name: 'inv_counts:finalize', category: 'inventario', description: 'Cerrar conteo administrativamente' },
+    { name: 'inv_counts:reactivate', category: 'inventario', description: 'Reabrir un conteo cerrado' },
+    { name: 'inv_counts:new_version', category: 'inventario', description: 'Crear re-conteos (Versiones)' },
+
+    // INVENTARIO (DATOS SENSIBLES)
+    { name: 'inventory:view_qty', category: 'inventario_privacidad', description: 'Ver existencia teórica (Blind Count Off)' },
+    { name: 'inventory:view_costs', category: 'inventario_privacidad', description: 'Ver costos unitarios' },
+    { name: 'inventory:view_prices', category: 'inventario_privacidad', description: 'Ver precios de venta' },
+    { name: 'inventory:view_variances', category: 'inventario_privacidad', description: 'Ver diferencias numéricas y %' },
+    { name: 'inventory:adjust', category: 'inventario_privacidad', description: 'Realizar ajustes manuales de stock' },
+
+    // INTEGRACIÓN ERP
+    { name: 'erp_conn:view', category: 'erp', description: 'Ver configuraciones de conexión ERP' },
+    { name: 'erp_conn:manage', category: 'erp', description: 'Configurar conexiones BD ERP' },
+    { name: 'mappings:view', category: 'erp', description: 'Ver mapeos de campos' },
+    { name: 'mappings:manage', category: 'erp', description: 'Crear y editar mapeos de tablas' },
+    { name: 'sync:inventory', category: 'erp', description: 'Importar datos desde ERP' },
+    { name: 'sync:erp', category: 'erp', description: 'Enviar resultados finales al ERP' },
+
+    // REPORTES Y DASHBOARDS
+    { name: 'dashboards:view', category: 'reportes', description: 'Ver indicadores de gestión' },
+    { name: 'reports:view', category: 'reportes', description: 'Ver listado de reportes' },
+    { name: 'reports:export', category: 'reportes', description: 'Exportar reportes a Excel/PDF' },
+    { name: 'audit:view', category: 'reportes', description: 'Ver logs de auditoría' },
+
+    // INTELIGENCIA ARTIFICIAL
+    { name: 'ai:chat', category: 'ai', description: 'Uso del asistente IA' },
+    { name: 'ai:config', category: 'ai', description: 'Configurar Prompts y Modelos IA' },
+
+    // SISTEMA Y EMPRESAS
+    { name: 'companies:view', category: 'sistema', description: 'Ver datos de empresa' },
+    { name: 'companies:manage', category: 'sistema', description: 'Configurar sedes y datos fiscales' },
+    { name: 'settings:view', category: 'sistema', description: 'Ver logs y estado del sistema' },
+    { name: 'settings:manage', category: 'sistema', description: 'Configuraciones críticas del servidor' },
   ];
 
   const dbPermissions = [];
@@ -62,7 +114,7 @@ async function main() {
     },
   });
 
-  // Asegurar permisos en SuperAdmin
+  // Asegurar TODOS los permisos en SuperAdmin
   await prisma.rolePermission.deleteMany({ where: { roleId: superAdminRole.id } });
   await prisma.rolePermission.createMany({
     data: dbPermissions.map(p => ({ roleId: superAdminRole.id, permissionId: p.id }))
@@ -88,7 +140,7 @@ async function main() {
   await prisma.rolePermission.deleteMany({ where: { roleId: adminRole.id } });
   await prisma.rolePermission.createMany({
     data: dbPermissions
-      .filter(p => !['companies:manage'].includes(p.name))
+      .filter(p => !['companies:manage', 'settings:manage'].includes(p.name))
       .map(p => ({ roleId: adminRole.id, permissionId: p.id }))
   });
 
@@ -112,7 +164,14 @@ async function main() {
   await prisma.rolePermission.deleteMany({ where: { roleId: operatorRole.id } });
   await prisma.rolePermission.createMany({
     data: dbPermissions
-      .filter(p => ['inventory:view_qty', 'inventory:manage', 'inventory:edit_settings'].includes(p.name))
+      .filter(p => [
+        'inv_counts:view',
+        'inv_counts:execute',
+        'warehouses:view',
+        'dashboards:view',
+        'ai:chat'
+        // NOT including inventory:view_qty, view_costs, view_prices, view_variances for "blind count"
+      ].includes(p.name))
       .map(p => ({ roleId: operatorRole.id, permissionId: p.id }))
   });
 
@@ -122,14 +181,14 @@ async function main() {
   const hashedPassword = await bcrypt.hash('admin123456', 10);
 
   const superAdmin = await prisma.user.upsert({
-    where: { email: 'superadmin@cigua.com' },
+    where: { email: 'superadmin@catellird.com' },
     update: {
       firstName: 'Super',
       lastName: 'Admin',
       password: hashedPassword,
     },
     create: {
-      email: 'superadmin@cigua.com',
+      email: 'superadmin@catellird.com',
       firstName: 'Super',
       lastName: 'Admin',
       password: hashedPassword,
@@ -144,16 +203,16 @@ async function main() {
   });
 
   const adminUser = await prisma.user.upsert({
-    where: { email: 'admin@cigua.com' },
+    where: { email: 'admin@catellird.com' },
     update: {
       firstName: 'Admin',
-      lastName: 'System',
+      lastName: 'Catelli',
       password: hashedPassword,
     },
     create: {
-      email: 'admin@cigua.com',
+      email: 'admin@catellird.com',
       firstName: 'Admin',
-      lastName: 'System',
+      lastName: 'Catelli',
       password: hashedPassword,
       companyId: company.id,
     },
@@ -165,16 +224,16 @@ async function main() {
   });
 
   const operatorUser = await prisma.user.upsert({
-    where: { email: 'operador@cigua.com' },
+    where: { email: 'operador@catellird.com' },
     update: {
       firstName: 'Operador',
-      lastName: 'Pruebas',
+      lastName: 'Catelli',
       password: hashedPassword,
     },
     create: {
-      email: 'operador@cigua.com',
+      email: 'operador@catellird.com',
       firstName: 'Operador',
-      lastName: 'Pruebas',
+      lastName: 'Catelli',
       password: hashedPassword,
       companyId: company.id,
     },
@@ -186,9 +245,9 @@ async function main() {
   });
 
   console.log('✓ Usuarios y asignaciones de roles sincronizadas');
-  console.log('  SuperAdmin: superadmin@cigua.com / admin123456');
-  console.log('  Admin: admin@cigua.com / admin123456');
-  console.log('  Operador: operador@cigua.com / admin123456');
+  console.log('  SuperAdmin: superadmin@catellird.com / admin123456');
+  console.log('  Admin: admin@catellird.com / admin123456');
+  console.log('  Operador: operador@catellird.com / admin123456');
 
   console.log('\n✓ Seed completado exitosamente');
 }

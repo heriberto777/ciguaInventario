@@ -9,6 +9,8 @@ import { getApiClient } from '@/services/api';
 interface Permission {
   id: string;
   name: string;
+  resource: string;
+  action: string;
   description?: string;
   category: string;
   createdAt: string;
@@ -107,19 +109,11 @@ export const PermissionsContent: React.FC = () => {
     },
   });
 
-  const handleCreate = async (data: {
-    name: string;
-    description?: string;
-    category?: string;
-  }) => {
+  const handleCreate = async (data: any) => {
     await createMutation.mutateAsync(data);
   };
 
-  const handleUpdate = async (data: {
-    name: string;
-    description?: string;
-    category?: string;
-  }) => {
+  const handleUpdate = async (data: any) => {
     if (!editingPermission) return;
     await updateMutation.mutateAsync({
       id: editingPermission.id,
@@ -139,135 +133,136 @@ export const PermissionsContent: React.FC = () => {
 
   return (
     <div className="space-y-6">
-        {/* Header */}
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Permissions</h1>
-            <p className="text-gray-600 mt-1">Manage system permissions</p>
+      {/* Header */}
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold text-[var(--text-primary)]">Permissions</h1>
+          <p className="text-gray-600 mt-1">Manage system permissions</p>
+        </div>
+        <Button
+          onClick={() => {
+            setEditingPermission(null);
+            setShowForm(!showForm);
+          }}
+          disabled={showForm}
+        >
+          {showForm ? 'Cancel' : 'Create Permission'}
+        </Button>
+      </div>
+
+      {/* Error Alert */}
+      {error && (
+        <div className="bg-[var(--bg-danger-light)] border border-[var(--border-danger)] rounded-lg p-4">
+          <div className="flex justify-between items-start">
+            <div>
+              <h3 className="text-[var(--text-danger)] font-semibold">Error</h3>
+              <p className="text-[var(--text-danger-dark)] text-sm mt-1">{error}</p>
+            </div>
+            <button
+              onClick={() => setError(null)}
+              className="text-[var(--text-danger)] hover:text-[var(--text-danger-dark)] text-xl leading-none"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Form */}
+      {showForm && (
+        <div className="bg-[var(--bg-card)] rounded-lg border border-[var(--border-default)] shadow p-6">
+          <h2 className="text-xl font-semibold mb-4">
+            {editingPermission ? 'Edit Permission' : 'Create New Permission'}
+          </h2>
+          <PermissionForm
+            onSubmit={editingPermission ? handleUpdate : handleCreate}
+            initialData={
+              editingPermission
+                ? {
+                  resource: editingPermission.resource,
+                  action: editingPermission.action,
+                  description: editingPermission.description || '',
+                  name: editingPermission.name,
+                  category: editingPermission.category,
+                }
+                : undefined
+            }
+            isLoading={
+              createMutation.isPending || updateMutation.isPending
+            }
+          />
+        </div>
+      )}
+
+      {/* Search */}
+      <div className="bg-[var(--bg-card)] rounded-lg border border-[var(--border-default)] shadow p-4">
+        <input
+          type="text"
+          placeholder="Search permissions..."
+          value={searchTerm}
+          onChange={(e) => {
+            setSearchTerm(e.target.value);
+            setCurrentPage(0);
+          }}
+          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      </div>
+
+      {/* Table */}
+      <div className="bg-[var(--bg-card)] rounded-lg border border-[var(--border-default)] shadow">
+        <PermissionsTable
+          permissions={permissionsData?.data || []}
+          isLoading={permissionsLoading}
+          onEdit={(permission) => {
+            setEditingPermission(permission);
+            setShowForm(true);
+          }}
+          onDelete={handleDelete}
+        />
+      </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex justify-center gap-2">
+          <Button
+            variant="secondary"
+            onClick={() => setCurrentPage(Math.max(0, currentPage - 1))}
+            disabled={currentPage === 0}
+          >
+            Previous
+          </Button>
+          <div className="flex items-center gap-2">
+            {Array.from({ length: totalPages }, (_, i) => (
+              <button
+                key={i}
+                onClick={() => setCurrentPage(i)}
+                className={`px-3 py-2 rounded ${currentPage === i
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
+                  }`}
+              >
+                {i + 1}
+              </button>
+            ))}
           </div>
           <Button
-            onClick={() => {
-              setEditingPermission(null);
-              setShowForm(!showForm);
-            }}
-            disabled={showForm}
+            variant="secondary"
+            onClick={() => setCurrentPage(Math.min(totalPages - 1, currentPage + 1))}
+            disabled={currentPage === totalPages - 1}
           >
-            {showForm ? 'Cancel' : 'Create Permission'}
+            Next
           </Button>
         </div>
+      )}
 
-        {/* Error Alert */}
-        {error && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-            <div className="flex justify-between items-start">
-              <div>
-                <h3 className="text-red-800 font-semibold">Error</h3>
-                <p className="text-red-700 text-sm mt-1">{error}</p>
-              </div>
-              <button
-                onClick={() => setError(null)}
-                className="text-red-600 hover:text-red-800 text-xl leading-none"
-              >
-                ×
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Form */}
-        {showForm && (
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-xl font-semibold mb-4">
-              {editingPermission ? 'Edit Permission' : 'Create New Permission'}
-            </h2>
-            <PermissionForm
-              onSubmit={editingPermission ? handleUpdate : handleCreate}
-              initialData={
-                editingPermission
-                  ? {
-                      name: editingPermission.name,
-                      description: editingPermission.description,
-                      category: editingPermission.category,
-                    }
-                  : undefined
-              }
-              isLoading={
-                createMutation.isPending || updateMutation.isPending
-              }
-            />
-          </div>
-        )}
-
-        {/* Search */}
-        <div className="bg-white rounded-lg shadow p-4">
-          <input
-            type="text"
-            placeholder="Search permissions..."
-            value={searchTerm}
-            onChange={(e) => {
-              setSearchTerm(e.target.value);
-              setCurrentPage(0);
-            }}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
+      {/* Status messages */}
+      {deleteMutation.isError && (
+        <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded">
+          Error deleting permission. Please try again.
         </div>
-
-        {/* Table */}
-        <div className="bg-white rounded-lg shadow">
-          <PermissionsTable
-            permissions={permissionsData?.data || []}
-            isLoading={permissionsLoading}
-            onEdit={(permission) => {
-              setEditingPermission(permission);
-              setShowForm(true);
-            }}
-            onDelete={handleDelete}
-          />
-        </div>
-
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex justify-center gap-2">
-            <Button
-              variant="secondary"
-              onClick={() => setCurrentPage(Math.max(0, currentPage - 1))}
-              disabled={currentPage === 0}
-            >
-              Previous
-            </Button>
-            <div className="flex items-center gap-2">
-              {Array.from({ length: totalPages }, (_, i) => (
-                <button
-                  key={i}
-                  onClick={() => setCurrentPage(i)}
-                  className={`px-3 py-2 rounded ${
-                    currentPage === i
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
-                  }`}
-                >
-                  {i + 1}
-                </button>
-              ))}
-            </div>
-            <Button
-              variant="secondary"
-              onClick={() => setCurrentPage(Math.min(totalPages - 1, currentPage + 1))}
-              disabled={currentPage === totalPages - 1}
-            >
-              Next
-            </Button>
-          </div>
-        )}
-
-        {/* Status messages */}
-        {deleteMutation.isError && (
-          <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded">
-            Error deleting permission. Please try again.
-          </div>
-        )}
-      </div>
-    );
+      )}
+    </div>
+  );
 };
 
 export const PermissionsPage: React.FC = () => {

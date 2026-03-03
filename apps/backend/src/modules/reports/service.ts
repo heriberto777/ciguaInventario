@@ -16,8 +16,9 @@ export class ReportsService {
         companyId: string;
         onlyVariances?: boolean;
         brand?: string;
+        category?: string;
     }) {
-        const { countId, companyId, onlyVariances, brand } = params;
+        const { countId, companyId, onlyVariances, brand, category } = params;
 
         // Obtener la versión actual del conteo
         const count = await this.prisma.inventoryCount.findUnique({
@@ -28,15 +29,30 @@ export class ReportsService {
         const items = await this.prisma.inventoryCount_Item.findMany({
             where: {
                 countId,
-                version: count?.currentVersion || 1, // ← FILTRO CRÍTICO
+                version: count?.currentVersion || 1,
                 count: { companyId },
                 ...(brand ? { brand } : {}),
+                ...(category ? { category } : {}),
             },
             orderBy: [
                 { brand: 'asc' },
                 { itemCode: 'asc' }
             ]
         });
+
+        // Obtener descripciones de marcas y categorías para enriquecer el reporte
+        const uniqueBrandCodes = [...new Set(items.map(i => i.brand).filter(Boolean))] as string[];
+        const uniqueCategoryCodes = [...new Set(items.map(i => i.category).filter(Boolean))] as string[];
+
+        const classifications = await this.prisma.itemClassification.findMany({
+            where: {
+                companyId,
+                code: { in: [...uniqueBrandCodes, ...uniqueCategoryCodes] },
+                isActive: true
+            }
+        });
+
+        const classificationMap = new Map(classifications.map(c => [`${c.groupType}_${c.code}`, c.description]));
 
         const reportData = items.map(item => {
             const systemQty = item.systemQty || new Decimal(0);
@@ -45,11 +61,16 @@ export class ReportsService {
             const costPrice = item.costPrice || new Decimal(0);
             const varianceCost = difference.times(costPrice);
 
+            const brandDesc = classificationMap.get(`BRAND_${item.brand}`);
+            const categoryDesc = classificationMap.get(`CATEGORY_${item.category}`);
+
             return {
                 itemCode: item.itemCode,
                 itemName: item.itemName,
                 category: item.category,
+                categoryName: categoryDesc ? `${categoryDesc} (${item.category})` : item.category,
                 brand: item.brand || 'SIN MARCA',
+                brandName: brandDesc ? `${brandDesc} (${item.brand})` : (item.brand || 'SIN MARCA'),
                 subcategory: item.subcategory,
                 systemQty: systemQty.toNumber(),
                 countedQty: item.countedQty !== null ? countedQty.toNumber() : null,
@@ -65,12 +86,12 @@ export class ReportsService {
             ? reportData.filter(d => d.hasVariance)
             : reportData;
 
-        // Agrupar por Marca
+        // Agrupar por Marca (usando el nombre enriquecido)
         const groupedByBrand = filteredData.reduce((acc, item) => {
-            const brandName = item.brand;
-            if (!acc[brandName]) {
-                acc[brandName] = {
-                    brand: brandName,
+            const brandLabel = item.brandName;
+            if (!acc[brandLabel]) {
+                acc[brandLabel] = {
+                    brand: brandLabel,
                     items: [],
                     totalSystemValue: 0,
                     totalCountedValue: 0,
@@ -78,15 +99,15 @@ export class ReportsService {
                 };
             }
 
-            acc[brandName].items.push(item);
+            acc[brandLabel].items.push(item);
 
             // Totales del grupo
             const systemVal = item.systemQty * item.costPrice;
             const countedVal = (item.countedQty || 0) * item.costPrice;
 
-            acc[brandName].totalSystemValue += systemVal;
-            acc[brandName].totalCountedValue += countedVal;
-            acc[brandName].totalVarianceCost += (item.varianceCost || 0);
+            acc[brandLabel].totalSystemValue += systemVal;
+            acc[brandLabel].totalCountedValue += countedVal;
+            acc[brandLabel].totalVarianceCost += (item.varianceCost || 0);
 
             return acc;
         }, {} as Record<string, any>);
@@ -138,5 +159,57 @@ export class ReportsService {
             totalLossValue: totalLoss.toNumber(),
             totalGainValue: totalGain.toNumber(),
         };
+    }
+
+    /**
+     * Obtiene datos agregados de múltiples conteos para auditoría histórica
+     */
+    async getHistoricalAuditData(params: {
+        companyId: string;
+        startDate?: string;
+        endDate?: string;
+        warehouseId?: string;
+        status?: string[];
+    }) {
+        const { companyId, startDate, endDate, warehouseId, status } = params;
+
+        const where: any = { companyId };
+        if (startDate || endDate) {
+            where.completedAt = {
+                ...(startDate ? { gte: new Date(startDate) } : {}),
+                ...(endDate ? { lte: new Date(endDate) } : {}),
+            };
+        }
+        if (warehouseId) where.warehouseId = warehouseId;
+        if (status && status.length > 0) where.status = { in: status };
+
+        const counts = await this.prisma.inventoryCount.findMany({
+            where,
+            include: {
+                warehouse: { select: { name: true, code: true } },
+                _count: { select: { countItems: true, variances: true } }
+            },
+            orderBy: { completedAt: 'desc' },
+            take: 50
+        });
+
+        const summaries = await Promise.all(counts.map(async (count: any) => {
+            const summary = await this.getVarianceSummary({ countId: count.id, companyId });
+            return {
+                id: count.id,
+                code: count.sequenceNumber,
+                date: count.completedAt || count.updatedAt,
+                warehouse: count.warehouse.name,
+                status: count.status,
+                totalItems: summary.totalItems,
+                variances: summary.itemsWithVariance,
+                accuracy: summary.accuracyRate,
+                netCost: summary.netVarianceCost,
+                loss: summary.totalLossValue,
+                gain: summary.totalGainValue
+            };
+        }));
+
+        return summaries;
     }
 }

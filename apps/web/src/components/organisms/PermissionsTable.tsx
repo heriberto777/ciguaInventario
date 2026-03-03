@@ -4,6 +4,8 @@ import { Button } from '../atoms/Button';
 interface Permission {
   id: string;
   name: string;
+  resource: string;
+  action: string;
   description?: string;
   category: string;
   createdAt: string;
@@ -37,7 +39,7 @@ export const PermissionsTable: React.FC<PermissionsTableProps> = ({
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-left text-sm">
-        <thead className="bg-gray-100 border-b">
+        <thead className="bg-[var(--bg-hover)] border-b border-[var(--border-default)]">
           <tr>
             <th className="px-4 py-3 font-semibold">Name</th>
             <th className="px-4 py-3 font-semibold">Category</th>
@@ -48,16 +50,16 @@ export const PermissionsTable: React.FC<PermissionsTableProps> = ({
         </thead>
         <tbody>
           {permissions.map((permission) => (
-            <tr key={permission.id} className="border-b hover:bg-gray-50">
-              <td className="px-4 py-3 font-semibold text-gray-900">
+            <tr key={permission.id} className="border-b border-[var(--border-default)] hover:bg-[var(--bg-hover)] transition-colors">
+              <td className="px-4 py-3 font-bold text-[var(--text-primary)]">
                 {permission.name}
               </td>
               <td className="px-4 py-3">
-                <span className="inline-block bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded">
+                <span className="inline-block bg-purple-500/10 text-purple-500 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border border-purple-500/20">
                   {permission.category}
                 </span>
               </td>
-              <td className="px-4 py-3 text-gray-600">
+              <td className="px-4 py-3 text-[var(--text-secondary)]">
                 {permission.description || '-'}
               </td>
               <td className="px-4 py-3 text-xs">

@@ -28,6 +28,7 @@ export const addCountItemSchema = z.object({
   category: z.string().optional(),
   subcategory: z.string().optional(),
   notes: z.string().optional(),
+  lot: z.string().optional(),
 });
 
 export const updateCountItemSchema = z.object({
@@ -37,6 +38,7 @@ export const updateCountItemSchema = z.object({
   systemQty: z.coerce.number().nonnegative().optional(),
   countedQty: z.coerce.number().nonnegative().optional(),
   notes: z.string().optional(),
+  lot: z.string().optional(),
 });
 
 export const completeCountSchema = z.object({

@@ -20,10 +20,45 @@ export async function tenantGuard(request: FastifyRequest, reply: FastifyReply) 
     throw new UnauthorizedError('Invalid or missing token');
   }
 
-  const user = request.user as any;
-  if (!user || !user.companyId) {
-    request.log.error({ user }, 'Company ID not found in token');
+  const userPayload = request.user as any;
+
+  // Sliding Session & Active check
+  if (userPayload.sessionId) {
+    const session = await request.server.prisma.session.findUnique({
+      where: { id: userPayload.sessionId }
+    });
+
+    if (!session || !session.isActive) {
+      throw new UnauthorizedError('Session is no longer active');
+    }
+
+    try {
+      await request.server.prisma.session.update({
+        where: { id: userPayload.sessionId },
+        data: { lastActivityAt: new Date() }
+      });
+    } catch (e) {
+      // Ignorar si falla el update de actividad
+    }
+  }
+
+  if (!userPayload || !userPayload.companyId) {
+    request.log.error({ user: userPayload }, 'Company ID not found in token');
     throw new ForbiddenError('Company ID not found in token');
+  }
+
+  // 2. Validate User and Company are still active in DB
+  const user = await request.server.prisma.user.findUnique({
+    where: { id: userPayload.id },
+    include: { company: true }
+  });
+
+  if (!user || !user.isActive) {
+    throw new UnauthorizedError('User is inactive or not found');
+  }
+
+  if (!user.company || !user.company.isActive) {
+    throw new ForbiddenError('Company is inactive or not found');
   }
 
   // Inject companyId into request for use in handlers

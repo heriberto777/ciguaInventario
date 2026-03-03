@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import * as XLSX from 'xlsx';
 import { AppError } from '../../utils/errors';
+import { formatDateForERP } from '../../utils/date';
 
 export class ExcelExporterService {
     constructor(private fastify: FastifyInstance) { }
@@ -30,6 +31,23 @@ export class ExcelExporterService {
             throw new AppError(404, 'Conteo no encontrado');
         }
 
+        // 1.5 Auto-Finalización (si no se ha hecho)
+        if (!(count as any).finalizedVersion) {
+            await (this.fastify.prisma as any).inventoryCount.update({
+                where: { id: countId },
+                data: {
+                    status: 'FINALIZED',
+                    finalizedVersion: (count as any).currentVersion,
+                    approvedAt: new Date(),
+                }
+            });
+            (count as any).finalizedVersion = (count as any).currentVersion;
+            count.status = 'FINALIZED';
+        }
+
+        const versionToExport = (count as any).finalizedVersion || (count as any).currentVersion;
+        const countItems = await (this.fastify as any).inventoryCountRepository.getLatestItemsByVersion(countId, versionToExport);
+
         // 2. Obtener el mapping
         let mapping: any = null;
         if (mappingId) {
@@ -47,7 +65,7 @@ export class ExcelExporterService {
 
         // Si no hay mapping, usamos un formato estándar por defecto
         if (fieldMappings.length === 0) {
-            return this.generateDefaultExcel(count);
+            return this.generateDefaultExcel(count, countItems);
         }
 
         // 3. Obtener el correlativo base (opcional, si se usa CONSECUTIVE)
@@ -55,7 +73,7 @@ export class ExcelExporterService {
         let currentConsecutiveNum = 1;
 
         // 4. Preparar los datos basados en el mapping
-        const rows = count.countItems.map((item, index) => {
+        const rows = countItems.map((item: any, index: number) => {
             const row: Record<string, any> = {};
 
             fieldMappings.forEach(fm => {
@@ -70,7 +88,7 @@ export class ExcelExporterService {
                 if (sourceType === 'CONSTANT') {
                     value = sourceKey;
                 } else if (sourceType === 'AUTO_GENERATE') {
-                    if (sourceKey === 'NOW') value = new Date().toISOString();
+                    if (sourceKey === 'NOW') value = formatDateForERP();
                     else if (sourceKey === 'USER') value = 'system';
                     else if (sourceKey === 'CONSECUTIVE') {
                         value = `B${String(currentConsecutiveNum + index).padStart(8, '0')}`;
@@ -104,8 +122,8 @@ export class ExcelExporterService {
         return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
     }
 
-    private generateDefaultExcel(count: any): Buffer {
-        const rows = count.countItems.map((item: any) => ({
+    private generateDefaultExcel(count: any, countItems: any[]): Buffer {
+        const rows = countItems.map((item: any) => ({
             'Código': item.itemCode,
             'Descripción': item.itemName,
             'Ubicación': item.locationId, // Podríamos incluir el código si hiciéramos join

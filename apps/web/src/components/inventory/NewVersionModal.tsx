@@ -48,7 +48,7 @@ export const NewVersionModal: React.FC<NewVersionModalProps> = ({
 
         {/* Main Message */}
         <div className="text-center">
-          <h3 className="text-xl font-semibold text-gray-900 mb-2">
+          <h3 className="text-xl font-semibold text-[var(--text-primary)] mb-2">
             ¡Versión V{versionNumber} creada exitosamente!
           </h3>
           <p className="text-gray-600">
@@ -77,7 +77,7 @@ export const NewVersionModal: React.FC<NewVersionModalProps> = ({
 
         {/* Next Steps */}
         <div className="border-t pt-4">
-          <h4 className="font-semibold text-gray-900 mb-2">Próximos pasos:</h4>
+          <h4 className="font-semibold text-[var(--text-primary)] mb-2">Próximos pasos:</h4>
           <ol className="space-y-2 text-sm text-gray-700">
             <li className="flex items-start">
               <span className="font-bold text-blue-600 mr-3">1.</span>

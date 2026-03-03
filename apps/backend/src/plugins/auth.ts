@@ -8,26 +8,23 @@ export default fp(async (fastify: FastifyInstance) => {
     sign: {
       expiresIn: fastify.config.JWT_ACCESS_EXPIRY,
     },
-    cookie: {
-      cookieName: 'accessToken',
-      signed: true,
-    },
   });
 
   fastify.decorate('generateTokens', (payload: {
     userId: string;
     email: string;
     companyId: string;
+    sessionId?: string;
     roles?: string[];
     permissions?: string[];
   }) => {
     const accessToken = fastify.jwt.sign(
-      { ...payload, type: 'access' },
+      { ...payload, id: payload.userId, type: 'access' },
       { expiresIn: fastify.config.JWT_ACCESS_EXPIRY }
     );
 
     const refreshToken = fastify.jwt.sign(
-      { ...payload, type: 'refresh' },
+      { ...payload, id: payload.userId, type: 'refresh' },
       { expiresIn: fastify.config.JWT_REFRESH_EXPIRY }
     );
 
@@ -41,6 +38,7 @@ declare module 'fastify' {
       userId: string;
       email: string;
       companyId: string;
+      sessionId?: string;
       roles?: string[];
       permissions?: string[];
     }) => {
@@ -54,8 +52,10 @@ declare module '@fastify/jwt' {
   interface FastifyJWT {
     payload: {
       userId: string;
+      id: string; // Alias for userId to avoid many errors
       email: string;
       companyId: string;
+      sessionId?: string;
       roles?: string[];
       permissions?: string[];
       type: 'access' | 'refresh';

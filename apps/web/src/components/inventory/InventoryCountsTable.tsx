@@ -1,6 +1,7 @@
 'use client';
 
 import { Input } from '@/components/atoms/Input';
+import { Table, TableRow, TableCell } from '@/components/atoms/Table';
 
 interface CountItem {
   id: string;
@@ -46,95 +47,94 @@ export function InventoryCountsTable({
 
   const getVarianceColor = (item: CountItem) => {
     const { variance } = getVariance(item);
-    if (variance < 0) return 'text-green-600';
-    if (variance > 0) return 'text-red-600';
-    return 'text-gray-400';
+    if (variance < 0) return 'text-emerald-500 font-bold';
+    if (variance > 0) return 'text-red-500 font-bold';
+    return 'text-[var(--text-secondary)] opacity-50';
   };
 
-  return (
-    <div className="flex-1 overflow-y-auto bg-gray-50">
-      {items.length === 0 ? (
-        <div className="text-center py-12 bg-white rounded-lg border m-4">
-          <p className="text-gray-500">No hay items para mostrar</p>
-        </div>
-      ) : (
-        <div className="m-4">
-          <div className="bg-white rounded-lg border overflow-hidden">
-            <table className="w-full border-collapse">
-              <thead className="bg-gray-50 border-b">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Código</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Descripción</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">UOM</th>
-                  {hasSystemView && (
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Sistema</th>
-                  )}
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Conteo</th>
-                  {hasSystemView && (
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Varianza</th>
-                  )}
-                  <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700">Estado</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((item) => {
-                  const { variance, percent } = getVariance(item);
-                  const isVariance = variance !== 0;
+  const headers = [
+    'Código',
+    'Descripción',
+    'UOM',
+    ...(hasSystemView ? ['Sistema'] : []),
+    'Conteo',
+    ...(hasSystemView ? ['Varianza'] : []),
+    'Estado'
+  ];
 
-                  return (
-                    <tr
-                      key={item.id}
-                      className={`border-b hover:bg-gray-50 transition-colors ${isVariance ? 'bg-yellow-50' : ''}`}
-                    >
-                      <td className="px-4 py-3 font-mono text-sm text-gray-900 font-medium">
-                        {item.itemCode}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-700">{item.itemName}</td>
-                      <td className="px-4 py-3 text-right text-sm text-gray-600">{item.uom}</td>
-                      {hasSystemView && (
-                        <td className="px-4 py-3 text-right text-sm font-medium text-gray-900">
-                          {(typeof item.systemQty === 'string' ? parseFloat(item.systemQty) : item.systemQty).toFixed(1)}
-                        </td>
-                      )}
-                      <td className="px-4 py-3">
-                        <Input
-                          type="number"
-                          value={item.countedQty ?? ''}
-                          onChange={(e) =>
-                            onItemChange(item.id, e.target.value ? parseFloat(e.target.value) : 0)
-                          }
-                          placeholder="0"
-                          className="w-28 text-right text-sm"
-                          disabled={isLoading}
-                        />
-                      </td>
-                      {hasSystemView && (
-                        <td className={`px-4 py-3 text-right text-sm font-semibold ${getVarianceColor(item)}`}>
-                          {variance >= 0 ? '+' : ''}{variance.toFixed(1)} <br />
-                          <span className="text-xs text-gray-500">({percent.toFixed(1)}%)</span>
-                        </td>
-                      )}
-                      <td className="px-4 py-3 text-center">
-                        {item.countedQty !== undefined && (
-                          <div className="flex items-center justify-center">
-                            {syncingItemIds.has(item.id) ? (
-                              <span className="text-blue-600 font-semibold text-xs">⟳ Guardando...</span>
-                            ) : syncedItemIds.has(item.id) ? (
-                              <span className="text-green-600 font-semibold text-xs">✓ Guardado</span>
-                            ) : (
-                              <span className="text-gray-400 text-xs">•</span>
-                            )}
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+  if (items.length === 0) {
+    return (
+      <div className="text-center py-12 bg-[var(--bg-card)] rounded-xl border border-[var(--border-default)] m-4 shadow-sm">
+        <p className="text-[var(--text-secondary)] font-medium">No hay items para mostrar</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="m-4">
+      <Table headers={headers}>
+        {items.map((item) => {
+          const { variance, percent } = getVariance(item);
+          const isVariance = variance !== 0;
+
+          return (
+            <TableRow
+              key={item.id}
+              className={`${isVariance ? 'bg-amber-500/5' : ''}`}
+            >
+              <TableCell className="font-mono text-xs text-[var(--text-primary)] font-bold">
+                {item.itemCode}
+              </TableCell>
+              <TableCell className="text-sm text-[var(--text-primary)] font-medium max-w-md truncate">
+                {item.itemName}
+              </TableCell>
+              <TableCell className="text-right text-xs text-[var(--text-secondary)] font-bold">
+                {item.uom}
+              </TableCell>
+              {hasSystemView && (
+                <TableCell className="text-right text-sm font-bold text-[var(--text-primary)]">
+                  {(typeof item.systemQty === 'string' ? parseFloat(item.systemQty) : item.systemQty).toFixed(1)}
+                </TableCell>
+              )}
+              <TableCell className="text-right">
+                <div className="flex justify-end">
+                  <Input
+                    type="number"
+                    value={item.countedQty ?? ''}
+                    onChange={(e) =>
+                      onItemChange(item.id, e.target.value ? parseFloat(e.target.value) : 0)
+                    }
+                    placeholder="0"
+                    className="w-24 text-right text-sm"
+                    disabled={isLoading}
+                  />
+                </div>
+              </TableCell>
+              {hasSystemView && (
+                <TableCell className={`text-right text-sm font-bold ${getVarianceColor(item)}`}>
+                  {variance >= 0 ? '+' : ''}{variance.toFixed(1)}
+                  <div className="text-[10px] text-[var(--text-muted)] font-black uppercase tracking-tighter italic">
+                    ({percent.toFixed(1)}%)
+                  </div>
+                </TableCell>
+              )}
+              <TableCell className="text-center">
+                {item.countedQty !== undefined && (
+                  <div className="flex items-center justify-center">
+                    {syncingItemIds.has(item.id) ? (
+                      <span className="text-[var(--accent-primary)] font-semibold text-[10px] animate-pulse">⟳ GUARDANDO...</span>
+                    ) : syncedItemIds.has(item.id) ? (
+                      <span className="text-[var(--color-success)] font-semibold text-[10px]">✓ GUARDADO</span>
+                    ) : (
+                      <span className="text-[var(--text-muted)] text-xs opacity-20">•</span>
+                    )}
+                  </div>
+                )}
+              </TableCell>
+            </TableRow>
+          );
+        })}
+      </Table>
     </div>
   );
 }
