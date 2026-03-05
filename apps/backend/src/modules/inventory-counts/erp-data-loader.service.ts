@@ -2,9 +2,10 @@ import { FastifyInstance } from 'fastify';
 import { AppError } from '../../utils/errors';
 import { ERPConnectorFactory } from '../erp-connections';
 import { DynamicQueryBuilder } from '../mapping-config/query-builder';
-import { LoadInventoryFromERPService } from '../inventory/load-from-erp.service';
+import { LoadInventoryFromERPService, LoadedItem } from '../inventory/load-from-erp.service';
 import { ERPIntrospectionService } from '../erp-connections/erp-introspection';
 import { InventoryCountRepository } from './repository';
+import { PreviewCountItemsDTO } from './schema';
 
 /**
  * ERPDataLoaderService — Responsabilidad única: cargar datos desde ERP al conteo.
@@ -31,7 +32,8 @@ export class ERPDataLoaderService {
         countId: string,
         warehouseId: string,
         mappingId: string,
-        locationId: string
+        locationId: string,
+        itemCodes?: string[]
     ): Promise<{ countId: string; itemsLoaded: number; items: any[] }> {
         this.fastify.log.info(`📌 [loadCountFromMapping] Starting for count: ${countId}, mapping: ${mappingId}, location: ${locationId}`);
 
@@ -73,7 +75,23 @@ export class ERPDataLoaderService {
         try {
             const loadService = new LoadInventoryFromERPService(this.fastify);
             this.fastify.log.info(`🔍 [loadCountFromMapping] Building query from mapping...`);
-            const { sql } = loadService.buildQueryFromMapping(mapping);
+
+            // Inyectar filtros de códigos si se proporcionan con fusión inteligente (Preserva JOINS)
+            let mappingWithFilters: any = { ...mapping };
+            if (itemCodes && itemCodes.length > 0) {
+                const fieldMappings = Array.isArray(mapping.fieldMappings) ? (mapping.fieldMappings as any[]) : [];
+                const itemCodeMapping = fieldMappings.find((m: any) => m.target === 'itemCode');
+                if (itemCodeMapping) {
+                    const newFilters = [{
+                        field: itemCodeMapping.source,
+                        operator: 'IN',
+                        value: itemCodes
+                    }];
+                    mappingWithFilters = this.mergeFiltersIntoMapping(mapping, newFilters);
+                }
+            }
+
+            const { sql } = loadService.buildQueryFromMapping(mappingWithFilters);
             this.fastify.log.info(`✅ [loadCountFromMapping] SQL generated: ${sql.substring(0, 100)}...`);
 
             this.fastify.log.info(`🔍 [loadCountFromMapping] Executing query on ERP...`);
@@ -121,6 +139,7 @@ export class ERPDataLoaderService {
                     if (!existing.brand && item.brand) existing.brand = item.brand;
                     if (!existing.category && item.category) existing.category = item.category;
                     if (!existing.subcategory && item.subcategory) existing.subcategory = item.subcategory;
+                    if (!existing.itemProv && item.itemProv) existing.itemProv = item.itemProv;
                 } else {
                     itemMap.set(key, { ...item });
                 }
@@ -165,6 +184,7 @@ export class ERPDataLoaderService {
                             ...(item.category && { category: item.category }),
                             ...(item.subcategory && { subcategory: item.subcategory }),
                             ...(item.lot && { lot: item.lot }),
+                            ...(item.itemProv && { itemProv: item.itemProv }),
                         },
                         update: {
                             itemName: item.itemName || item.itemCode,
@@ -180,6 +200,7 @@ export class ERPDataLoaderService {
                             ...(item.category && { category: item.category }),
                             ...(item.subcategory && { subcategory: item.subcategory }),
                             ...(item.lot && { lot: item.lot }),
+                            ...(item.itemProv && { itemProv: item.itemProv }),
                         },
                     });
                     insertedCount++;
@@ -197,6 +218,88 @@ export class ERPDataLoaderService {
         } finally {
             await connector.disconnect();
             this.fastify.log.info(`✅ [loadCountFromMapping] Disconnected from ERP`);
+        }
+    }
+
+    /**
+     * Previsualiza artículos del ERP aplicando filtros de categoría y marca.
+     * Permite selección aleatoria si se solicita.
+     */
+    async previewFilteredItems(
+        companyId: string,
+        params: PreviewCountItemsDTO
+    ) {
+        const mapping = await this.fastify.prisma?.mappingConfig?.findFirst({
+            where: { id: params.mappingId, companyId, isActive: true },
+        });
+
+        if (!mapping) throw new AppError(404, 'Mapping not found');
+
+        const connection = await this.fastify.prisma?.eRPConnection?.findFirst({
+            where: { id: mapping.erpConnectionId, companyId, isActive: true },
+        });
+
+        if (!connection) throw new AppError(404, 'ERP Connection not found');
+
+        const connector = ERPConnectorFactory.create({
+            erpType: connection.erpType,
+            host: connection.host,
+            port: connection.port,
+            database: connection.database,
+            username: connection.username,
+            password: connection.password,
+        });
+
+        await connector.connect();
+
+        try {
+            const loadService = new LoadInventoryFromERPService(this.fastify);
+
+            // Inyectar filtros adicionales en el mapping para el builder sin perder JOINS o configuración original
+            const fieldMappings = Array.isArray(mapping.fieldMappings) ? (mapping.fieldMappings as any[]) : [];
+            const newFilters: any[] = [];
+
+            if (params.category) {
+                const categoryMatch = fieldMappings.find((m: any) => m.target === 'category');
+                if (categoryMatch) {
+                    const operator = Array.isArray(params.category) ? 'IN' : '=';
+                    newFilters.push({ field: categoryMatch.source, operator, value: params.category });
+                }
+            }
+
+            if (params.brand) {
+                const brandMatch = fieldMappings.find((m: any) => m.target === 'brand');
+                if (brandMatch) {
+                    const operator = Array.isArray(params.brand) ? 'IN' : '=';
+                    newFilters.push({ field: brandMatch.source, operator, value: params.brand });
+                }
+            }
+
+            const mappingWithFilters = this.mergeFiltersIntoMapping(mapping, newFilters);
+
+            let { sql } = loadService.buildQueryFromMapping(mappingWithFilters);
+
+            // Manejar aleatorización y límite en el motor de BD si es posible
+            if (params.randomLimit) {
+                if (connection.erpType === 'MSSQL') {
+                    // MSSQL: Reemplazar SELECT por SELECT TOP N y ORDER BY NEWID()
+                    sql = sql.replace(/SELECT/i, `SELECT TOP ${params.randomLimit}`);
+                    sql += ' ORDER BY NEWID()';
+                } else if (connection.erpType === 'MYSQL' || connection.erpType === 'POSTGRESQL') {
+                    sql += ` ORDER BY RANDOM() LIMIT ${params.randomLimit}`;
+                }
+            }
+
+            const introspection = new ERPIntrospectionService(connector);
+            const rawData = await introspection.previewQuery(sql, params.randomLimit || 1000);
+            const transformed = loadService.transformData(rawData, mapping);
+
+            return {
+                totalFound: transformed.length,
+                items: transformed.slice(0, 100), // Preview de máximo 100 para UI
+            };
+        } finally {
+            await connector.disconnect();
         }
     }
 
@@ -327,6 +430,7 @@ export class ERPDataLoaderService {
                 countedQty: 0,
                 costPrice: Number(item[itemsMapReverse['costPrice']] || 0),
                 salePrice: Number(item[itemsMapReverse['salePrice']] || 0),
+                itemProv: String(item[itemsMapReverse['itemProv']] || '').trim() || null,
                 lot: String(stockMap.get(String(item[itemsMapReverse['itemCode']] || '').toLowerCase())?.[stockMapReverse['lot']] || '').trim() ||
                     String(item[itemsMapReverse['lot']] || '').trim() || null,
             }));
@@ -453,5 +557,42 @@ export class ERPDataLoaderService {
             orderBy: { createdAt: 'asc' },
         });
         return loc?.id ?? null;
+    }
+
+    /**
+     * Fusiona filtros adicionales en el objeto MappingConfig sin perder JOINS o estructura original.
+     */
+    private mergeFiltersIntoMapping(mapping: any, newFilters: any[]): any {
+        const mappingWithFilters: any = { ...mapping };
+        const originalFilters = mapping.filters;
+
+        if (Array.isArray(originalFilters)) {
+            // Formato array-posicional: Intentar encontrar un array de filtros existente para mergear
+            const normalizedArray = [...(originalFilters as any[])];
+            let merged = false;
+            for (let i = 0; i < normalizedArray.length; i++) {
+                const element = normalizedArray[i];
+                if (Array.isArray(element) && element.length > 0) {
+                    const first = element[0];
+                    if (typeof first === 'object' && first !== null && ('field' in first || 'operator' in first)) {
+                        normalizedArray[i] = [...element, ...newFilters];
+                        merged = true;
+                        break;
+                    }
+                }
+            }
+            if (!merged && newFilters.length > 0) normalizedArray.push(newFilters);
+            mappingWithFilters.filters = normalizedArray;
+        } else if (typeof originalFilters === 'object' && originalFilters !== null) {
+            // Formato objeto estructurado
+            const normalizedObj = { ...(originalFilters as any) };
+            normalizedObj.filters = Array.isArray(normalizedObj.filters) ? [...normalizedObj.filters, ...newFilters] : newFilters;
+            mappingWithFilters.filters = normalizedObj;
+        } else {
+            // Caso vacío o nulo
+            mappingWithFilters.filters = newFilters;
+        }
+
+        return mappingWithFilters;
     }
 }

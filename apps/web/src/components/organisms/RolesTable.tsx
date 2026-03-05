@@ -84,7 +84,7 @@ export const RolesTable: React.FC<RolesTableProps> = ({
               <td className="px-4 py-3 text-xs">
                 {new Date(role.createdAt).toLocaleDateString()}
               </td>
-              <td className="px-4 py-3 space-x-1">
+              <td className="px-4 py-3 actions-cell">
                 {onManagePermissions && (
                   <Button
                     variant="secondary"

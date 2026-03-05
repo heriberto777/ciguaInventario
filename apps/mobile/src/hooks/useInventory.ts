@@ -23,13 +23,14 @@ export interface CountItem {
   barCodeVt?: string;
   status: 'PENDING' | 'COMPLETED' | 'IN_PROGRESS';
   hasVariance: boolean;
+  reservedQty?: number;
 }
 
 export interface InventoryCount {
   id: string;
   sequenceNumber: number;
   code: string;
-  status: 'DRAFT' | 'ACTIVE' | 'ON_HOLD' | 'COMPLETED' | 'CANCELLED' | 'CLOSED';
+  status: 'DRAFT' | 'ACTIVE' | 'ON_HOLD' | 'SUBMITTED' | 'COMPLETED' | 'CANCELLED' | 'CLOSED';
   currentVersion: number;
   countItems: CountItem[];
   createdAt: string;

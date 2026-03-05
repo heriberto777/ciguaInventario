@@ -63,6 +63,7 @@ export const VarianceTable: React.FC<VarianceTableProps> = ({
     ...(onSelectAll ? [''] : []),
     'Artículo',
     'Sistema',
+    'Reserva',
     'Físico',
     'Dif.',
     '%',
@@ -113,6 +114,7 @@ export const VarianceTable: React.FC<VarianceTableProps> = ({
                 )}
               </TableCell>
               <TableCell className="text-center font-medium">{Number(variance.systemQty).toFixed(1)}</TableCell>
+              <TableCell className="text-center font-bold text-blue-600 bg-blue-50/20">{Number((variance as any).reservedQty || 0).toFixed(1)}</TableCell>
               <TableCell className="text-center font-medium">{Number(variance.countedQty).toFixed(1)}</TableCell>
               <TableCell className={`text-center font-bold ${Number(variance.difference) > 0 ? 'text-[var(--color-info)]' : Number(variance.difference) < 0 ? 'text-[var(--color-danger)]' : 'text-[var(--text-muted)]'}`}>
                 {Number(variance.difference) > 0 ? '+' : ''}{Number(variance.difference).toFixed(1)}
@@ -126,9 +128,9 @@ export const VarianceTable: React.FC<VarianceTableProps> = ({
                 </span>
               </TableCell>
               {(onApprove || onReject) && (
-                <TableCell className="text-center">
+                <TableCell className="text-right actions-cell">
                   {variance.status === 'PENDING' && (
-                    <div className="flex gap-2 justify-center">
+                    <div className="flex gap-2 justify-end">
                       {onApprove && (
                         <button
                           onClick={() => onApprove(variance.id)}

@@ -11,7 +11,9 @@ import { NewVersionModal } from '@/components/inventory/NewVersionModal';
 import { NotificationModal } from '@/components/atoms/NotificationModal';
 import { ConfirmModal } from '@/components/atoms/ConfirmModal';
 import { ProcessingModal } from '@/components/atoms/ProcessingModal';
+import { ItemSelectionModal } from '@/components/inventory/ItemSelectionModal';
 import { useAuthStore } from '@/store/auth';
+import { usePermissions } from '@/hooks/usePermissions';
 
 const apiClient = getApiClient();
 
@@ -52,6 +54,7 @@ interface CountItem {
   subcategory?: string;
   brand?: string;
   lot?: string;
+  reservedQty?: number;
 }
 
 interface Warehouse {
@@ -146,8 +149,13 @@ export default function InventoryCountPage() {
   const [filterSubcategory, setFilterSubcategory] = useState('');
   const [filterBrand, setFilterBrand] = useState('');
 
-  // Estados para creación por Excel
-  const [creationMode, setCreationMode] = useState<'erp' | 'excel'>('erp');
+  // Tabs para la vista de proceso
+  const [activeTab, setActiveTab] = useState<'items' | 'dispatches'>('items');
+
+  // Estados para creación por Excel / Aleatorio
+  const [creationMode, setCreationMode] = useState<'erp' | 'excel' | 'random'>('erp');
+  const [selectedItemCodes, setSelectedItemCodes] = useState<string[]>([]);
+  const [isSelectionModalOpen, setIsSelectionModalOpen] = useState(false);
   const [excelFile, setExcelFile] = useState<File | null>(null);
   const [uploadingExcel, setUploadingExcel] = useState(false);
   const [excelPreview, setExcelPreview] = useState<{
@@ -234,20 +242,21 @@ export default function InventoryCountPage() {
   };
 
   // Permisos y Roles
-  const user = useAuthStore((state) => state.user);
-  const permissions = user?.permissions || [];
-  const roles = user?.roles || [];
-  const isSuperAdmin = roles.includes('SuperAdmin');
+  const { hasPermission, isSuperAdmin } = usePermissions();
 
-  const hasSystemView = isSuperAdmin || permissions.includes('inventory:view_qty') || permissions.includes('inventory:manage');
-  const hasVarianceView = isSuperAdmin || permissions.includes('inventory:view_variances') || permissions.includes('inventory:manage');
-  const canManageUsers = isSuperAdmin || permissions.includes('users:manage');
-  const canSyncERP = isSuperAdmin || permissions.includes('inventory:sync_erp') || permissions.includes('inventory:manage') || permissions.includes('inventory:sync');
-  const canEditSettings = isSuperAdmin || permissions.includes('inventory:edit_settings') || permissions.includes('inventory:manage');
-  const canDelete = isSuperAdmin || permissions.includes('inventory:delete') || permissions.includes('inventory:manage');
-  const canExport = isSuperAdmin || permissions.includes('inventory:export_excel') || permissions.includes('inventory:manage');
-  const canReopen = isSuperAdmin || permissions.includes('inventory:reopen') || permissions.includes('inventory:manage');
-  const canCreate = isSuperAdmin || permissions.includes('inventory:create') || permissions.includes('inventory:manage');
+  const hasSystemView = hasPermission('inventory:view_qty');
+  const hasVarianceView = hasPermission('inventory:view_variances');
+  const canSyncERP = hasPermission('sync:erp');
+  const canDelete = hasPermission('inv_counts:delete');
+  const canExport = hasPermission('reports:export');
+  const canExecute = hasPermission('inv_counts:execute');
+  const canEditItems = hasPermission('inventory:edit_items');
+  const canEditQuantity = canExecute || canEditItems;
+  const canComplete = hasPermission('inv_counts:complete');
+  const canFinalize = hasPermission('inv_counts:finalize');
+  const canReopen = hasPermission('inv_counts:reactivate');
+  const canCreate = hasPermission('inv_counts:create');
+  const canManageUsers = hasPermission('users:manage');
 
   // Refs para debounce
   const debounceTimeoutRef = useRef<{ [key: string]: NodeJS.Timeout }>({});
@@ -399,12 +408,13 @@ export default function InventoryCountPage() {
         } finally {
           setUploadingExcel(false);
         }
-      } else if (creationMode === 'erp' && mappingId) {
+      } else if ((creationMode === 'erp' || creationMode === 'random') && mappingId) {
         try {
           await apiClient.post(`/inventory-counts/${count.id}/load-from-mapping`, {
             warehouseId,
             mappingId,
             locationId: locationId || undefined,
+            itemCodes: creationMode === 'random' ? selectedItemCodes : undefined,
           });
         } catch (error) {
           console.error('Error loading from mapping:', error);
@@ -612,6 +622,40 @@ export default function InventoryCountPage() {
     },
   });
 
+  const [invoiceNumber, setInvoiceNumber] = useState('');
+
+  const reserveInvoiceMutation = useMutation({
+    mutationFn: async (invNum: string) => {
+      showProcessing(`Buscando factura ${invNum} en el ERP...`);
+      const response = await apiClient.post(`/inventory-counts/${selectedCount?.id}/reserve-invoice`, {
+        invoiceNumber: invNum
+      });
+      return response.data;
+    },
+    onSuccess: () => {
+      successProcessing(`Factura reservada correctamente.`);
+      setInvoiceNumber('');
+      fetchCountFromServer(selectedCount?.id!);
+      setTimeout(stopProcessing, 1500);
+    },
+    onError: (error: any) => {
+      errorProcessing(error.response?.data?.error || 'No se pudo reservar la factura.');
+    }
+  });
+
+  const removeReservationMutation = useMutation({
+    mutationFn: async (invoiceId: string) => {
+      showProcessing('Eliminando reserva...');
+      await apiClient.delete(`/inventory-counts/${selectedCount?.id}/reserved-invoices/${invoiceId}`);
+    },
+    onSuccess: () => {
+      successProcessing('Reserva eliminada.');
+      fetchCountFromServer(selectedCount?.id!);
+      setTimeout(stopProcessing, 1500);
+    },
+    onError: () => errorProcessing('No se pudo eliminar la reserva.')
+  });
+
   const pauseMutation = useMutation({
     mutationFn: async (countId: string) => {
       const response = await apiClient.post(`/inventory-counts/${countId}/pause`, {});
@@ -807,7 +851,10 @@ export default function InventoryCountPage() {
   const getVariance = (item: CountItem) => {
     const systemQty = typeof item.systemQty === 'string' ? parseFloat(item.systemQty) : item.systemQty;
     const counted = item.countedQty ?? 0;
-    const variance = counted - systemQty;
+    const reserved = item.reservedQty ?? 0;
+
+    // Formula Maestra: Varianza = Físico - Reservado - Sistema
+    const variance = counted - reserved - systemQty;
     const percent = systemQty > 0 ? (variance / systemQty) * 100 : 0;
     return {
       variance: Math.round(variance * 10) / 10,
@@ -996,9 +1043,11 @@ export default function InventoryCountPage() {
                                 <Button onClick={() => handleProcessCount(count.id)} variant="primary" size="sm">
                                   📝 Recontar
                                 </Button>
-                                <Button onClick={() => completeCountMutation.mutate(count.id)} variant="success" size="sm">
-                                  ✓ Finalizar
-                                </Button>
+                                {canComplete && (
+                                  <Button onClick={() => completeCountMutation.mutate(count.id)} variant="success" size="sm">
+                                    ✓ Finalizar
+                                  </Button>
+                                )}
                               </>
                             )}
 
@@ -1089,7 +1138,11 @@ export default function InventoryCountPage() {
 
   // CREATE VIEW
   if (view === 'create') {
-    const isFormValid = warehouseId && (creationMode === 'erp' ? mappingId : excelFile);
+    const isFormValid = warehouseId && (
+      creationMode === 'erp' ? mappingId :
+        creationMode === 'random' ? (mappingId && selectedItemCodes.length > 0) :
+          excelFile
+    );
 
     const downloadTemplate = async () => {
       try {
@@ -1130,32 +1183,56 @@ export default function InventoryCountPage() {
 
             <div>
               <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted mb-3 block">🎯 Método de Recopilación</Label>
-              <div className="flex gap-3 bg-hover/30 p-1.5 rounded-2xl border border-border-default">
+              <div className="flex gap-2 bg-hover/30 p-1 rounded-2xl border border-border-default">
                 <button
                   onClick={() => setCreationMode('erp')}
-                  className={`flex-1 py-3 px-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${creationMode === 'erp' ? 'bg-accent-primary text-white shadow-lg' : 'text-muted hover:text-primary'}`}
+                  className={`flex-1 py-3 px-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${creationMode === 'erp' ? 'bg-accent-primary text-white shadow-lg' : 'text-muted hover:text-primary'}`}
                 >
                   🔗 ERP Sync
                 </button>
                 <button
-                  onClick={() => setCreationMode('excel')}
-                  className={`flex-1 py-3 px-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${creationMode === 'excel' ? 'bg-accent-secondary text-white shadow-lg' : 'text-muted hover:text-primary'}`}
+                  onClick={() => setCreationMode('random')}
+                  className={`flex-1 py-3 px-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${creationMode === 'random' ? 'bg-accent-primary text-white shadow-lg' : 'text-muted hover:text-primary'}`}
                 >
-                  📊 Excel Load
+                  🎲 Aleatorio
+                </button>
+                <button
+                  onClick={() => setCreationMode('excel')}
+                  className={`flex-1 py-3 px-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${creationMode === 'excel' ? 'bg-accent-secondary text-white shadow-lg' : 'text-muted hover:text-primary'}`}
+                >
+                  📊 Excel
                 </button>
               </div>
             </div>
 
-            {creationMode === 'erp' && (
-              <div className="animate-in slide-in-from-top-2 duration-300">
-                <Label htmlFor="mapping" className="text-[10px] font-black uppercase tracking-[0.2em] text-muted mb-3 block">🔗 Mapeo de Integración</Label>
-                <select
-                  id="mapping" value={mappingId} onChange={(e) => setMappingId(e.target.value)}
-                  className={`w-full bg-hover/50 border border-border-default rounded-2xl px-5 py-4 text-primary focus:outline-none focus:ring-2 focus:ring-accent-primary/20 transition-all font-medium appearance-none`}
-                >
-                  <option value="">Selecciona un mapeo</option>
-                  {availableMappings.map((mapping: any) => <option key={mapping.id} value={mapping.id}>{mapping.datasetType}</option>)}
-                </select>
+            {(creationMode === 'erp' || creationMode === 'random') && (
+              <div className="animate-in slide-in-from-top-2 duration-300 space-y-6">
+                <div>
+                  <Label htmlFor="mapping" className="text-[10px] font-black uppercase tracking-[0.2em] text-muted mb-3 block">🔗 Mapeo de Integración</Label>
+                  <select
+                    id="mapping" value={mappingId} onChange={(e) => setMappingId(e.target.value)}
+                    className={`w-full bg-hover/50 border border-border-default rounded-2xl px-5 py-4 text-primary focus:outline-none focus:ring-2 focus:ring-accent-primary/20 transition-all font-medium appearance-none`}
+                  >
+                    <option value="">Selecciona un mapeo</option>
+                    {availableMappings.map((mapping: any) => <option key={mapping.id} value={mapping.id}>{mapping.datasetType}</option>)}
+                  </select>
+                </div>
+
+                {creationMode === 'random' && mappingId && (
+                  <div className="bg-accent-primary/5 p-4 rounded-2xl border border-accent-primary/20 space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-accent-primary">Selección de Ítems</span>
+                      <span className="text-[10px] font-bold text-muted">{selectedItemCodes.length} filtrados</span>
+                    </div>
+                    <Button
+                      variant="primary"
+                      onClick={() => setIsSelectionModalOpen(true)}
+                      className="w-full py-3 text-[10px] uppercase font-black"
+                    >
+                      🎲 Configurar Aleatorio / Filtros
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1244,6 +1321,16 @@ export default function InventoryCountPage() {
           status={processing.status}
           onClose={processing.status !== 'processing' ? stopProcessing : undefined}
         />
+
+        {mappingId && (
+          <ItemSelectionModal
+            isOpen={isSelectionModalOpen}
+            onClose={() => setIsSelectionModalOpen(false)}
+            onConfirm={(codes) => setSelectedItemCodes(codes)}
+            mappingId={mappingId}
+            warehouseId={warehouseId}
+          />
+        )}
       </div>
     );
   }
@@ -1273,11 +1360,13 @@ export default function InventoryCountPage() {
           <div className="max-w-7xl mx-auto flex gap-3 flex-wrap">
             {selectedCount.status === 'DRAFT' && (
               <>
-                <Button onClick={() => handleActionWithConfirm(
-                  '✓ Iniciar Conteo',
-                  '¿Estás seguro de que deseas iniciar este conteo? Esto permitirá que el personal empiece a registrar cantidades.',
-                  () => startCountMutation.mutate(selectedCount.id)
-                )} variant="primary">✓ Iniciar Conteo</Button>
+                {canCreate && (
+                  <Button onClick={() => handleActionWithConfirm(
+                    '✓ Iniciar Conteo',
+                    '¿Estás seguro de que deseas iniciar este conteo? Esto permitirá que el personal empiece a registrar cantidades.',
+                    () => startCountMutation.mutate(selectedCount.id)
+                  )} variant="primary">✓ Iniciar Conteo</Button>
+                )}
                 {canDelete && (
                   <Button onClick={() => handleActionWithConfirm(
                     '✕ Cancelar Conteo',
@@ -1290,12 +1379,16 @@ export default function InventoryCountPage() {
             )}
             {selectedCount.status === 'ACTIVE' && (
               <>
-                <Button onClick={() => handleActionWithConfirm(
-                  '✓ Finalizar Conteo',
-                  '¿Has terminado de registrar todos los artículos? Una vez finalizado, el conteo pasará a revisión.',
-                  () => completeCountMutation.mutate(selectedCount.id)
-                )} variant="primary">✓ Finalizar</Button>
-                <Button onClick={() => pauseMutation.mutate(selectedCount.id)} variant="secondary">⏸ Pausar</Button>
+                {canComplete && (
+                  <Button onClick={() => handleActionWithConfirm(
+                    '✓ Finalizar Conteo',
+                    '¿Has terminado de registrar todos los artículos? Una vez finalizado, el conteo pasará a revisión.',
+                    () => completeCountMutation.mutate(selectedCount.id)
+                  )} variant="primary">✓ Finalizar</Button>
+                )}
+                {canComplete && (
+                  <Button onClick={() => pauseMutation.mutate(selectedCount.id)} variant="secondary">⏸ Pausar</Button>
+                )}
                 {canDelete && (
                   <Button onClick={() => handleActionWithConfirm(
                     '✕ Cancelar Conteo',
@@ -1308,16 +1401,20 @@ export default function InventoryCountPage() {
             )}
             {selectedCount.status === 'ON_HOLD' && (
               <>
-                <Button onClick={() => resumeMutation.mutate(selectedCount.id)} variant="secondary">▶ Reanudar</Button>
-                <Button onClick={() => handleActionWithConfirm(
-                  '✓ Finalizar / Entregar',
-                  '¿Deseas finalizar y entregar este conteo que estaba en pausa?',
-                  () => completeCountMutation.mutate(selectedCount.id)
-                )} variant="primary" disabled={completeCountMutation.isPending}>✓ Finalizar / Entregar</Button>
+                {canComplete && (
+                  <>
+                    <Button onClick={() => resumeMutation.mutate(selectedCount.id)} variant="primary">▶️ Reanudar</Button>
+                    <Button onClick={() => handleActionWithConfirm(
+                      '✓ Finalizar / Entregar',
+                      '¿Deseas finalizar y entregar este conteo que estaba en pausa?',
+                      () => completeCountMutation.mutate(selectedCount.id)
+                    )} variant="secondary" isLoading={completeCountMutation.isPending}>✓ Finalizar / Entregar</Button>
+                  </>
+                )}
                 {canDelete && (
                   <Button onClick={() => handleActionWithConfirm(
                     '✕ Cancelar Conteo',
-                    '¿Estás seguro de que deseas cancelar este conteo?',
+                    '¿Estás seguro de que deseas cancelar este conteo en pausa?',
                     () => cancelCountMutation.mutate(selectedCount.id),
                     true
                   )} variant="danger">✕ Cancelar</Button>
@@ -1382,140 +1479,237 @@ export default function InventoryCountPage() {
           </div>
         </div>
 
+        {/* Tab Switcher */}
+        <div className="flex-shrink-0 border-b border-border-default bg-card px-8">
+          <div className="max-w-7xl mx-auto flex gap-8">
+            <button
+              onClick={() => setActiveTab('items')}
+              className={`py-4 text-xs font-black uppercase tracking-widest transition-all border-b-2 ${activeTab === 'items' ? 'border-accent-primary text-primary' : 'border-transparent text-muted hover:text-primary'}`}
+            >
+              📦 Items a Contar
+            </button>
+            <button
+              onClick={() => setActiveTab('dispatches')}
+              className={`py-4 text-xs font-black uppercase tracking-widest transition-all border-b-2 ${activeTab === 'dispatches' ? 'border-accent-primary text-primary' : 'border-transparent text-muted hover:text-primary'}`}
+            >
+              📄 Facturas Reservadas
+            </button>
+          </div>
+        </div>
+
         <div className="flex-1 overflow-y-auto custom-scrollbar">
           <div className="max-w-7xl mx-auto w-full">
-            <div className="bg-card border-b border-border-default p-8">
-              {hasVarianceView && (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                  <div className="bg-warning/5 border border-warning/10 rounded-2xl p-6 shadow-sm">
-                    <p className="text-[10px] font-black text-warning uppercase tracking-[0.2em] mb-1">Varianzas</p>
-                    <p className="text-4xl font-black text-warning">{filteredItems.filter(i => getVariance(i).variance !== 0).length}</p>
-                  </div>
-                  <div className="bg-success/5 border border-success/10 rounded-2xl p-6 shadow-sm">
-                    <p className="text-[10px] font-black text-success uppercase tracking-[0.2em] mb-1">Bajo</p>
-                    <p className="text-4xl font-black text-success">{filteredItems.filter(i => getVariance(i).variance < 0).length}</p>
-                  </div>
-                  <div className="bg-danger/5 border border-danger/10 rounded-3xl p-6 shadow-sm">
-                    <p className="text-[10px] font-black text-danger uppercase tracking-[0.2em] mb-1">Sobre</p>
-                    <p className="text-4xl font-black text-danger">{filteredItems.filter(i => getVariance(i).variance > 0).length}</p>
+            {activeTab === 'items' ? (
+              <>
+                <div className="bg-card border-b border-border-default p-8">
+                  {hasVarianceView && (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                      <div className="bg-warning/5 border border-warning/10 rounded-2xl p-6 shadow-sm">
+                        <p className="text-[10px] font-black text-warning uppercase tracking-[0.2em] mb-1">Varianzas</p>
+                        <p className="text-4xl font-black text-warning">{filteredItems.filter(i => getVariance(i).variance !== 0).length}</p>
+                      </div>
+                      <div className="bg-success/5 border border-success/10 rounded-2xl p-6 shadow-sm">
+                        <p className="text-[10px] font-black text-success uppercase tracking-[0.2em] mb-1">Bajo</p>
+                        <p className="text-4xl font-black text-success">{filteredItems.filter(i => getVariance(i).variance < 0).length}</p>
+                      </div>
+                      <div className="bg-danger/5 border border-danger/10 rounded-3xl p-6 shadow-sm">
+                        <p className="text-[10px] font-black text-danger uppercase tracking-[0.2em] mb-1">Sobre</p>
+                        <p className="text-4xl font-black text-danger">{filteredItems.filter(i => getVariance(i).variance > 0).length}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="space-y-3">
+                    <Input
+                      ref={searchInputRef}
+                      placeholder="🔍 Escanea o busca por código/descripción... (Barcode ready)"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      onKeyDown={handleSearchKeyDown}
+                      autoFocus
+                    />
+                    <div className="flex gap-2 flex-wrap">
+                      <select
+                        value={filterCategory}
+                        onChange={(e) => setFilterCategory(e.target.value)}
+                        style={selectStyle}
+                      >
+                        <option value="">📁 Todas las Categorías</option>
+                        {categories.map((c) => (
+                          <option key={c.value} value={c.value}>{c.label}</option>
+                        ))}
+                      </select>
+
+                      <select
+                        value={filterSubcategory}
+                        onChange={(e) => setFilterSubcategory(e.target.value)}
+                        style={selectStyle}
+                      >
+                        <option value="">📂 Todas las Subcategorías</option>
+                        {subcategories.map((s) => (
+                          <option key={s.value} value={s.value}>{s.label}</option>
+                        ))}
+                      </select>
+
+                      <select
+                        value={filterBrand}
+                        onChange={(e) => setFilterBrand(e.target.value)}
+                        style={selectStyle}
+                      >
+                        <option value="">🏷️ Todas las Marcas</option>
+                        {brands.map((b) => (
+                          <option key={b.value} value={b.value}>{b.label}</option>
+                        ))}
+                      </select>
+
+                      {hasVarianceView && (
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="checkbox" checked={filterVarianceOnly} onChange={(e) => setFilterVarianceOnly(e.target.checked)} className="rounded w-4 h-4" />
+                          <span className="text-sm font-medium">Solo variado</span>
+                        </label>
+                      )}
+                    </div>
                   </div>
                 </div>
-              )}
 
-              <div className="space-y-3">
-                <Input
-                  ref={searchInputRef}
-                  placeholder="🔍 Escanea o busca por código/descripción... (Barcode ready)"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  onKeyDown={handleSearchKeyDown}
-                  autoFocus
-                />
-                <div className="flex gap-2 flex-wrap">
-                  <select
-                    value={filterCategory}
-                    onChange={(e) => setFilterCategory(e.target.value)}
-                    style={selectStyle}
-                  >
-                    <option value="">📁 Todas las Categorías</option>
-                    {categories.map((c) => (
-                      <option key={c.value} value={c.value}>{c.label}</option>
-                    ))}
-                  </select>
+                <div className="p-8">
+                  <div className="bg-card rounded-2xl border border-border-default overflow-hidden shadow-2xl">
+                    <table className="w-full">
+                      <thead className="bg-hover/30 border-b border-border-default">
+                        <tr>
+                          <th className="px-6 py-5 text-left text-[10px] font-black uppercase tracking-[0.2em] text-muted">Item</th>
+                          <th className="px-6 py-5 text-left text-[10px] font-black uppercase tracking-[0.2em] text-muted">Lote</th>
+                          <th className="px-6 py-5 text-right text-[10px] font-black uppercase tracking-[0.2em] text-muted">UOM</th>
+                          {hasSystemView && <th className="px-6 py-5 text-right text-[10px] font-black uppercase tracking-[0.2em] text-muted">Stock Teórico</th>}
+                          <th className="px-6 py-5 text-right text-[10px] font-black uppercase tracking-[0.2em] text-muted">Reserva</th>
+                          <th className="px-6 py-5 text-right text-[10px] font-black uppercase tracking-[0.2em] text-muted">Conteo Físico</th>
+                          {hasVarianceView && <th className="px-6 py-5 text-right text-[10px] font-black uppercase tracking-[0.2em] text-muted">Diferencia</th>}
+                          <th className="px-6 py-5 text-center text-[10px] font-black uppercase tracking-[0.2em] text-muted">Estado</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredItems.map((item, index) => {
+                          const { variance, percent } = getVariance(item);
+                          return (
+                            <tr key={item.id} className={`border-b border-border-default/50 hover:bg-hover/40 transition-colors ${variance !== 0 ? 'bg-warning/5' : ''}`}>
+                              <td className="px-6 py-5">
+                                <p className="font-mono text-sm font-black text-primary">{item.itemCode}</p>
+                                <p className="text-[10px] text-muted font-bold uppercase tracking-wider truncate max-w-[250px] mt-1">{item.itemName}</p>
+                              </td>
+                              <td className="px-6 py-5">
+                                <span className="px-2 py-1 rounded-lg bg-hover text-[10px] font-black uppercase tracking-widest text-muted border border-border-default">
+                                  {item.lot || 'ND'}
+                                </span>
+                              </td>
+                              <td className="px-6 py-5 text-right font-bold text-secondary text-sm">{item.uom}</td>
+                              {hasSystemView && <td className="px-6 py-5 text-right font-black text-primary">{(typeof item.systemQty === 'string' ? parseFloat(item.systemQty) : item.systemQty).toFixed(1)}</td>}
+                              <td className="px-6 py-5 text-right">
+                                {item.reservedQty && item.reservedQty > 0 ? (
+                                  <span className="px-2 py-1 rounded bg-accent-secondary/10 text-accent-secondary font-black text-xs">
+                                    -{item.reservedQty.toFixed(1)}
+                                  </span>
+                                ) : (
+                                  <span className="text-muted/30 text-xs">-</span>
+                                )}
+                              </td>
+                              <td className="px-6 py-5">
+                                <Input
+                                  ref={index === 0 ? firstItemQtyRef : null}
+                                  type="number" value={item.countedQty ?? ''}
+                                  onChange={(e) => handleItemChange(item.id, parseFloat(e.target.value) || 0)}
+                                  onKeyDown={(e) => handleQtyKeyDown(e, item.id)}
+                                  className="w-28 text-right ml-auto bg-card border-border-default h-12 rounded-xl font-black text-lg focus:ring-accent-primary/20"
+                                  disabled={!canEditQuantity}
+                                />
+                              </td>
+                              {hasVarianceView && (
+                                <td className={`px-6 py-5 text-right font-black ${variance < 0 ? 'text-success' : variance > 0 ? 'text-danger' : 'text-muted/30'}`}>
+                                  <div className="flex flex-col items-end">
+                                    <span className="text-base">{variance >= 0 ? '+' : ''}{variance.toFixed(1)}</span>
+                                    <span className="text-[10px] opacity-70 tracking-tighter">({percent.toFixed(1)}%)</span>
+                                  </div>
+                                </td>
+                              )}
+                              <td className="px-6 py-5 text-center">
+                                {syncingItemIds.has(item.id) ? (
+                                  <div className="w-5 h-5 border-2 border-accent-primary/20 border-t-accent-primary rounded-full animate-spin mx-auto"></div>
+                                ) : syncedItemIds.has(item.id) ? (
+                                  <span className="text-success text-xl">✓</span>
+                                ) : null}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="p-8 space-y-8 animate-in fade-in duration-500">
+                {/* Buscador de Facturas */}
+                <div className="bg-card rounded-2xl border border-border-default p-10 shadow-lg">
+                  <div className="flex flex-col md:flex-row items-center gap-6">
+                    <div className="flex-1">
+                      <h3 className="text-xl font-black text-primary uppercase tracking-widest">Reserva por Factura</h3>
+                      <p className="text-muted text-xs font-bold uppercase tracking-widest mt-1">Sincronización con ERP para conciliación de despachos</p>
+                    </div>
+                    <div className="flex gap-2 w-full md:w-auto">
+                      <Input
+                        placeholder="Introduce # factura (ej: 001-002-3490)"
+                        className="min-w-[300px]"
+                        value={invoiceNumber}
+                        onChange={(e) => setInvoiceNumber(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && reserveInvoiceMutation.mutate(invoiceNumber)}
+                      />
+                      <Button
+                        onClick={() => reserveInvoiceMutation.mutate(invoiceNumber)}
+                        disabled={!invoiceNumber || reserveInvoiceMutation.isPending}
+                        variant="primary"
+                      >
+                        🔍 Reservar
+                      </Button>
+                    </div>
+                  </div>
+                </div>
 
-                  <select
-                    value={filterSubcategory}
-                    onChange={(e) => setFilterSubcategory(e.target.value)}
-                    style={selectStyle}
-                  >
-                    <option value="">📂 Todas las Subcategorías</option>
-                    {subcategories.map((s) => (
-                      <option key={s.value} value={s.value}>{s.label}</option>
-                    ))}
-                  </select>
-
-                  <select
-                    value={filterBrand}
-                    onChange={(e) => setFilterBrand(e.target.value)}
-                    style={selectStyle}
-                  >
-                    <option value="">🏷️ Todas las Marcas</option>
-                    {brands.map((b) => (
-                      <option key={b.value} value={b.value}>{b.label}</option>
-                    ))}
-                  </select>
-
-                  {hasVarianceView && (
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" checked={filterVarianceOnly} onChange={(e) => setFilterVarianceOnly(e.target.checked)} className="rounded w-4 h-4" />
-                      <span className="text-sm font-medium">Solo variado</span>
-                    </label>
+                {/* Listado de Facturas Reservadas */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {(selectedCount as any).reservedInvoices?.map((inv: any) => (
+                    <div key={inv.id} className="bg-card border border-border-default rounded-2xl p-6 shadow-md hover:shadow-xl transition-all group overflow-hidden relative">
+                      <div className="absolute top-0 right-0 p-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => removeReservationMutation.mutate(inv.id)}
+                          className="text-danger hover:scale-110 transition-transform p-2 bg-danger/10 rounded-xl"
+                          title="Eliminar reserva"
+                        >
+                          🗑
+                        </button>
+                      </div>
+                      <div className="mb-4">
+                        <p className="text-[10px] font-black text-muted uppercase tracking-widest mb-1">Factura ERP</p>
+                        <h4 className="text-xl font-black text-primary">{inv.invoiceNumber}</h4>
+                        <p className="text-xs font-bold text-accent-secondary mt-1">{inv.clientName || 'Consumidor Final'}</p>
+                      </div>
+                      <div className="space-y-2 border-t border-border-default/50 pt-4">
+                        {inv.items?.map((item: any) => (
+                          <div key={item.id} className="flex justify-between items-center text-xs font-bold">
+                            <span className="text-muted truncate max-w-[150px]">{item.itemCode}</span>
+                            <span className="text-accent-secondary">-{item.reservedQty} {item.uom}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  {(!(selectedCount as any).reservedInvoices || (selectedCount as any).reservedInvoices.length === 0) && (
+                    <div className="col-span-full py-20 bg-hover/10 border-2 border-dashed border-border-default rounded-2xl text-center">
+                      <p className="text-4xl mb-4">🚚</p>
+                      <p className="text-muted font-black uppercase tracking-widest text-xs">No hay facturas reservadas aún</p>
+                    </div>
                   )}
                 </div>
               </div>
-            </div>
-
-            <div className="p-8">
-              <div className="bg-card rounded-2xl border border-border-default overflow-hidden shadow-2xl">
-                <table className="w-full">
-                  <thead className="bg-hover/30 border-b border-border-default">
-                    <tr>
-                      <th className="px-6 py-5 text-left text-[10px] font-black uppercase tracking-[0.2em] text-muted">Item</th>
-                      <th className="px-6 py-5 text-left text-[10px] font-black uppercase tracking-[0.2em] text-muted">Lote</th>
-                      <th className="px-6 py-5 text-right text-[10px] font-black uppercase tracking-[0.2em] text-muted">UOM</th>
-                      {hasSystemView && <th className="px-6 py-5 text-right text-[10px] font-black uppercase tracking-[0.2em] text-muted">Sistema</th>}
-                      <th className="px-6 py-5 text-right text-[10px] font-black uppercase tracking-[0.2em] text-muted">Conteo</th>
-                      {hasVarianceView && <th className="px-6 py-5 text-right text-[10px] font-black uppercase tracking-[0.2em] text-muted">Varianza</th>}
-                      <th className="px-6 py-5 text-center text-[10px] font-black uppercase tracking-[0.2em] text-muted">Estado</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredItems.map((item, index) => {
-                      const { variance, percent } = getVariance(item);
-                      return (
-                        <tr key={item.id} className={`border-b border-border-default/50 hover:bg-hover/40 transition-colors ${variance !== 0 ? 'bg-warning/5' : ''}`}>
-                          <td className="px-6 py-5">
-                            <p className="font-mono text-sm font-black text-primary">{item.itemCode}</p>
-                            <p className="text-[10px] text-muted font-bold uppercase tracking-wider truncate max-w-[250px] mt-1">{item.itemName}</p>
-                          </td>
-                          <td className="px-6 py-5">
-                            <span className="px-2 py-1 rounded-lg bg-hover text-[10px] font-black uppercase tracking-widest text-muted border border-border-default">
-                              {item.lot || 'ND'}
-                            </span>
-                          </td>
-                          <td className="px-6 py-5 text-right font-bold text-secondary text-sm">{item.uom}</td>
-                          {hasSystemView && <td className="px-6 py-5 text-right font-black text-primary">{item.systemQty}</td>}
-                          <td className="px-6 py-5">
-                            <Input
-                              ref={index === 0 ? firstItemQtyRef : null}
-                              type="number" value={item.countedQty ?? ''}
-                              onChange={(e) => handleItemChange(item.id, parseFloat(e.target.value) || 0)}
-                              onKeyDown={(e) => handleQtyKeyDown(e, item.id)}
-                              className="w-28 text-right ml-auto bg-card border-border-default h-12 rounded-xl font-black text-lg focus:ring-accent-primary/20"
-                            />
-                          </td>
-                          {hasVarianceView && (
-                            <td className={`px-6 py-5 text-right font-black ${variance < 0 ? 'text-success' : variance > 0 ? 'text-danger' : 'text-muted/30'}`}>
-                              <div className="flex flex-col items-end">
-                                <span className="text-base">{variance >= 0 ? '+' : ''}{variance.toFixed(1)}</span>
-                                <span className="text-[10px] opacity-70 tracking-tighter">({percent.toFixed(1)}%)</span>
-                              </div>
-                            </td>
-                          )}
-                          <td className="px-6 py-5 text-center">
-                            {syncingItemIds.has(item.id) ? (
-                              <div className="w-5 h-5 border-2 border-accent-primary/20 border-t-accent-primary rounded-full animate-spin mx-auto"></div>
-                            ) : syncedItemIds.has(item.id) ? (
-                              <span className="text-success text-xl">✓</span>
-                            ) : null}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            )}
           </div>
 
           <ConfirmModal

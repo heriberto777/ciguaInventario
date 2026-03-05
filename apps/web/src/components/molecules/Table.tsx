@@ -44,7 +44,7 @@ export function Table<T extends Record<string, any>>({
           {data.map((row, idx) => (
             <tr key={idx} className="hover:bg-gray-50 border-b">
               {columns.map((col) => (
-                <td key={String(col.key)} className="px-4 py-2 text-sm">
+                <td key={String(col.key)} className="px-4 py-2 text-sm whitespace-nowrap">
                   {col.render ? col.render(row[col.key], row) : row[col.key]}
                 </td>
               ))}

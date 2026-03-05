@@ -1,6 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { InventoryCountService } from './service';
-import { createInventoryCountSchema, prepareCountItemsSchema, addCountItemSchema, updateCountItemSchema, completeCountSchema } from './schema';
+import { createInventoryCountSchema, prepareCountItemsSchema, addCountItemSchema, updateCountItemSchema, completeCountSchema, previewCountItemsSchema, loadCountFromMappingSchema } from './schema';
 import { parseExcelBuffer, generateTemplateBuffer, ExcelValidationError } from './excel-loader';
 
 export class InventoryCountController {
@@ -11,6 +11,7 @@ export class InventoryCountController {
     const companyId = user.companyId;
     const userId = user.id || user.userId;
     const body = createInventoryCountSchema.parse(request.body);
+    this.checkPermission(user, 'inv_counts:create');
 
     const count = await this.service.createCount(companyId, body.warehouseId, body.description);
     reply.code(201).send(this.maskCountData(count, user.permissions));
@@ -59,6 +60,7 @@ export class InventoryCountController {
     const companyId = (request as any).user.companyId;
     const { countId } = request.params as { countId: string };
     const body = addCountItemSchema.parse(request.body);
+    this.checkPermission((request as any).user, 'inv_counts:execute');
 
     const countItem = await this.service.addCountItem(countId, companyId, body);
     reply.code(201).send(countItem);
@@ -68,6 +70,7 @@ export class InventoryCountController {
     const companyId = (request as any).user.companyId;
     const { countId, itemId } = request.params as { countId: string; itemId: string };
     const body = updateCountItemSchema.parse(request.body);
+    this.checkPermission((request as any).user, 'inv_counts:execute');
 
     const countItem = await this.service.updateCountItem(itemId, companyId, body);
     reply.send(countItem);
@@ -77,6 +80,7 @@ export class InventoryCountController {
     const companyId = (request as any).user.companyId;
     const { countId, itemId } = request.params as { countId: string; itemId: string };
 
+    this.checkPermission((request as any).user, 'inv_counts:execute');
     await this.service.deleteCountItem(itemId, companyId);
     reply.send({ success: true });
   }
@@ -86,6 +90,7 @@ export class InventoryCountController {
     const companyId = user.companyId;
     const { id } = request.params as { id: string };
     const body = completeCountSchema.parse(request.body);
+    this.checkPermission(user, 'inv_counts:complete');
 
     const count = await this.service.completeCount(id, companyId, body.approvedBy || user.id);
     reply.send(this.maskCountData(count, user.permissions));
@@ -101,6 +106,7 @@ export class InventoryCountController {
 
   async finalizeCount(request: FastifyRequest, reply: FastifyReply) {
     const user = (request as any).user;
+    this.checkPermission(user, 'inv_counts:finalize');
     const companyId = user.companyId;
     const { id } = request.params as { id: string };
 
@@ -111,23 +117,33 @@ export class InventoryCountController {
   async loadCountFromMapping(request: FastifyRequest, reply: FastifyReply) {
     const companyId = (request as any).user.companyId;
     const { countId } = request.params as { countId: string };
-    const body = request.body as { warehouseId: string; mappingId: string; locationId?: string };
+    const body = loadCountFromMappingSchema.parse(request.body);
 
-    if (!body.mappingId || !body.warehouseId) {
-      return reply.status(400).send({
-        error: 'Missing required fields: mappingId, warehouseId',
-      });
-    }
-
+    this.checkPermission((request as any).user, 'sync:inventory');
     const result = await this.service.loadCountFromMapping(
       companyId,
       countId,
       body.warehouseId,
       body.mappingId,
-      body.locationId || '' // Opcional - si no se proporciona, se usa la default del almacén
+      body.locationId || '',
+      body.itemCodes
     );
 
     reply.send(this.maskCountData(result, (request as any).user.permissions));
+  }
+
+  /**
+   * POST /inventory-counts/preview-erp-items
+   * Previsualiza ítems del ERP antes de cargarlos.
+   */
+  async previewERPItems(request: FastifyRequest, reply: FastifyReply) {
+    const companyId = (request as any).user.companyId;
+    const body = previewCountItemsSchema.parse(request.body);
+
+    this.checkPermission((request as any).user, 'sync:inventory');
+    const result = await this.service.previewFilteredItems(companyId, body);
+
+    reply.send(result);
   }
 
   /**
@@ -177,6 +193,7 @@ export class InventoryCountController {
       if (!count) return reply.status(404).send({ error: 'Conteo no encontrado' });
 
       // Insertar ítems usando el servicio existente
+      this.checkPermission((request as any).user, 'inv_counts:execute');
       const loadResult = await this.service.bulkLoadItemsFromExcel(countId, companyId, items);
 
       return reply.send({
@@ -248,6 +265,7 @@ export class InventoryCountController {
     const { mappingId } = request.query as { mappingId?: string };
 
     try {
+      this.checkPermission((request as any).user, 'reports:export');
       const buffer = await this.service.excelExporter.exportToExcel(id, companyId, mappingId);
       const filename = `resultado_conteo_${id}.xlsx`;
 
@@ -318,6 +336,7 @@ export class InventoryCountController {
     const { countId } = request.params as { countId: string };
 
     const updated = await this.service.completeInventoryCount(countId, companyId, userId);
+    this.checkPermission(user, 'inv_counts:complete');
 
     reply.send({
       message: 'Conteo completado',
@@ -331,6 +350,7 @@ export class InventoryCountController {
     const userId = user.id || user.userId;
     const { countId } = request.params as { countId: string };
 
+    this.checkPermission(user, 'inv_counts:finalize');
     const updated = await this.service.countState.finalizePhysicalCount(countId, companyId, userId);
 
     reply.send({
@@ -410,7 +430,7 @@ export class InventoryCountController {
   }
 
   async deleteInventoryCount(request: FastifyRequest, reply: FastifyReply) {
-    this.checkPermission((request as any).user, 'users:manage'); // Requiere permiso administrativo
+    this.checkPermission((request as any).user, 'inv_counts:delete'); // Requiere permiso específico de borrado
     const companyId = (request as any).user.companyId;
     const { countId } = request.params as { countId: string };
 
@@ -438,6 +458,46 @@ export class InventoryCountController {
     const result = await this.service.countState.sendToERP(countId, companyId, userId);
 
     reply.code(200).send(result);
+  }
+
+  // ========== RESERVA DE FACTURAS (DESPACHOS PENDIENTES) ==========
+
+  async reserveInvoice(request: FastifyRequest, reply: FastifyReply) {
+    const user = (request as any).user;
+    const companyId = user.companyId;
+    const { countId } = request.params as { countId: string };
+    const { invoiceNumber } = request.body as { invoiceNumber: string };
+
+    if (!invoiceNumber) {
+      return reply.code(400).send({ error: 'Número de factura es requerido' });
+    }
+
+    const result = await this.service.reservedInvoices.reserveInvoice({
+      countId,
+      invoiceNumber,
+      companyId
+    });
+
+    reply.code(201).send({
+      message: `Factura ${invoiceNumber} reservada exitosamente`,
+      ...result
+    });
+  }
+
+  async getReservedInvoices(request: FastifyRequest, reply: FastifyReply) {
+    const companyId = (request as any).user.companyId;
+    const { countId } = request.params as { countId: string };
+
+    const result = await this.service.reservedInvoices.getReservedInvoices(countId);
+    reply.send(result);
+  }
+
+  async removeInvoiceReservation(request: FastifyRequest, reply: FastifyReply) {
+    const companyId = (request as any).user.companyId;
+    const { countId, invoiceId } = request.params as { countId: string; invoiceId: string };
+
+    await this.service.reservedInvoices.removeInvoiceReservation(countId, invoiceId);
+    reply.send({ success: true, message: 'Reserva eliminada' });
   }
 
   /**

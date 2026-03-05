@@ -25,6 +25,7 @@ async function main() {
     { name: 'users:create', category: 'seguridad', description: 'Crear nuevos usuarios' },
     { name: 'users:edit', category: 'seguridad', description: 'Editar usuarios existentes' },
     { name: 'users:delete', category: 'seguridad', description: 'Eliminar usuarios' },
+    { name: 'users:manage', category: 'seguridad', description: 'Acceso total a gestión de usuarios' },
     { name: 'roles:view', category: 'seguridad', description: 'Ver roles del sistema' },
     { name: 'roles:manage', category: 'seguridad', description: 'Gestionar roles y asignarles permisos' },
     { name: 'permissions:view', category: 'seguridad', description: 'Ver lista de permisos' },
@@ -52,6 +53,7 @@ async function main() {
     { name: 'inv_counts:finalize', category: 'inventario', description: 'Cerrar conteo administrativamente' },
     { name: 'inv_counts:reactivate', category: 'inventario', description: 'Reabrir un conteo cerrado' },
     { name: 'inv_counts:new_version', category: 'inventario', description: 'Crear re-conteos (Versiones)' },
+    { name: 'inv_counts:reserved_invoices', category: 'inventario', description: 'Relacionar facturas de despacho a conteos' },
 
     // INVENTARIO (DATOS SENSIBLES)
     { name: 'inventory:view_qty', category: 'inventario_privacidad', description: 'Ver existencia teórica (Blind Count Off)' },
@@ -59,6 +61,8 @@ async function main() {
     { name: 'inventory:view_prices', category: 'inventario_privacidad', description: 'Ver precios de venta' },
     { name: 'inventory:view_variances', category: 'inventario_privacidad', description: 'Ver diferencias numéricas y %' },
     { name: 'inventory:adjust', category: 'inventario_privacidad', description: 'Realizar ajustes manuales de stock' },
+    { name: 'inventory:edit_items', category: 'inventario_privacidad', description: 'Editar cantidades y datos de items individuales' },
+    { name: 'inventory:manage', category: 'inventario_privacidad', description: 'Acceso maestro a configuración de inventario' },
 
     // INTEGRACIÓN ERP
     { name: 'erp_conn:view', category: 'erp', description: 'Ver configuraciones de conexión ERP' },
@@ -67,22 +71,31 @@ async function main() {
     { name: 'mappings:manage', category: 'erp', description: 'Crear y editar mapeos de tablas' },
     { name: 'sync:inventory', category: 'erp', description: 'Importar datos desde ERP' },
     { name: 'sync:erp', category: 'erp', description: 'Enviar resultados finales al ERP' },
+    { name: 'queries:view', category: 'erp', description: 'Ver Query Explorer' },
+    { name: 'queries:execute', category: 'erp', description: 'Ejecutar queries personalizadas' },
 
     // REPORTES Y DASHBOARDS
     { name: 'dashboards:view', category: 'reportes', description: 'Ver indicadores de gestión' },
     { name: 'reports:view', category: 'reportes', description: 'Ver listado de reportes' },
     { name: 'reports:export', category: 'reportes', description: 'Exportar reportes a Excel/PDF' },
     { name: 'audit:view', category: 'reportes', description: 'Ver logs de auditoría' },
+    { name: 'dashboards:view_stats', category: 'reportes', description: 'Ver tarjetas de estadísticas en Dashboard' },
+    { name: 'dashboards:view_recent_list', category: 'reportes', description: 'Ver lista de conteos recientes' },
+    { name: 'dashboards:view_high_variances', category: 'reportes', description: 'Ver lista de artículos con mayor varianza' },
 
     // INTELIGENCIA ARTIFICIAL
     { name: 'ai:chat', category: 'ai', description: 'Uso del asistente IA' },
     { name: 'ai:config', category: 'ai', description: 'Configurar Prompts y Modelos IA' },
+    { name: 'ai:audit', category: 'ai', description: 'Uso del Hub de Auditoría IA' },
 
     // SISTEMA Y EMPRESAS
     { name: 'companies:view', category: 'sistema', description: 'Ver datos de empresa' },
     { name: 'companies:manage', category: 'sistema', description: 'Configurar sedes y datos fiscales' },
+    { name: 'branding:view', category: 'sistema', description: 'Ver configuración de marca' },
+    { name: 'branding:manage', category: 'sistema', description: 'Gestionar logos, colores y apariencia' },
     { name: 'settings:view', category: 'sistema', description: 'Ver logs y estado del sistema' },
     { name: 'settings:manage', category: 'sistema', description: 'Configuraciones críticas del servidor' },
+    { name: 'admin:view', category: 'sistema', description: 'Acceso general al panel de administración' },
   ];
 
   const dbPermissions = [];

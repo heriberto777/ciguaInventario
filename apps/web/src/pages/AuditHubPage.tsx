@@ -5,6 +5,7 @@ import { AdminLayout } from '@/components/templates/AdminLayout';
 import { Button, Input } from '@/components/inventory';
 import { Table, TableRow, TableCell } from '@/components/atoms/Table';
 import { getApiClient } from '@/services/api';
+import { usePermissions } from '@/hooks/usePermissions';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
     LineChart, Line, PieChart, Pie
@@ -15,6 +16,8 @@ import remarkGfm from 'remark-gfm';
 const AuditHubPage: React.FC = () => {
     const apiClient = getApiClient();
     const navigate = useNavigate();
+    const { hasPermission } = usePermissions();
+    const canAnalyze = hasPermission('ai:audit');
 
     // Filters State
     const [filters, setFilters] = useState({
@@ -152,7 +155,7 @@ const AuditHubPage: React.FC = () => {
                             <p className="text-[10px] font-black uppercase text-muted tracking-widest opacity-60">Selecciona uno o más para auditoría profunda</p>
                         </div>
 
-                        {selectedIds.length > 0 && (
+                        {selectedIds.length > 0 && canAnalyze && (
                             <Button
                                 variant="primary"
                                 className="bg-accent-primary hover:bg-accent-primary-dark text-white rounded-2xl px-8 py-4 shadow-xl shadow-accent-primary/20 animate-in fade-in zoom-in duration-300 transform active:scale-95 group"

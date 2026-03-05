@@ -5,6 +5,7 @@ import { UserForm } from '@/components/organisms/UserForm';
 import { UsersTable } from '@/components/organisms/UsersTable';
 import { Card } from '@/components/molecules/Card';
 import { getApiClient } from '@/services/api';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface User {
   id: string;
@@ -120,6 +121,10 @@ export const UsersContent: React.FC = () => {
   };
 
   const users = usersData?.data || [];
+  const { hasPermission } = usePermissions();
+  const canCreate = hasPermission('users:create');
+  const canEdit = hasPermission('users:edit');
+  const canDelete = hasPermission('users:delete');
 
   return (
     <div className="space-y-6">
@@ -128,16 +133,18 @@ export const UsersContent: React.FC = () => {
           <h1 className="text-3xl font-bold text-[var(--text-primary)]">Gestión de Usuarios</h1>
           <p className="text-[var(--text-secondary)] mt-1">Crea y administra los usuarios y sus roles.</p>
         </div>
-        <button
-          onClick={() => {
-            setShowForm(!showForm);
-            setSelectedUser(null);
-          }}
-          className={`px-4 py-2 text-white rounded-lg transition-colors ${showForm ? 'bg-gray-500 hover:bg-gray-600' : 'bg-blue-600 hover:bg-blue-700'
-            }`}
-        >
-          {showForm ? 'Cancelar' : '+ Nuevo Usuario'}
-        </button>
+        {canCreate && (
+          <button
+            onClick={() => {
+              setShowForm(!showForm);
+              setSelectedUser(null);
+            }}
+            className={`px-4 py-2 text-white rounded-lg transition-colors ${showForm ? 'bg-gray-500 hover:bg-gray-600' : 'bg-blue-600 hover:bg-blue-700'
+              }`}
+          >
+            {showForm ? 'Cancelar' : '+ Nuevo Usuario'}
+          </button>
+        )}
       </div>
 
       {/* Error Alert */}
@@ -173,8 +180,8 @@ export const UsersContent: React.FC = () => {
         <UsersTable
           users={users}
           isLoading={isLoading}
-          onDelete={handleDeleteUser}
-          onEdit={handleEditUser}
+          onDelete={canDelete ? handleDeleteUser : undefined}
+          onEdit={canEdit ? handleEditUser : undefined}
         />
       </Card>
     </div>

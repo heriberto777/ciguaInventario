@@ -3,10 +3,13 @@ import { AdminLayout } from '@/components/templates/AdminLayout';
 import { useAppConfig, useUpdateAppConfig } from '@/hooks/useApi';
 import { Button } from '@/components/atoms/Button';
 import { Input } from '@/components/atoms/Input';
+import { usePermissions } from '@/hooks/usePermissions';
 
 const BrandingSettingsPage: React.FC = () => {
     const { data: config, isLoading } = useAppConfig();
     const updateMutation = useUpdateAppConfig();
+    const { hasPermission } = usePermissions();
+    const canManage = hasPermission('branding:manage');
 
     const [formData, setFormData] = useState({
         appTitle: '',
@@ -86,129 +89,141 @@ const BrandingSettingsPage: React.FC = () => {
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     {/* Form Column */}
                     <div className="lg:col-span-2 space-y-8">
-                        <form onSubmit={handleSubmit} className="bg-card rounded-2xl border border-border-default shadow-xl overflow-hidden p-8 space-y-8">
-                            <div className="space-y-6">
-                                <h3 className="text-sm font-black uppercase tracking-[0.2em] text-muted">Configuración General</h3>
+                        {canManage ? (
+                            <form onSubmit={handleSubmit} className="bg-card rounded-2xl border border-border-default shadow-xl overflow-hidden p-8 space-y-8">
+                                <div className="space-y-6">
+                                    <h3 className="text-sm font-black uppercase tracking-[0.2em] text-muted">Configuración General</h3>
 
-                                <Input
-                                    label="Título de la Aplicación"
-                                    name="appTitle"
-                                    value={formData.appTitle}
-                                    onChange={handleChange}
-                                    placeholder="Ej: Cigua Inventory"
-                                />
+                                    <Input
+                                        label="Título de la Aplicación"
+                                        name="appTitle"
+                                        value={formData.appTitle}
+                                        onChange={handleChange}
+                                        placeholder="Ej: Cigua Inventory"
+                                    />
 
-                                <div className="space-y-3">
-                                    <label className="text-xs font-bold text-secondary ml-1 uppercase tracking-wider">Logotipo</label>
-                                    <div className="flex flex-col gap-4">
-                                        <div className="flex gap-4">
-                                            <Input
-                                                name="logoUrl"
-                                                value={formData.logoUrl}
-                                                onChange={handleChange}
-                                                placeholder="URL de imagen o carga un archivo..."
-                                                className="flex-1"
-                                            />
-                                            <label className="cursor-pointer">
-                                                <div className="h-full px-6 flex items-center justify-center border border-border-default rounded-xl font-bold text-sm bg-hover hover:bg-border-default transition-colors">
-                                                    Subir
-                                                </div>
-                                                <input type="file" className="hidden" accept="image/*" onChange={handleLogoUpload} />
-                                            </label>
+                                    <div className="space-y-3">
+                                        <label className="text-xs font-bold text-secondary ml-1 uppercase tracking-wider">Logotipo</label>
+                                        <div className="flex flex-col gap-4">
+                                            <div className="flex gap-4">
+                                                <Input
+                                                    name="logoUrl"
+                                                    value={formData.logoUrl}
+                                                    onChange={handleChange}
+                                                    placeholder="URL de imagen o carga un archivo..."
+                                                    className="flex-1"
+                                                />
+                                                <label className="cursor-pointer">
+                                                    <div className="h-full px-6 flex items-center justify-center border border-border-default rounded-xl font-bold text-sm bg-hover hover:bg-border-default transition-colors">
+                                                        Subir
+                                                    </div>
+                                                    <input type="file" className="hidden" accept="image/*" onChange={handleLogoUpload} />
+                                                </label>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
-                            </div>
 
-                            <div className="space-y-6 pt-6 border-t border-border-default">
-                                <h3 className="text-sm font-black uppercase tracking-[0.2em] text-muted">Paleta de Colores</h3>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <div className="space-y-3">
-                                        <label className="text-xs font-bold text-secondary ml-1 uppercase tracking-wider">Color Primario</label>
-                                        <div className="flex gap-3">
-                                            <div
-                                                className="w-12 h-12 rounded-xl shadow-lg border-2 border-white/20 relative cursor-pointer overflow-hidden"
-                                                style={{ backgroundColor: formData.primaryColor }}
-                                            >
-                                                <input
-                                                    type="color"
+                                <div className="space-y-6 pt-6 border-t border-border-default">
+                                    <h3 className="text-sm font-black uppercase tracking-[0.2em] text-muted">Paleta de Colores</h3>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div className="space-y-3">
+                                            <label className="text-xs font-bold text-secondary ml-1 uppercase tracking-wider">Color Primario</label>
+                                            <div className="flex gap-3">
+                                                <div
+                                                    className="w-12 h-12 rounded-xl shadow-lg border-2 border-white/20 relative cursor-pointer overflow-hidden"
+                                                    style={{ backgroundColor: formData.primaryColor }}
+                                                >
+                                                    <input
+                                                        type="color"
+                                                        name="primaryColor"
+                                                        value={formData.primaryColor}
+                                                        onChange={handleChange}
+                                                        className="absolute inset-x-0 inset-y-0 opacity-0 cursor-pointer scale-150"
+                                                    />
+                                                </div>
+                                                <Input
                                                     name="primaryColor"
                                                     value={formData.primaryColor}
                                                     onChange={handleChange}
-                                                    className="absolute inset-x-0 inset-y-0 opacity-0 cursor-pointer scale-150"
+                                                    className="flex-1 font-mono uppercase"
                                                 />
                                             </div>
-                                            <Input
-                                                name="primaryColor"
-                                                value={formData.primaryColor}
-                                                onChange={handleChange}
-                                                className="flex-1 font-mono uppercase"
-                                            />
                                         </div>
-                                    </div>
 
-                                    <div className="space-y-3">
-                                        <label className="text-xs font-bold text-secondary ml-1 uppercase tracking-wider">Color Secundario</label>
-                                        <div className="flex gap-3">
-                                            <div
-                                                className="w-12 h-12 rounded-xl shadow-lg border-2 border-white/20 relative cursor-pointer overflow-hidden"
-                                                style={{ backgroundColor: formData.secondaryColor }}
-                                            >
-                                                <input
-                                                    type="color"
+                                        <div className="space-y-3">
+                                            <label className="text-xs font-bold text-secondary ml-1 uppercase tracking-wider">Color Secundario</label>
+                                            <div className="flex gap-3">
+                                                <div
+                                                    className="w-12 h-12 rounded-xl shadow-lg border-2 border-white/20 relative cursor-pointer overflow-hidden"
+                                                    style={{ backgroundColor: formData.secondaryColor }}
+                                                >
+                                                    <input
+                                                        type="color"
+                                                        name="secondaryColor"
+                                                        value={formData.secondaryColor}
+                                                        onChange={handleChange}
+                                                        className="absolute inset-x-0 inset-y-0 opacity-0 cursor-pointer scale-150"
+                                                    />
+                                                </div>
+                                                <Input
                                                     name="secondaryColor"
                                                     value={formData.secondaryColor}
                                                     onChange={handleChange}
-                                                    className="absolute inset-x-0 inset-y-0 opacity-0 cursor-pointer scale-150"
+                                                    className="flex-1 font-mono uppercase"
                                                 />
                                             </div>
-                                            <Input
-                                                name="secondaryColor"
-                                                value={formData.secondaryColor}
-                                                onChange={handleChange}
-                                                className="flex-1 font-mono uppercase"
-                                            />
                                         </div>
                                     </div>
                                 </div>
-                            </div>
 
-                            <div className="space-y-6 pt-6 border-t border-border-default">
-                                <h3 className="text-sm font-black uppercase tracking-[0.2em] text-muted">Contenido Adicional</h3>
-                                <div className="space-y-1.5">
-                                    <label className="text-xs font-bold text-secondary ml-1 uppercase tracking-wider">Mensaje de Login</label>
-                                    <textarea
-                                        name="loginMessage"
-                                        value={formData.loginMessage}
+                                <div className="space-y-6 pt-6 border-t border-border-default">
+                                    <h3 className="text-sm font-black uppercase tracking-[0.2em] text-muted">Contenido Adicional</h3>
+                                    <div className="space-y-1.5">
+                                        <label className="text-xs font-bold text-secondary ml-1 uppercase tracking-wider">Mensaje de Login</label>
+                                        <textarea
+                                            name="loginMessage"
+                                            value={formData.loginMessage}
+                                            onChange={handleChange}
+                                            rows={3}
+                                            className="w-full px-4 py-3 rounded-2xl bg-app text-primary border border-border-default focus:border-accent-primary focus:ring-4 focus:ring-accent-primary/10 transition-all outline-none resize-none placeholder:text-muted/50"
+                                            placeholder="Mensaje personalizado en la pantalla de acceso..."
+                                        />
+                                    </div>
+                                    <Input
+                                        label="Texto del Pie de Página"
+                                        name="footerText"
+                                        value={formData.footerText}
                                         onChange={handleChange}
-                                        rows={3}
-                                        className="w-full px-4 py-3 rounded-2xl bg-app text-primary border border-border-default focus:border-accent-primary focus:ring-4 focus:ring-accent-primary/10 transition-all outline-none resize-none placeholder:text-muted/50"
-                                        placeholder="Mensaje personalizado en la pantalla de acceso..."
+                                        placeholder="© 2026 Cigua Inventory"
                                     />
                                 </div>
-                                <Input
-                                    label="Texto del Pie de Página"
-                                    name="footerText"
-                                    value={formData.footerText}
-                                    onChange={handleChange}
-                                    placeholder="© 2026 Cigua Inventory"
-                                />
-                            </div>
 
-                            <div className="pt-8 flex items-center justify-between border-t border-border-default">
-                                <Button variant="secondary" type="button" onClick={() => window.location.reload()}>
-                                    Cancelar Cambios
-                                </Button>
-                                <Button
-                                    type="submit"
-                                    size="lg"
-                                    disabled={updateMutation.isPending}
-                                    className="px-12 rounded-2xl shadow-xl shadow-accent-primary/20"
-                                >
-                                    {updateMutation.isPending ? 'Guardando...' : 'Guardar Identidad'}
-                                </Button>
+                                <div className="pt-8 flex items-center justify-between border-t border-border-default">
+                                    <Button variant="secondary" type="button" onClick={() => window.location.reload()}>
+                                        Cancelar Cambios
+                                    </Button>
+                                    <Button
+                                        type="submit"
+                                        size="lg"
+                                        disabled={updateMutation.isPending}
+                                        className="px-12 rounded-2xl shadow-xl shadow-accent-primary/20"
+                                    >
+                                        {updateMutation.isPending ? 'Guardando...' : 'Guardar Identidad'}
+                                    </Button>
+                                </div>
+                            </form>
+                        ) : (
+                            <div className="bg-card rounded-2xl border border-border-default p-12 text-center shadow-xl">
+                                <div className="w-20 h-20 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-6">
+                                    <span className="text-4xl">🔒</span>
+                                </div>
+                                <h3 className="text-xl font-bold text-primary mb-2">Acceso Restringido</h3>
+                                <p className="text-secondary max-w-sm mx-auto">
+                                    No tienes permisos suficientes para modificar la identidad visual del sistema. Contacta a un administrador.
+                                </p>
                             </div>
-                        </form>
+                        )}
                     </div>
 
                     {/* Preview Column */}

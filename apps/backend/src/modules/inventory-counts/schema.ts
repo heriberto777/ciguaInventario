@@ -29,6 +29,7 @@ export const addCountItemSchema = z.object({
   subcategory: z.string().optional(),
   notes: z.string().optional(),
   lot: z.string().optional(),
+  itemProv: z.string().optional(),
 });
 
 export const updateCountItemSchema = z.object({
@@ -39,10 +40,26 @@ export const updateCountItemSchema = z.object({
   countedQty: z.coerce.number().nonnegative().optional(),
   notes: z.string().optional(),
   lot: z.string().optional(),
+  itemProv: z.string().optional(),
 });
 
 export const completeCountSchema = z.object({
   approvedBy: z.string().optional(),
+});
+
+export const previewCountItemsSchema = z.object({
+  warehouseId: z.string().min(1),
+  mappingId: z.string().min(1),
+  category: z.union([z.string(), z.array(z.string())]).optional(),
+  brand: z.union([z.string(), z.array(z.string())]).optional(),
+  randomLimit: z.coerce.number().int().positive().optional(),
+});
+
+export const loadCountFromMappingSchema = z.object({
+  warehouseId: z.string().min(1),
+  mappingId: z.string().min(1),
+  locationId: z.string().optional(),
+  itemCodes: z.array(z.string()).optional(),
 });
 
 export type CreateInventoryCountDTO = z.infer<typeof createInventoryCountSchema>;
@@ -50,3 +67,5 @@ export type PrepareCountItemsDTO = z.infer<typeof prepareCountItemsSchema>;
 export type AddCountItemDTO = z.infer<typeof addCountItemSchema>;
 export type UpdateCountItemDTO = z.infer<typeof updateCountItemSchema>;
 export type CompleteCountDTO = z.infer<typeof completeCountSchema>;
+export type PreviewCountItemsDTO = z.infer<typeof previewCountItemsSchema>;
+export type LoadCountFromMappingDTO = z.infer<typeof loadCountFromMappingSchema>;

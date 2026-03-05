@@ -28,6 +28,26 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="reports"
+        options={{
+          title: 'Reportes de Inventario',
+          tabBarLabel: 'Reportes',
+          tabBarIcon: ({ color }) => (
+            <Text style={{ fontSize: 20, color }}>📊</Text>
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="ai-audit"
+        options={{
+          title: 'Auditoría IA',
+          tabBarLabel: 'Auditoría IA',
+          tabBarIcon: ({ color }) => (
+            <Text style={{ fontSize: 20, color }}>🤖</Text>
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="settings"
         options={{
           title: 'Configuración',

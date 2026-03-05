@@ -84,7 +84,7 @@ export const AuditLogsTable: React.FC<AuditLogsTableProps> = ({
               <td className="px-4 py-3 text-xs">
                 {new Date(log.createdAt).toLocaleString()}
               </td>
-              <td className="px-4 py-3">
+              <td className="px-4 py-3 actions-cell">
                 {onViewDetail && (
                   <Button
                     variant="secondary"

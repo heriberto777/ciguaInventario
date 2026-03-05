@@ -7,9 +7,10 @@ export class ReportsService {
     private get prisma() {
         return this.fastify.prisma;
     }
+
     /**
      * Genera los datos para el Reporte de Inventario Físico
-     * Agrupado por Marca
+     * Agrupado por Marca e incluyendo Reservas (Facturas no despachadas)
      */
     async getPhysicalInventoryReport(params: {
         countId: string;
@@ -20,12 +21,38 @@ export class ReportsService {
     }) {
         const { countId, companyId, onlyVariances, brand, category } = params;
 
-        // Obtener la versión actual del conteo
+        // 1. Obtener la versión actual del conteo
         const count = await this.prisma.inventoryCount.findUnique({
             where: { id: countId },
             select: { currentVersion: true }
         });
 
+        // 2. Obtener reservaciones para este conteo
+        const reservedInvoices = await this.prisma.countReservedInvoice.findMany({
+            where: { countId },
+            include: { items: true }
+        });
+
+        // Consolidar reservas por itemCode y itemProv
+        const reservedByCode = new Map<string, number>();
+        const reservedByProv = new Map<string, number>();
+        const inferredProvByCode = new Map<string, string>();
+
+        for (const inv of reservedInvoices) {
+            for (const item of inv.items) {
+                const itemCodeNorm = item.itemCode.trim().toUpperCase();
+                const itemProvNorm = item.itemProv ? item.itemProv.trim().toUpperCase() : null;
+                const qty = Number(item.reservedQty);
+
+                reservedByCode.set(itemCodeNorm, (reservedByCode.get(itemCodeNorm) || 0) + qty);
+                if (itemProvNorm) {
+                    reservedByProv.set(itemProvNorm, (reservedByProv.get(itemProvNorm) || 0) + qty);
+                    inferredProvByCode.set(itemCodeNorm, itemProvNorm);
+                }
+            }
+        }
+
+        // 3. Obtener items del conteo
         const items = await this.prisma.inventoryCount_Item.findMany({
             where: {
                 countId,
@@ -40,7 +67,7 @@ export class ReportsService {
             ]
         });
 
-        // Obtener descripciones de marcas y categorías para enriquecer el reporte
+        // Obtener descripciones de marcas y categorías
         const uniqueBrandCodes = [...new Set(items.map(i => i.brand).filter(Boolean))] as string[];
         const uniqueCategoryCodes = [...new Set(items.map(i => i.category).filter(Boolean))] as string[];
 
@@ -57,7 +84,20 @@ export class ReportsService {
         const reportData = items.map(item => {
             const systemQty = item.systemQty || new Decimal(0);
             const countedQty = item.countedQty || new Decimal(0);
-            const difference = countedQty.minus(systemQty);
+
+            // Lógica de Matching de Reservas
+            const itemCodeNorm = item.itemCode.trim().toUpperCase();
+            let itemProvNorm = item.itemProv ? item.itemProv.trim().toUpperCase() : inferredProvByCode.get(itemCodeNorm) || null;
+
+            let reservedQty = 0;
+            if (itemProvNorm && reservedByProv.has(itemProvNorm)) {
+                reservedQty = reservedByProv.get(itemProvNorm) || 0;
+            } else {
+                reservedQty = reservedByCode.get(itemCodeNorm) || 0;
+            }
+
+            // FORMULA MAESTRA: Diferencia = Físico - Reservado - Sistema
+            const difference = countedQty.minus(reservedQty).minus(systemQty);
             const costPrice = item.costPrice || new Decimal(0);
             const varianceCost = difference.times(costPrice);
 
@@ -73,6 +113,7 @@ export class ReportsService {
                 brandName: brandDesc ? `${brandDesc} (${item.brand})` : (item.brand || 'SIN MARCA'),
                 subcategory: item.subcategory,
                 systemQty: systemQty.toNumber(),
+                reservedQty: reservedQty,
                 countedQty: item.countedQty !== null ? countedQty.toNumber() : null,
                 difference: item.countedQty !== null ? difference.toNumber() : null,
                 costPrice: costPrice.toNumber(),
@@ -86,7 +127,7 @@ export class ReportsService {
             ? reportData.filter(d => d.hasVariance)
             : reportData;
 
-        // Agrupar por Marca (usando el nombre enriquecido)
+        // Agrupar por Marca
         const groupedByBrand = filteredData.reduce((acc, item) => {
             const brandLabel = item.brandName;
             if (!acc[brandLabel]) {
@@ -96,6 +137,7 @@ export class ReportsService {
                     totalSystemValue: 0,
                     totalCountedValue: 0,
                     totalVarianceCost: 0,
+                    totalReservedQty: 0,
                 };
             }
 
@@ -108,6 +150,7 @@ export class ReportsService {
             acc[brandLabel].totalSystemValue += systemVal;
             acc[brandLabel].totalCountedValue += countedVal;
             acc[brandLabel].totalVarianceCost += (item.varianceCost || 0);
+            acc[brandLabel].totalReservedQty += item.reservedQty;
 
             return acc;
         }, {} as Record<string, any>);
@@ -116,19 +159,35 @@ export class ReportsService {
     }
 
     /**
-     * Resumen ejecutivo de mermas/varianzas
+     * Resumen ejecutivo de mermas/varianzas (Inyectando Reservas)
      */
     async getVarianceSummary(params: { countId: string; companyId: string }) {
+        const { countId, companyId } = params;
+
         const count = await this.prisma.inventoryCount.findUnique({
-            where: { id: params.countId },
+            where: { id: countId },
             select: { currentVersion: true }
         });
 
+        // Obtener Reservas
+        const reservedInvoices = await this.prisma.countReservedInvoice.findMany({
+            where: { countId },
+            include: { items: true }
+        });
+
+        const reservedMap = new Map<string, number>();
+        for (const inv of reservedInvoices) {
+            for (const item of inv.items) {
+                const code = item.itemCode.trim().toUpperCase();
+                reservedMap.set(code, (reservedMap.get(code) || 0) + Number(item.reservedQty));
+            }
+        }
+
         const items = await this.prisma.inventoryCount_Item.findMany({
             where: {
-                countId: params.countId,
-                version: count?.currentVersion || 1, // ← FILTRO CRÍTICO
-                count: { companyId: params.companyId },
+                countId: countId,
+                version: count?.currentVersion || 1,
+                count: { companyId: companyId },
                 NOT: { countedQty: null }
             }
         });
@@ -138,7 +197,11 @@ export class ReportsService {
         let itemsWithVariance = 0;
 
         items.forEach(item => {
-            const diff = (item.countedQty as Decimal).minus(item.systemQty);
+            const code = item.itemCode.trim().toUpperCase();
+            const reservedVal = reservedMap.get(code) || 0;
+
+            // Formula Maestra en Resumen
+            const diff = (item.countedQty as Decimal).minus(reservedVal).minus(item.systemQty);
             const cost = diff.times(item.costPrice || 0);
 
             if (!diff.isZero()) {

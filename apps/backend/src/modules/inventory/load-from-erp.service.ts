@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { PrismaClient } from '@prisma/client';
 import { FastifyInstance } from 'fastify';
 import { AppError } from '../../utils/errors';
@@ -13,7 +12,7 @@ interface LoadInventoryParams {
   userId: string;
 }
 
-interface LoadedItem {
+export interface LoadedItem {
   itemCode: string;
   itemName: string;
   systemQty: number;
@@ -28,7 +27,10 @@ interface LoadedItem {
   brand?: string;        // Marca
   category?: string;     // Categoría
   subcategory?: string;  // Subcategoría
+  itemProv?: string;     // Código del proveedor (para agrupación de alias)
   lot?: string;          // Lote
+  invoiceNumber?: string; // Número de factura (para dataset PENDING_INVOICES)
+  clientName?: string;    // Nombre del cliente (para dataset PENDING_INVOICES)
 }
 
 interface LoadInventoryResult {
@@ -250,240 +252,138 @@ export class LoadInventoryFromERPService {
    */
   buildQueryFromMapping(mappingConfig: any): { sql: string; parameters: any[] } {
     try {
-      // Parsear la estructura de filters que contiene la lógica completa
-      let filters = mappingConfig.filters || {};
-
-      // Si filters es string (JSON), parsearlo
-      if (typeof filters === 'string') {
-        filters = JSON.parse(filters);
+      let filtersStrOrObj = mappingConfig.filters || {};
+      let filters: any = filtersStrOrObj;
+      if (typeof filtersStrOrObj === 'string') {
+        filters = JSON.parse(filtersStrOrObj);
       }
 
-      // ─── Normalizar formato array posicional del SimpleMappingBuilder ────────────
-      // El frontend guarda filters como: [joins[], whereFilters[], mainTable(string), selectedColumns[]]
-      // Lo convertimos al formato objeto que espera el builder.
-      if (Array.isArray(filters)) {
-        this.fastify.log.info('🔄 [buildQueryFromMapping] Detecting array-positional filters format, normalizing...');
-        const rawArray = filters as any[];
-        const normalizedFilters: {
-          mainTable: string;
-          joins: any[];
-          filters: any[];
-          selectedColumns: string[];
-        } = {
-          mainTable: '',
-          joins: [],
-          filters: [],
-          selectedColumns: [],
-        };
+      let normalizedFilters: {
+        mainTable: string;
+        joins: any[];
+        filters: any[];
+        selectedColumns: string[];
+      } = {
+        mainTable: '',
+        joins: [],
+        filters: [],
+        selectedColumns: [],
+      };
 
-        for (const element of rawArray) {
+      if (Array.isArray(filters)) {
+        this.fastify.log.info('🔄 [buildQueryFromMapping] Normalizing array-positional filters...');
+        for (const element of filters) {
           if (typeof element === 'string') {
-            // Es la tabla principal
             normalizedFilters.mainTable = element;
           } else if (Array.isArray(element) && element.length > 0) {
             const first = element[0];
             if (typeof first === 'string') {
-              // Array de strings → selectedColumns: ["a.ARTICULO", "a.DESCRIPCION", ...]
               normalizedFilters.selectedColumns = element;
             } else if (typeof first === 'object' && first !== null) {
-              if ('table' in first || 'joinType' in first || 'joinCondition' in first) {
-                // Array de JOINs: [{table, alias, joinType, joinCondition}]
+              if ('table' in first || 'joinCondition' in first) {
                 normalizedFilters.joins = element;
-              } else if ('field' in first || 'operator' in first || 'value' in first) {
-                // Array de filtros WHERE: [{field, operator, value}]
+              } else if ('field' in first || 'operator' in first) {
                 normalizedFilters.filters = element;
               }
             }
           }
         }
-
-        filters = normalizedFilters;
-        this.fastify.log.info(`✅ [buildQueryFromMapping] Normalized: mainTable="${normalizedFilters.mainTable}", ${normalizedFilters.joins.length} joins, ${normalizedFilters.filters.length} filters, ${normalizedFilters.selectedColumns.length} columns`);
+      } else if (typeof filters === 'object' && filters !== null) {
+        normalizedFilters = {
+          mainTable: filters.mainTable || '',
+          joins: Array.isArray(filters.joins) ? filters.joins : [],
+          filters: Array.isArray(filters.filters) ? filters.filters : [],
+          selectedColumns: Array.isArray(filters.selectedColumns) ? filters.selectedColumns : [],
+        };
       }
 
-      const mainTable = filters.mainTable || mappingConfig.sourceTables?.[0] || '';
-      const joins = filters.joins || [];
-      const whereFilters = filters.filters || [];
-      let selectedColumns = filters.selectedColumns || [];
+      const mainTable = normalizedFilters.mainTable || mappingConfig.mainTable || (Array.isArray(mappingConfig.sourceTables) ? mappingConfig.sourceTables[0] : '') || '';
+      const joins = (normalizedFilters.joins.length > 0) ? normalizedFilters.joins : (Array.isArray(mappingConfig.joins) ? mappingConfig.joins : []);
 
-      console.log('🔗 [buildQueryFromMapping] Raw mainTable:', mainTable);
-      console.log('🔗 [buildQueryFromMapping] filters object:', JSON.stringify(filters, null, 2));
+      let rootFilters: any[] = [];
+      if (Array.isArray(mappingConfig.filters)) {
+        rootFilters = mappingConfig.filters.filter((f: any) =>
+          typeof f === 'object' && f !== null && !Array.isArray(f) && 'field' in f
+        );
+      }
+      const whereFilters = [...normalizedFilters.filters, ...rootFilters];
+      let selectedColumns = (normalizedFilters.selectedColumns.length > 0) ? normalizedFilters.selectedColumns : (Array.isArray(mappingConfig.selectedColumns) ? mappingConfig.selectedColumns : []);
 
-      if (!mainTable || mainTable.trim() === '') {
-        throw new Error('No main table found in mapping configuration. filters.mainTable is empty or undefined');
+      // Si aún está vacío, intentar extraer de fieldMappings
+      if (selectedColumns.length === 0 && mappingConfig.fieldMappings) {
+        let fm = mappingConfig.fieldMappings;
+        if (typeof fm === 'string') {
+          try { fm = JSON.parse(fm); } catch (e) { fm = []; }
+        }
+        if (Array.isArray(fm)) {
+          selectedColumns = fm.map((m: any) => m.source).filter(Boolean);
+        } else if (typeof fm === 'object' && fm !== null) {
+          selectedColumns = Object.values(fm).filter(Boolean) as string[];
+        }
       }
 
-      // Validar estructura básica
-      if (!Array.isArray(selectedColumns) || selectedColumns.length === 0) {
-        throw new Error('No selectedColumns found in mapping configuration');
-      }
+      if (!mainTable) throw new Error('No main table found');
+      if (selectedColumns.length === 0) throw new Error('No selected columns found');
 
-      // Crear mapa de aliases incluyendo la tabla principal
       const tableAliasMap: { [key: string]: string } = {};
-
-      // Alias de tabla principal: usar la primera letra en minúscula
       const mainTableName = mainTable.split('.').pop() || mainTable;
-      let mainTableAlias = mainTableName.charAt(0).toLowerCase();
-
-      // Asegurar que el alias es válido (no vacío)
-      if (!mainTableAlias || mainTableAlias.trim() === '') {
-        mainTableAlias = mainTableName.toLowerCase().substring(0, 2) || 'a';
-      }
-
+      let mainTableAlias = mainTableName.charAt(0).toLowerCase() || 'a';
       tableAliasMap[mainTableName] = mainTableAlias;
-      tableAliasMap[mainTable] = mainTableAlias; // También mapear con schema completo
+      tableAliasMap[mainTable] = mainTableAlias;
 
-      console.log('🔗 [buildQueryFromMapping] Main table:', mainTable, '-> Alias:', mainTableAlias);
-      console.log('🔗 [buildQueryFromMapping] mainTableAlias type:', typeof mainTableAlias, 'value:', JSON.stringify(mainTableAlias));
-
-      // Agregar aliases de JOINs
       for (const join of joins) {
         if (join.table && join.alias) {
           const joinTableName = join.table.split('.').pop() || join.table;
           tableAliasMap[joinTableName] = join.alias;
-          tableAliasMap[join.table] = join.alias; // También mapear con schema completo
-          console.log('🔗 [buildQueryFromMapping] JOIN table:', join.table, '-> Alias:', join.alias);
+          tableAliasMap[join.table] = join.alias;
         }
       }
 
-      console.log('🔗 [buildQueryFromMapping] Table alias map:', tableAliasMap);
-      console.log('🔗 [buildQueryFromMapping] Selected columns (before replacement):', selectedColumns);
-      console.log('🔗 [buildQueryFromMapping] JOIN conditions (before replacement):', joins.map(j => j.joinCondition));
-
-      // Reemplazar nombres de tabla por alias en selectedColumns
-      selectedColumns = selectedColumns.map((col: string) => {
-        // col format: "schema.TABLE_NAME.COLUMN_NAME" o "TABLE_NAME.COLUMN_NAME"
-        const parts = col.split('.');
-        if (parts.length >= 2) {
-          // Obtener el nombre de la tabla (penúltima parte) y la columna (última parte)
-          const lastDotIndex = col.lastIndexOf('.');
-          const tableAndColumn = col.substring(0, lastDotIndex);
-          const columnName = col.substring(lastDotIndex + 1);
-
-          // Extraer el nombre de la tabla (última parte de tableAndColumn)
-          const tablePartsInTableAndColumn = tableAndColumn.split('.');
-          const possibleTableName = tablePartsInTableAndColumn[tablePartsInTableAndColumn.length - 1];
-
-          console.log(`🔗 [buildQueryFromMapping] Column: "${col}" -> TableAndColumn: "${tableAndColumn}", PossibleTableName: "${possibleTableName}", ColumnName: "${columnName}"`);
-
-          // Buscar si existe alias para esta tabla (primero buscar por el nombre exacto de la tabla)
-          const alias = tableAliasMap[possibleTableName] || tableAliasMap[tableAndColumn];
-
-          if (alias) {
-            console.log(`🔗 [buildQueryFromMapping] Replacing "${col}" with "${alias}.${columnName}"`);
-            return `${alias}.${columnName}`;
-          }
+      const finalColumns = selectedColumns.map((col: string) => {
+        const lastDot = col.lastIndexOf('.');
+        if (lastDot > 0) {
+          const tableName = col.substring(0, lastDot).split('.').pop() || '';
+          const colName = col.substring(lastDot + 1);
+          const alias = tableAliasMap[tableName];
+          return alias ? `${alias}.${colName}` : col;
         }
         return col;
       });
 
-      console.log('🔗 [buildQueryFromMapping] Selected columns (after replacement):', selectedColumns);
+      let sql = `SELECT ${finalColumns.join(', ')} FROM ${mainTable} ${mainTableAlias}`;
 
-      // Construir SELECT
-      let selectClause = '*';
-      if (selectedColumns.length > 0) {
-        selectClause = selectedColumns.join(', ');
-      }
-
-      // Construir FROM con alias (SIEMPRE agregar el alias a la tabla principal)
-      let fromClause = `${mainTable} ${mainTableAlias}`;
-      console.log('🔗 [buildQueryFromMapping] FROM clause:', fromClause);
-
-      // Construir JOINs
-      let joinClauses = '';
-      if (joins && Array.isArray(joins)) {
-        for (const join of joins) {
-          if (!join.table || !join.alias || !join.joinCondition) {
-            console.warn(`⚠️ [buildQueryFromMapping] Invalid join, skipping:`, join);
-            continue;
-          }
-
-          const joinType = join.joinType || 'LEFT';
-          let joinCondition = join.joinCondition;
-
-          console.log(`🔗 [buildQueryFromMapping] Processing JOIN condition (before): "${joinCondition}"`);
-
-          // Reemplazar nombres de tabla en joinCondition
-          // Puede contener: "TABLA1.COLUMN = TABLA2.COLUMN" o con schema: "catelli.TABLA1.COLUMN = catelli.TABLA2.COLUMN"
-          const parts = joinCondition.split('=').map(p => p.trim());
-          const replacedParts = parts.map(part => {
-            const dotIndex = part.lastIndexOf('.');
-            if (dotIndex > 0) {
-              const tableAndColumn = part.substring(0, dotIndex);
-              const columnName = part.substring(dotIndex + 1);
-
-              // Extraer nombre de tabla
-              const tablePartsInTableAndColumn = tableAndColumn.split('.');
-              const possibleTableName = tablePartsInTableAndColumn[tablePartsInTableAndColumn.length - 1];
-
-              const alias = tableAliasMap[possibleTableName] || tableAliasMap[tableAndColumn];
-
-              if (alias) {
-                return `${alias}.${columnName}`;
-              }
-            }
-            return part;
-          });
-
-          joinCondition = replacedParts.join(' = ');
-
-          console.log(`🔗 [buildQueryFromMapping] Processing JOIN condition (after): "${joinCondition}"`);
-          console.log(`🔗 [buildQueryFromMapping] JOIN: ${join.table} ${join.alias} ON ${joinCondition}`);
-          joinClauses += ` ${joinType} JOIN ${join.table} ${join.alias} ON ${joinCondition}`;
+      for (const join of joins) {
+        if (join.table && join.alias && join.joinCondition) {
+          const type = join.joinType || 'LEFT';
+          sql += ` ${type} JOIN ${join.table} ${join.alias} ON ${join.joinCondition}`;
         }
       }
 
-      // Construir WHERE
-      let whereClause = '';
-      if (whereFilters && Array.isArray(whereFilters) && whereFilters.length > 0) {
-        const conditions = whereFilters.map((filter: any) => {
-          if (!filter.field || !filter.operator || filter.value === undefined) {
-            console.warn(`⚠️ [buildQueryFromMapping] Invalid filter, skipping:`, filter);
-            return null;
+      if (whereFilters.length > 0) {
+        const conditions = whereFilters.map(f => {
+          let field = f.field;
+          const lastDot = field.lastIndexOf('.');
+          if (lastDot > 0) {
+            const tableName = field.substring(0, lastDot).split('.').pop() || '';
+            const colName = field.substring(lastDot + 1);
+            const alias = tableAliasMap[tableName];
+            if (alias) field = `${alias}.${colName}`;
           }
 
-          let field = filter.field;
-          const operator = filter.operator;
-          const value = typeof filter.value === 'string' ? `'${filter.value}'` : filter.value;
-
-          console.log(`🔍 [buildQueryFromMapping] Processing WHERE field: "${field}"`);
-
-          // Reemplazar nombres de tabla en field por alias
-          // field format: "schema.TABLE_NAME.COLUMN_NAME" o "TABLE_NAME.COLUMN_NAME"
-          const lastDotIndex = field.lastIndexOf('.');
-          if (lastDotIndex > 0) {
-            const tableAndColumn = field.substring(0, lastDotIndex);
-            const columnName = field.substring(lastDotIndex + 1);
-
-            // Extraer el nombre de la tabla (última parte de tableAndColumn)
-            const tablePartsInTableAndColumn = tableAndColumn.split('.');
-            const possibleTableName = tablePartsInTableAndColumn[tablePartsInTableAndColumn.length - 1];
-
-            // Buscar alias para esta tabla
-            const alias = tableAliasMap[possibleTableName] || tableAliasMap[tableAndColumn];
-
-            if (alias) {
-              field = `${alias}.${columnName}`;
-              console.log(`🔍 [buildQueryFromMapping] Replaced WHERE field to: "${field}"`);
-            }
+          if (f.operator === 'IN' && Array.isArray(f.value)) {
+            const values = f.value.map((v: any) => typeof v === 'string' ? `'${v}'` : v).join(', ');
+            return `${field} IN (${values})`;
           }
-
-          return `${field} ${operator} ${value}`;
-        }).filter(c => c !== null);
-
-        if (conditions.length > 0) {
-          whereClause = ' WHERE ' + conditions.join(' AND ');
-        }
+          const val = typeof f.value === 'string' ? `'${f.value}'` : f.value;
+          return `${field} ${f.operator} ${val}`;
+        });
+        sql += ` WHERE ${conditions.join(' AND ')}`;
       }
 
-      // Combinar query
-      const query = `SELECT ${selectClause} FROM ${fromClause}${joinClauses}${whereClause}`;
-
-      console.log('✅ [buildQueryFromMapping] Generated SQL:', query);
-      return { sql: query, parameters: [] };
+      this.fastify.log.info(`✅ [buildQueryFromMapping] Generated SQL: ${sql}`);
+      return { sql, parameters: [] };
     } catch (error: any) {
-      console.error('❌ [buildQueryFromMapping] Error:', error.message);
-      throw new AppError(400, `Failed to build query from mapping: ${error.message}`);
+      throw new AppError(400, `Query Builder Error: ${error.message}`);
     }
   }
 
@@ -492,112 +392,43 @@ export class LoadInventoryFromERPService {
    * Soporta el nuevo formato SimpleMappingBuilder: [{source, target, dataType}]
    */
   transformData(rawData: any[], mappingConfig: any): LoadedItem[] {
-    let fieldMappings = mappingConfig.fieldMappings || mappingConfig.filters?.fieldMappings || {};
+    let fieldMappings = mappingConfig.fieldMappings || mappingConfig.filters?.fieldMappings || [];
+    if (typeof fieldMappings === 'string') fieldMappings = JSON.parse(fieldMappings);
 
-    // Si fieldMappings es string (JSON), parsearlo
-    if (typeof fieldMappings === 'string') {
-      fieldMappings = JSON.parse(fieldMappings);
-    }
-
-    console.log(`🔍 [transformData] Transforming ${rawData.length} rows with ${Array.isArray(fieldMappings) ? fieldMappings.length : Object.keys(fieldMappings).length} field mappings`);
-    if (rawData.length > 0) {
-      console.log(`🔍 [transformData] First row keys:`, Object.keys(rawData[0]));
-      console.log(`🔍 [transformData] First row data:`, JSON.stringify(rawData[0], null, 2));
-      console.log(`🔍 [transformData] Field mappings:`, JSON.stringify(fieldMappings, null, 2));
-    }
-
-    return rawData
-      .map((row, rowIndex) => {
-        try {
-          const result: any = {};
-          const isFirstRow = rowIndex === 0;
-
-          // Soportar ambos formatos: viejo (objeto) y nuevo (array)
-          if (Array.isArray(fieldMappings)) {
-            // Nuevo formato: [{source: "campo_erp", target: "campo_local", dataType: "string"}]
-            for (const mapping of fieldMappings) {
-              let sourceValue = '';
-
-              // El source puede ser:
-              // - "ARTICULO.codigo" (full path with table name)
-              // - "a.CANT_DISPONIBLE" (with alias)
-              // - "CANT_DISPONIBLE" (just column name)
-
-              const sourceParts = mapping.source.split('.');
-              const columnName = sourceParts[sourceParts.length - 1];  // Último segmento
-
-              if (isFirstRow) {
-                console.log(`  🔎 Row[${rowIndex}] Mapping "${mapping.target}": searching for "${mapping.source}" (column: "${columnName}")`);
-              }
-
-              // Buscar en el row:
-              // 1. Por el nombre exacto (si source es simple)
-              if (row[mapping.source]) {
-                sourceValue = row[mapping.source];
-                if (isFirstRow) {
-                  console.log(`    ✅ Found by exact key: "${mapping.source}" = "${sourceValue}"`);
-                }
-              }
-              // 2. Por el nombre de columna
-              else if (row[columnName]) {
-                sourceValue = row[columnName];
-                if (isFirstRow) {
-                  console.log(`    ✅ Found by column name: "${columnName}" = "${sourceValue}"`);
-                }
-              }
-              // 3. Case-insensitive búsqueda
-              else {
-                const key = Object.keys(row).find(k => k.toUpperCase() === columnName.toUpperCase());
-                if (key) {
-                  sourceValue = row[key];
-                  if (isFirstRow) {
-                    console.log(`    ✅ Found case-insensitive: "${key}" = "${sourceValue}"`);
-                  }
-                } else {
-                  if (isFirstRow) {
-                    console.log(`    ❌ Not found: "${mapping.source}" (column: "${columnName}")`);
-                    console.log(`       Available keys in row: ${Object.keys(row).join(', ')}`);
-                  }
-                }
-              }
-
-              result[mapping.target] = sourceValue || '';
-            }
-          } else {
-            // Viejo formato: {itemCode: "campo", itemName: "campo"}
-            for (const [key, value] of Object.entries(fieldMappings)) {
-              result[key] = row[value as string] || '';
-            }
-          }
-
-          // Mapear a estructura completa de LoadedItem
-          const toNum = (v: any) => v != null && v !== '' ? parseFloat(String(v)) : undefined;
-          const toStr = (v: any) => v != null && v !== '' ? String(v).trim() : undefined;
-
-          return {
-            itemCode: String(result.itemCode || '').trim(),
-            itemName: String(result.itemName || '').trim(),
-            systemQty: toNum(result.systemQty ?? result.quantity ?? result.cantDisponible ?? result.cant_disponible) ?? 0,
-            uom: toStr(result.uom) ?? 'PZ',
-            baseUom: toStr(result.baseUom) ?? 'PZ',
-            packQty: toNum(result.packQty ?? result.pesoBruto ?? result.peso_bruto) ?? 1,
-            // Campos opcionales — si el mapping los incluye, se persisten
-            // Se aceptan tanto los nombres del mapping (cost, price) como los canónicos (costPrice, salePrice)
-            costPrice: toNum(result.costPrice ?? result.cost ?? result.costoUltLoc ?? result.costo_ult_loc),
-            salePrice: toNum(result.salePrice ?? result.price ?? result.precio),
-            barCodeInv: toStr(result.barCodeInv ?? result.barcode ?? result.barCode ?? result.codigoBarrasInventario),
-            barCodeVt: toStr(result.barCodeVt ?? result.barcodeVt ?? result.barCodeVenta ?? result.codigoBarrasVenta),
-            brand: toStr(result.brand ?? result.marca),
-            category: toStr(result.category ?? result.categoria ?? result.clasificacion1 ?? result.clasificacion_1),
-            subcategory: toStr(result.subcategory ?? result.subcategoria ?? result.clasificacion2 ?? result.clasificacion_2),
-            lot: toStr(result.lot ?? result.lote),
-          };
-        } catch (error) {
-          console.error('Error transforming row:', error);
-          return null;
+    return rawData.map(row => {
+      const result: any = {};
+      if (Array.isArray(fieldMappings)) {
+        for (const m of fieldMappings) {
+          const colName = m.source.split('.').pop();
+          result[m.target] = row[m.source] ?? row[colName] ?? '';
         }
-      })
-      .filter((item) => item !== null && item.itemCode) as LoadedItem[];
+      } else {
+        for (const [k, v] of Object.entries(fieldMappings)) {
+          result[k] = row[v as string] || '';
+        }
+      }
+
+      const toNum = (v: any) => (v != null && v !== '') ? parseFloat(String(v)) : undefined;
+      const toStr = (v: any) => (v != null && v !== '') ? String(v).trim() : undefined;
+
+      return {
+        itemCode: String(result.itemCode || '').trim(),
+        itemName: String(result.itemName || '').trim(),
+        systemQty: toNum(result.systemQty ?? result.quantity ?? result.cantDisponible) ?? 0,
+        uom: toStr(result.uom) ?? 'PZ',
+        baseUom: toStr(result.baseUom) ?? 'PZ',
+        packQty: toNum(result.packQty) ?? 1,
+        costPrice: toNum(result.costPrice ?? result.cost),
+        salePrice: toNum(result.salePrice ?? result.price),
+        barCodeInv: toStr(result.barCodeInv ?? result.barcode),
+        barCodeVt: toStr(result.barCodeVt ?? result.barcodeVt),
+        brand: toStr(result.brand ?? result.marca),
+        category: toStr(result.category ?? result.categoria),
+        subcategory: toStr(result.subcategory ?? result.subcategoria),
+        itemProv: toStr(result.itemProv ?? result.articulo_del_prov),
+        lot: toStr(result.lot ?? result.lote),
+      };
+    }).filter(i => i.itemCode) as LoadedItem[];
   }
 
   /**

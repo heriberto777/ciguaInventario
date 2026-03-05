@@ -1,5 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface InventoryModule {
   id: string;
@@ -9,6 +10,7 @@ interface InventoryModule {
   color: string;
   route: string;
   status: 'ready' | 'in-progress' | 'completed';
+  requiredPermission?: string;
 }
 
 export const InventoryDashboardNavPage: React.FC = () => {
@@ -23,6 +25,7 @@ export const InventoryDashboardNavPage: React.FC = () => {
       color: '#6366f1',
       route: '/inventory/counts',
       status: 'ready',
+      requiredPermission: 'inv_counts:view',
     },
     {
       id: 'variance-reports',
@@ -32,6 +35,7 @@ export const InventoryDashboardNavPage: React.FC = () => {
       color: '#8b5cf6',
       route: '/inventory/variances',
       status: 'ready',
+      requiredPermission: 'inventory:view_variances',
     },
     {
       id: 'mapping-config',
@@ -41,6 +45,7 @@ export const InventoryDashboardNavPage: React.FC = () => {
       color: '#06b6d4',
       route: '/admin/mapping',
       status: 'ready',
+      requiredPermission: 'mappings:view',
     },
     {
       id: 'inventory-reports',
@@ -50,6 +55,7 @@ export const InventoryDashboardNavPage: React.FC = () => {
       color: '#ec4899',
       route: '/reports',
       status: 'ready',
+      requiredPermission: 'reports:view',
     },
     {
       id: 'audit-hub',
@@ -59,8 +65,12 @@ export const InventoryDashboardNavPage: React.FC = () => {
       color: '#10b981',
       route: '/inventory/audit',
       status: 'ready',
+      requiredPermission: 'audit:view',
     },
   ];
+
+  const { hasPermission } = usePermissions();
+  const visibleModules = modules.filter(m => !m.requiredPermission || hasPermission(m.requiredPermission));
 
   const styles = {
     container: {
@@ -233,7 +243,7 @@ export const InventoryDashboardNavPage: React.FC = () => {
       <div style={styles.section}>
         <h2 style={styles.sectionTitle}>Módulos Principales</h2>
         <div style={styles.grid}>
-          {modules.map((module) => (
+          {visibleModules.map((module) => (
             <div
               key={module.id}
               style={{

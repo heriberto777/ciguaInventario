@@ -5,6 +5,7 @@ import { CompanyForm } from '@/components/organisms/CompanyForm';
 import { CompaniesTable } from '@/components/organisms/CompaniesTable';
 import { Button } from '@/components/atoms/Button';
 import { getApiClient } from '@/services/api';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface Company {
   id: string;
@@ -39,6 +40,8 @@ export const CompaniesContent: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
+  const { hasPermission } = usePermissions();
+  const canManage = hasPermission('companies:manage');
 
   // Fetch companies
   const { data: companiesData, isLoading: companiesLoading } =
@@ -176,16 +179,18 @@ export const CompaniesContent: React.FC = () => {
           <h1 className="text-3xl font-bold text-[var(--text-primary)]">Companies</h1>
           <p className="text-[var(--text-secondary)] mt-1">Manage multi-tenant companies</p>
         </div>
-        <Button
-          onClick={() => {
-            setEditingCompany(null);
-            setShowForm(!showForm);
-            setError(null);
-          }}
-          disabled={showForm}
-        >
-          {showForm ? 'Cancel' : 'Create Company'}
-        </Button>
+        {canManage && (
+          <Button
+            onClick={() => {
+              setEditingCompany(null);
+              setShowForm(!showForm);
+              setError(null);
+            }}
+            disabled={showForm}
+          >
+            {showForm ? 'Cancel' : 'Create Company'}
+          </Button>
+        )}
       </div>
 
       {/* Error Alert */}
@@ -254,11 +259,11 @@ export const CompaniesContent: React.FC = () => {
         <CompaniesTable
           companies={companiesData?.data || []}
           isLoading={companiesLoading}
-          onEdit={(company) => {
+          onEdit={canManage ? (company) => {
             setEditingCompany(company);
             setShowForm(true);
-          }}
-          onDelete={handleDelete}
+          } : undefined}
+          onDelete={canManage ? handleDelete : undefined}
         />
       </div>
 
@@ -278,8 +283,8 @@ export const CompaniesContent: React.FC = () => {
                 key={i}
                 onClick={() => setCurrentPage(i)}
                 className={`px-3 py-2 rounded ${currentPage === i
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
                   }`}
               >
                 {i + 1}

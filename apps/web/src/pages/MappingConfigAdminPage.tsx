@@ -218,7 +218,7 @@ export const MappingConfigAdminPage: React.FC = () => {
     setStep('select_type');
   };
 
-  const handleCreateWithType = (type: 'ITEMS' | 'STOCK' | 'PRICES' | 'COST' | 'DESTINATION') => {
+  const handleCreateWithType = (type: 'ITEMS' | 'STOCK' | 'PRICES' | 'COST' | 'DESTINATION' | 'PENDING_INVOICES') => {
     if (!connections || connections.length === 0) return;
 
     const firstConnection = connections[0].id;
@@ -275,12 +275,17 @@ export const MappingConfigAdminPage: React.FC = () => {
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-3">
                       <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${config.datasetType === 'DESTINATION' ? 'bg-accent-secondary/10 text-accent-secondary border-accent-secondary/20' :
-                        config.datasetType === 'ITEMS' ? 'bg-accent-primary/10 text-accent-primary border-accent-primary/20' :
-                          'bg-hover text-muted border-border-default'
+                          config.datasetType === 'ITEMS' ? 'bg-accent-primary/10 text-accent-primary border-accent-primary/20' :
+                            config.datasetType === 'PENDING_INVOICES' ? 'bg-warning/10 text-warning border-warning/20' :
+                              'bg-hover text-muted border-border-default'
                         }`}>
                         {config.datasetType}
                       </span>
-                      <h3 className="text-xl font-black text-primary tracking-tight">{config.datasetType === 'DESTINATION' ? 'Exportación a ERP' : 'Carga desde ERP'}</h3>
+                      <h3 className="text-xl font-black text-primary tracking-tight">
+                        {config.datasetType === 'DESTINATION' ? 'Exportación a ERP' :
+                          config.datasetType === 'PENDING_INVOICES' ? 'Reserva de Facturas (ERP)' :
+                            'Carga desde ERP'}
+                      </h3>
                     </div>
                     <p className="text-sm text-[var(--text-secondary)] flex items-center gap-1">
                       <span className="opacity-60">📍 Tabla:</span>
@@ -390,13 +395,26 @@ export const MappingConfigAdminPage: React.FC = () => {
 
             <button
               onClick={() => handleCreateWithType('STOCK')}
-              className="group p-8 border-2 border-[var(--border-default)] bg-[var(--bg-card)] rounded-2xl hover:border-blue-500 hover:bg-blue-500/5 transition-all text-left shadow-sm opacity-60 hover:opacity-100"
+              className="group p-8 border border-border-default bg-card rounded-3xl hover:border-blue-500 hover:shadow-xl-hover transition-all text-left shadow-lg overflow-hidden relative"
             >
-              <div className="w-12 h-12 bg-[var(--bg-hover)] rounded-xl flex items-center justify-center mb-4 group-hover:bg-blue-500 group-hover:text-white transition-colors">
-                <span className="text-2xl">📊</span>
+              <div className="absolute -right-4 -bottom-4 text-7xl opacity-5 group-hover:scale-110 group-hover:opacity-10 transition-all duration-500">📊</div>
+              <div className="w-14 h-14 bg-blue-500/10 text-blue-500 rounded-2xl flex items-center justify-center mb-6 group-hover:bg-blue-500 group-hover:text-white transition-all shadow-inner">
+                <span className="text-3xl">📊</span>
               </div>
-              <h3 className="text-xl font-black mb-2 text-[var(--text-primary)]">Carga de Existencia</h3>
-              <p className="text-sm text-[var(--text-secondary)] leading-relaxed">Importa el stock teórico actual desde el ERP para compararlo con el conteo físico.</p>
+              <h3 className="text-2xl font-black mb-2 text-primary tracking-tight">Carga de Existencia</h3>
+              <p className="text-sm text-secondary leading-relaxed font-medium">Importa el stock teórico actual desde el ERP para compararlo con el conteo físico.</p>
+            </button>
+
+            <button
+              onClick={() => handleCreateWithType('PENDING_INVOICES')}
+              className="group p-8 border border-border-default bg-card rounded-3xl hover:border-warning hover:shadow-xl-hover transition-all text-left shadow-lg overflow-hidden relative"
+            >
+              <div className="absolute -right-4 -bottom-4 text-7xl opacity-5 group-hover:scale-110 group-hover:opacity-10 transition-all duration-500">🧾</div>
+              <div className="w-14 h-14 bg-warning/10 text-warning rounded-2xl flex items-center justify-center mb-6 group-hover:bg-warning group-hover:text-white transition-all shadow-inner">
+                <span className="text-3xl">🧾</span>
+              </div>
+              <h3 className="text-2xl font-black mb-2 text-primary tracking-tight">Reserva de Facturas</h3>
+              <p className="text-sm text-secondary leading-relaxed font-medium">Configura la extracción de facturas pendientes de despacho para conciliación.</p>
             </button>
 
             <button

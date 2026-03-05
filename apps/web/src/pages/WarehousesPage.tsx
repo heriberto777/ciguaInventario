@@ -8,9 +8,12 @@ import { ConfirmModal } from '@/components/atoms/ConfirmModal';
 import { NotificationModal } from '@/components/atoms/NotificationModal';
 import { ProcessingModal } from '@/components/atoms/ProcessingModal';
 import { getApiClient } from '@/services/api';
+import { usePermissions } from '@/hooks/usePermissions';
 
 const WarehousesPage: React.FC = () => {
   const apiClient = getApiClient();
+  const { hasPermission } = usePermissions();
+  const canManage = hasPermission('warehouses:manage');
 
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -242,14 +245,16 @@ const WarehousesPage: React.FC = () => {
     <AdminLayout title="Almacenes">
       <div className="max-w-6xl mx-auto">
         <div className="flex justify-between items-center mb-6">
-          <Button onClick={() => {
-            setEditingId(null);
-            setFormData({ code: '', name: '', address: '', city: '', manager: '' });
-            setShowForm(!showForm);
-            setError(null);
-          }}>
-            {showForm ? 'Cancelar' : 'Nuevo Almacén'}
-          </Button>
+          {canManage && (
+            <Button onClick={() => {
+              setEditingId(null);
+              setFormData({ code: '', name: '', address: '', city: '', manager: '' });
+              setShowForm(!showForm);
+              setError(null);
+            }}>
+              {showForm ? 'Cancelar' : 'Nuevo Almacén'}
+            </Button>
+          )}
         </div>
 
         {error && (
@@ -342,27 +347,31 @@ const WarehousesPage: React.FC = () => {
                     <p className="text-sm text-[var(--text-muted)]">{warehouse.city}</p>
                   )}
                   <div className="flex gap-2 mt-3">
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleEdit(warehouse);
-                      }}
-                    >
-                      Editar
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="danger"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDelete(warehouse.id);
-                      }}
-                      isLoading={deleteMutation.isPending && deleteMutation.variables === warehouse.id}
-                    >
-                      Eliminar
-                    </Button>
+                    {canManage && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEdit(warehouse);
+                          }}
+                        >
+                          Editar
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDelete(warehouse.id);
+                          }}
+                          isLoading={deleteMutation.isPending && deleteMutation.variables === warehouse.id}
+                        >
+                          Eliminar
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </div>
               ))}
@@ -374,12 +383,14 @@ const WarehousesPage: React.FC = () => {
             <div className="lg:col-span-2">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-semibold text-[var(--text-primary)]">Ubicaciones del Almacén</h2>
-                <Button
-                  size="sm"
-                  onClick={() => setShowLocationForm(!showLocationForm)}
-                >
-                  {showLocationForm ? 'Cancelar' : 'Nueva Ubicación'}
-                </Button>
+                {canManage && (
+                  <Button
+                    size="sm"
+                    onClick={() => setShowLocationForm(!showLocationForm)}
+                  >
+                    {showLocationForm ? 'Cancelar' : 'Nueva Ubicación'}
+                  </Button>
+                )}
               </div>
 
               {showLocationForm && (

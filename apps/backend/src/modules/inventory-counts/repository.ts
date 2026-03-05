@@ -61,13 +61,44 @@ export class InventoryCountRepository {
 
     if (!count) return null;
 
+    // Obtener reservas para este conteo
+    const reservedInvoices = await this.fastify.prisma.countReservedInvoice.findMany({
+      where: { countId: id },
+      include: { items: true }
+    });
+
+    // Agrupar reservas por itemCode y por itemProv (Proveedor)
+    // Normalizamos las llaves (Trim + UpperCase) para evitar fallos por espacios del ERP
+    const reservedByCode = new Map<string, number>();
+    const reservedByProv = new Map<string, number>();
+    const inferredProvByCode = new Map<string, string>(); // Para "auto-conectar" items del conteo sin itemProv
+
+    for (const inv of reservedInvoices) {
+      for (const item of inv.items) {
+        const itemCodeNorm = item.itemCode.trim().toUpperCase();
+        const itemProvNorm = item.itemProv ? item.itemProv.trim().toUpperCase() : null;
+
+        // Por código exacto
+        const currentCode = reservedByCode.get(itemCodeNorm) || 0;
+        reservedByCode.set(itemCodeNorm, currentCode + Number(item.reservedQty));
+
+        // Por código de proveedor (si existe)
+        if (itemProvNorm) {
+          const currentProv = reservedByProv.get(itemProvNorm) || 0;
+          reservedByProv.set(itemProvNorm, currentProv + Number(item.reservedQty));
+          inferredProvByCode.set(itemCodeNorm, itemProvNorm); // Mapear código -> proveedor para inferencia
+          this.fastify.log.info(`📦 [Consolidate] Mapping item ${itemCodeNorm} to itemProv ${itemProvNorm} with qty ${item.reservedQty}`);
+        }
+      }
+    }
+
     // Re-query para obtener items de la versión actual
     const countWithCurrentItems = await this.fastify.prisma.inventoryCount.findFirst({
       where: { id, companyId },
       include: {
         countItems: {
           where: {
-            version: count.currentVersion, // FILTRAR por currentVersion
+            version: count.currentVersion,
           },
           include: {
             location: true,
@@ -77,7 +108,49 @@ export class InventoryCountRepository {
       },
     });
 
-    return countWithCurrentItems ? this.mapCount(countWithCurrentItems) : null;
+    if (!countWithCurrentItems) return null;
+
+    // Inyectar reservedQty en cada item usando lógica de alias (Proveedor)
+    const mapped = this.mapCount(countWithCurrentItems);
+    if (mapped.countItems) {
+      mapped.countItems = mapped.countItems.map((item: any) => {
+        let reservedQty = 0;
+        const itemCodeNorm = item.itemCode.trim().toUpperCase();
+        let itemProvNorm = item.itemProv ? item.itemProv.trim().toUpperCase() : null;
+
+        // AUTO-INFERENCIA: Si el ítem no tiene itemProv cargado (count anterior), 
+        // buscamos si en las facturas reservadas este itemCode tiene un itemProv asociado.
+        if (!itemProvNorm && inferredProvByCode.has(itemCodeNorm)) {
+          itemProvNorm = inferredProvByCode.get(itemCodeNorm) || null;
+          if (itemProvNorm) {
+            this.fastify.log.info(`💡 [Inference] Inferred itemProv ${itemProvNorm} for item ${itemCodeNorm} from reservations`);
+          }
+        }
+
+        // Prioridad 1: Si el ítem del conteo tiene itemProv, buscamos por ese alias
+        if (itemProvNorm && reservedByProv.has(itemProvNorm)) {
+          reservedQty = reservedByProv.get(itemProvNorm) || 0;
+          this.fastify.log.info(`🔗 [Match] Item ${itemCodeNorm} matched by Provider Alias: ${itemProvNorm} -> Total Pool Qty: ${reservedQty}`);
+        }
+        // Prioridad 2: Si no hubo coincidencia por proveedor, usamos el código exacto
+        else if (reservedByCode.has(itemCodeNorm)) {
+          reservedQty = reservedByCode.get(itemCodeNorm) || 0;
+          this.fastify.log.info(`🔗 [Match] Item ${itemCodeNorm} matched by Exact Code. Qty: ${reservedQty}`);
+        } else {
+          // No match, reservedQty = 0
+        }
+
+        return {
+          ...item,
+          reservedQty
+        };
+      });
+    }
+
+    // También retornar las facturas reservadas para el detalle
+    (mapped as any).reservedInvoices = reservedInvoices;
+
+    return mapped;
   }
 
   async listCounts(companyId: string, warehouseId?: string, status?: string, skip = 0, take = 20) {
@@ -147,6 +220,7 @@ export class InventoryCountRepository {
         category: category || data.category,
         subcategory: subcategory || data.subcategory,
         lot: data.lot,
+        itemProv: data.itemProv,
       },
     });
 
@@ -189,10 +263,15 @@ export class InventoryCountRepository {
     const current = await this.getCountItem(id);
     if (!current) return null;
 
-    const countedQty = data.countedQty ?? current.countedQty?.toNumber() ?? 0;
-    const systemQty = data.systemQty ?? current.systemQty?.toNumber() ?? 0;
+    // Obtener los valores a guardar priorizando el DTO, luego el valor actual
+    const countedQty = data.countedQty !== undefined ? data.countedQty : (current.countedQty?.toNumber() ?? 0);
+    const systemQty = data.systemQty !== undefined ? data.systemQty : (current.systemQty?.toNumber() ?? 0);
+
+    // Calcular varianza basada en los valores finales que se guardarán
     const variance = countedQty - systemQty;
     const variancePercent = systemQty > 0 ? (variance / systemQty) * 100 : 0;
+
+    console.log(`[updateCountItem] ID: ${id}, countedQty: ${countedQty}, systemQty: ${systemQty}, variance: ${variance}`);
 
     const updated = await this.fastify.prisma.inventoryCount_Item.update({
       where: { id },
@@ -202,12 +281,14 @@ export class InventoryCountRepository {
         ...(data.uom && { uom: data.uom }),
         ...(data.systemQty !== undefined && { systemQty: data.systemQty }),
         ...(data.countedQty !== undefined && { countedQty: data.countedQty }),
-        ...(data.notes && { notes: data.notes }),
-        ...(data.lot && { lot: data.lot }),
+        ...(data.notes !== undefined && { notes: data.notes }),
+        ...(data.lot !== undefined && { lot: data.lot }),
+        ...(data.itemProv !== undefined && { itemProv: data.itemProv }),
+        status: data.countedQty !== undefined ? 'COUNTED' : current.status, // Actualizar estado a COUNTED si se envió cantidad
       },
     });
 
-    // Actualizar reporte de varianza
+    // Actualizar o crear reporte de varianza
     const varianceReport = await this.fastify.prisma.varianceReport.findFirst({
       where: { countItemId: id },
     });
@@ -216,22 +297,22 @@ export class InventoryCountRepository {
       await this.fastify.prisma.varianceReport.update({
         where: { id: varianceReport.id },
         data: {
+          countedQty: countedQty,
           difference: variance,
           variancePercent,
         },
       });
     } else if (variance !== 0) {
-      // Crear nuevo reporte si no existe y hay varianza
-      const countItem = await this.getCountItem(id);
+      const count = await this.fastify.prisma.inventoryCount.findUnique({
+        where: { id: updated.countId },
+      });
       await this.fastify.prisma.varianceReport.create({
         data: {
-          companyId: (await this.fastify.prisma.inventoryCount.findUnique({
-            where: { id: countItem!.countId },
-          }))!.companyId,
-          countId: countItem!.countId,
+          companyId: count!.companyId,
+          countId: updated.countId,
           countItemId: id,
-          itemCode: countItem!.itemCode,
-          itemName: countItem!.itemName,
+          itemCode: updated.itemCode,
+          itemName: updated.itemName,
           systemQty,
           countedQty,
           difference: variance,
@@ -316,6 +397,7 @@ export class InventoryCountRepository {
         category: category || data.category,
         subcategory: subcategory || data.subcategory,
         lot: data.lot,
+        itemProv: data.itemProv,
       },
     });
   }

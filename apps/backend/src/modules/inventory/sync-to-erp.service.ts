@@ -194,6 +194,20 @@ export class SyncToERPService {
       // Generar el primer correlativo para la BOLETA/LOTE en el ERP
       let consecutiveBase = await this.generateNextConsecutive(connector, exportMapping, erpTableName);
 
+      // 2. Obtener reservaciones para este conteo (Pre-cargar para eficiencia)
+      const reservedInvoices = await (this.fastify.prisma as any).countReservedInvoice.findMany({
+        where: { countId },
+        include: { items: true }
+      });
+
+      const reservedMap = new Map<string, number>();
+      for (const inv of reservedInvoices) {
+        for (const item of inv.items) {
+          const code = item.itemCode.trim().toUpperCase();
+          reservedMap.set(code, (reservedMap.get(code) || 0) + Number(item.reservedQty));
+        }
+      }
+
       const details: SyncResult['details'] = [];
       let itemsSynced = 0;
       let itemsFailed = 0;
@@ -203,14 +217,20 @@ export class SyncToERPService {
         try {
           const sysQty = Number(countItem.systemQty);
           const countQty = Number(countItem.countedQty || 0);
-          const variance = countQty - sysQty;
+
+          // Lógica de Matching de Reservas para Sincronización
+          const itemCodeNorm = countItem.itemCode.trim().toUpperCase();
+          const reservedVal = reservedMap.get(itemCodeNorm) || 0;
+
+          // FORMULA CRÍTICA: Lo que enviamos al ERP es lo físico real (Físico - Reserva)
+          // Esto asegura que el ERP reciba el inventario "Disponible".
+          const physicalReal = countQty - reservedVal;
+          const variance = physicalReal - sysQty;
 
           const newQuantity =
-            input.updateStrategy === 'REPLACE' ? countQty : sysQty + variance;
+            input.updateStrategy === 'REPLACE' ? physicalReal : sysQty + variance;
 
-          // Incrementar el correlativo para cada item si el usuario lo desea por item
-          // O mantener el mismo si es por lote. Según el feedback, parece que lo quiere por item.
-          // Para simplificar, generamos un correlativo que incremente el número final.
+          // Incrementar el correlativo
           const consecutive = this.incrementConsecutive(consecutiveBase, itemsSynced + itemsFailed);
 
           // FLUJO: INSERT dinámico basado en Mapping

@@ -289,11 +289,18 @@ class OfflineSync {
       } catch (error: any) {
         console.error(`Error syncing ${sync.id}:`, error);
 
-        // Si es un error 4xx no reintentable (ej: item ya no existe), remover
-        if (error.response?.status >= 400 && error.response?.status < 500) {
+        const status = error.response?.status;
+
+        // Si el ítem ya no existe (404), eliminamos la tarea
+        if (status === 404) {
+          console.warn(`Item not found (404) for sync ${sync.id}, removing task.`);
           await this.removePendingSync(sync.id);
           failed++;
         } else {
+          // Para cualquier otro error (incluyendo 403 Forbidden o 500), 
+          // incrementamos reintentos pero MANTENEMOS la tarea.
+          // Esto permite que si el error era por falta de permisos (como el que arreglamos),
+          // los datos no se pierdan y se suban en el siguiente intento exitoso.
           await this.incrementRetries(sync.id);
           failed++;
         }

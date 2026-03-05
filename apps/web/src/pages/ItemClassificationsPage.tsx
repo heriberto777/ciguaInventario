@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as XLSX from 'xlsx';
 import { getApiClient } from '@/services/api';
+import { usePermissions } from '@/hooks/usePermissions';
 
 const apiClient = getApiClient();
 
@@ -380,6 +381,8 @@ function ClassificationImportModal({ onClose, onDownloadTemplate, onImport, isIm
 
 // ─── Página principal ─────────────────────────────────────────
 export default function ItemClassificationsPage() {
+    const { hasPermission } = usePermissions();
+    const canManage = hasPermission('classifications:manage');
     const [activeTab, setActiveTab] = useState<GroupType | 'ALL'>('ALL');
     const [search, setSearch] = useState('');
     const [modalItem, setModalItem] = useState<Classification | null | undefined>(undefined); // undefined = cerrado
@@ -500,42 +503,46 @@ export default function ItemClassificationsPage() {
 
                 <div style={{ display: 'flex', gap: 8 }}>
                     {/* Import Excel */}
-                    <button
-                        onClick={handleExportToExcel}
-                        title="Exportar actuales a Excel"
-                        style={{ ...styles.btnSecondary, padding: '8px 12px' }}
-                    >
-                        📤 Exportar
-                    </button>
-                    <button
-                        onClick={() => setShowImportModal(true)}
-                        disabled={bulkMutation.isPending}
-                        style={{ ...styles.btnPrimary, display: 'flex', alignItems: 'center', gap: 6, background: '#059669' }}
-                    >
-                        📥 Cargar Excel
-                    </button>
-                    <button
-                        onClick={async () => {
-                            if (confirm('¿Deseas extraer clasificaciones únicas de los artículos existentes?')) {
-                                try {
-                                    const res = await syncMutation.mutateAsync();
-                                    setImportResult(res.data.data);
-                                } catch (e: any) {
-                                    alert('Error al sincronizar: ' + (e.response?.data?.message ?? e.message));
-                                }
-                            }
-                        }}
-                        disabled={syncMutation.isPending}
-                        style={{ ...styles.btnSecondary, display: 'flex', alignItems: 'center', gap: 6 }}
-                    >
-                        {syncMutation.isPending ? '⏳ Sincronizando...' : '🔄 Sinc. desde Items'}
-                    </button>
-                    <button
-                        onClick={() => setModalItem(null)}
-                        style={{ ...styles.btnPrimary, display: 'flex', alignItems: 'center', gap: 6 }}
-                    >
-                        + Nueva
-                    </button>
+                    {canManage && (
+                        <>
+                            <button
+                                onClick={handleExportToExcel}
+                                title="Exportar actuales a Excel"
+                                style={{ ...styles.btnSecondary, padding: '8px 12px' }}
+                            >
+                                📤 Exportar
+                            </button>
+                            <button
+                                onClick={() => setShowImportModal(true)}
+                                disabled={bulkMutation.isPending}
+                                style={{ ...styles.btnPrimary, display: 'flex', alignItems: 'center', gap: 6, background: '#059669' }}
+                            >
+                                📥 Cargar Excel
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    if (confirm('¿Deseas extraer clasificaciones únicas de los artículos existentes?')) {
+                                        try {
+                                            const res = await syncMutation.mutateAsync();
+                                            setImportResult(res.data.data);
+                                        } catch (e: any) {
+                                            alert('Error al sincronizar: ' + (e.response?.data?.message ?? e.message));
+                                        }
+                                    }
+                                }}
+                                disabled={syncMutation.isPending}
+                                style={{ ...styles.btnSecondary, display: 'flex', alignItems: 'center', gap: 6 }}
+                            >
+                                {syncMutation.isPending ? '⏳ Sincronizando...' : '🔄 Sinc. desde Items'}
+                            </button>
+                            <button
+                                onClick={() => setModalItem(null)}
+                                style={{ ...styles.btnPrimary, display: 'flex', alignItems: 'center', gap: 6 }}
+                            >
+                                + Nueva
+                            </button>
+                        </>
+                    )}
                 </div>
             </div>
 
@@ -634,20 +641,22 @@ export default function ItemClassificationsPage() {
                                             {item.groupNumber}
                                         </td>
                                         <td style={{ padding: '10px 14px' }}>
-                                            <div style={{ display: 'flex', gap: 6 }}>
-                                                <button
-                                                    onClick={() => setModalItem(item)}
-                                                    style={{ ...styles.actionBtn, color: 'var(--accent-primary)' }}
-                                                >
-                                                    ✏️
-                                                </button>
-                                                <button
-                                                    onClick={() => setDeleteId(item.id)}
-                                                    style={{ ...styles.actionBtn, color: 'var(--color-danger)' }}
-                                                >
-                                                    🗑️
-                                                </button>
-                                            </div>
+                                            {canManage && (
+                                                <div style={{ display: 'flex', gap: 6 }}>
+                                                    <button
+                                                        onClick={() => setModalItem(item)}
+                                                        style={{ ...styles.actionBtn, color: 'var(--accent-primary)' }}
+                                                    >
+                                                        ✏️
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setDeleteId(item.id)}
+                                                        style={{ ...styles.actionBtn, color: 'var(--color-danger)' }}
+                                                    >
+                                                        🗑️
+                                                    </button>
+                                                </div>
+                                            )}
                                         </td>
                                     </tr>
                                 );

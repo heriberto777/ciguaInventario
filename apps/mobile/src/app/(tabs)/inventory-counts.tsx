@@ -11,28 +11,24 @@ import {
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useListInventoryCounts } from '@/hooks/useInventory';
+import { useListInventoryCounts, InventoryCount } from '@/hooks/useInventory';
 import { initializeApiClient } from '@/services/api';
 import { getApiBaseUrl } from '@/services/serverConfig';
 import { offlineSync } from '@/services/offline-sync';
 import { useFocusEffect } from 'expo-router';
+import { useResponsive } from '@/hooks/useResponsive';
+import { usePermissions } from '@/hooks/usePermissions';
 
-interface InventoryCount {
-  id: string;
-  sequenceNumber: number;
-  code: string;
-  status: 'DRAFT' | 'ACTIVE' | 'ON_HOLD' | 'SUBMITTED' | 'COMPLETED' | 'CANCELLED' | 'CLOSED';
-  currentVersion: number;
-  countItems: Array<{ id: string }>;
-  createdAt: string;
-  updatedAt: string;
-}
 
 export default function InventoryCountsScreen() {
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const { data: allCounts = [], isLoading, refetch } = useListInventoryCounts();
+  const { numColumns, spacing, isTablet } = useResponsive();
+  const { hasPermission } = usePermissions();
+
+  const canCreate = hasPermission('inv_counts:create');
 
   useFocusEffect(
     React.useCallback(() => {
@@ -87,7 +83,7 @@ export default function InventoryCountsScreen() {
 
   const renderCountItem = ({ item }: { item: InventoryCount }) => (
     <TouchableOpacity
-      style={styles.card}
+      style={[styles.card, isTablet && styles.cardTablet]}
       onPress={() => router.push(`/${item.id}`)}
     >
       <View style={styles.cardHeader}>
@@ -151,31 +147,38 @@ export default function InventoryCountsScreen() {
               )}
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.createButton}
-              onPress={() => router.push('/create')}
-            >
-              <Text style={styles.createButtonText}>+</Text>
-            </TouchableOpacity>
+            {canCreate && (
+              <TouchableOpacity
+                style={styles.createButton}
+                onPress={() => router.push('/create')}
+              >
+                <Text style={styles.createButtonText}>+</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 
         {counts.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyStateText}>No hay conteos disponibles</Text>
-            <TouchableOpacity
-              style={styles.emptyCreateButton}
-              onPress={() => router.push('/create')}
-            >
-              <Text style={styles.emptyCreateButtonText}>Crear Primer Conteo</Text>
-            </TouchableOpacity>
+            {canCreate && (
+              <TouchableOpacity
+                style={styles.emptyCreateButton}
+                onPress={() => router.push('/create')}
+              >
+                <Text style={styles.emptyCreateButtonText}>Crear Primer Conteo</Text>
+              </TouchableOpacity>
+            )}
           </View>
         ) : (
           <FlatList
+            key={`counts-list-${numColumns}`}
             data={counts}
             renderItem={renderCountItem}
             keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.listContent}
+            numColumns={numColumns}
+            contentContainerStyle={[styles.listContent, { padding: spacing }]}
+            columnWrapperStyle={numColumns > 1 ? { gap: spacing } : null}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           />
         )}
@@ -234,6 +237,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 3.84,
     elevation: 3,
+  },
+  cardTablet: {
+    flex: 1,
+    marginBottom: 20,
   },
   cardHeader: {
     flexDirection: 'row',

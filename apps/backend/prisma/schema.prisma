@@ -11,12 +11,12 @@ model User {
   id             String          @id @default(cuid())
   email          String          @unique
   password       String?
-  firstName      String?
-  lastName       String?
-  isActive       Boolean         @default(true)
   companyId      String
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
+  firstName      String?
+  isActive       Boolean         @default(true)
+  lastName       String?
   aiChatMessages AIChatMessage[]
   auditLogs      AuditLog[]
   sessions       Session[]
@@ -29,18 +29,19 @@ model User {
 model Company {
   id              String                 @id @default(cuid())
   name            String                 @unique
-  email           String?                @unique
-  description     String?
-  phone           String?
-  website         String?
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
   address         String?
   city            String?
   country         String?
+  description     String?
+  email           String?                @unique
   isActive        Boolean                @default(true)
-  createdAt       DateTime               @default(now())
-  updatedAt       DateTime               @updatedAt
+  phone           String?
+  website         String?
   aiChatMessages  AIChatMessage[]
   aiConfigs       AIConfig[]
+  appConfig       AppConfig?
   auditLogs       AuditLog[]
   erpConnections  ERPConnection[]
   adjustments     InventoryAdjustment[]
@@ -53,17 +54,16 @@ model Company {
   users           User[]
   varianceReports VarianceReport[]
   warehouses      Warehouse[]
-  appConfig       AppConfig?
 }
 
 model Role {
   id              String           @id @default(cuid())
   name            String
-  description     String?
-  isActive        Boolean          @default(true)
   companyId       String
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
+  description     String?
+  isActive        Boolean          @default(true)
   company         Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
   rolePermissions RolePermission[]
   userRoles       UserRole[]
@@ -76,8 +76,8 @@ model Permission {
   id              String           @id @default(cuid())
   name            String           @unique
   description     String?
-  category        String
   createdAt       DateTime         @default(now())
+  category        String
   updatedAt       DateTime         @updatedAt
   rolePermissions RolePermission[]
 }
@@ -220,35 +220,36 @@ model Warehouse_Location {
 }
 
 model InventoryCount {
-  id             String                 @id @default(cuid())
-  companyId      String
-  warehouseId    String
-  locationId     String?
-  code           String
-  sequenceNumber String                 @unique @map("sequenceNumber_idx")
-  description    String?
-  status         String                 @default("DRAFT")
-  currentVersion  Int                    @default(1)
-  totalVersions   Int                    @default(1)
+  id               String                 @id @default(cuid())
+  companyId        String
+  warehouseId      String
+  code             String
+  description      String?
+  status           String                 @default("DRAFT")
+  startedBy        String?
+  startedAt        DateTime               @default(now())
+  completedBy      String?
+  completedAt      DateTime?
+  approvedBy       String?
+  approvedAt       DateTime?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  locationId       String?
+  currentVersion   Int                    @default(1)
+  totalVersions    Int                    @default(1)
+  closedAt         DateTime?
+  closedBy         String?
+  createdBy        String                 @default("system")
+  notes            String?
+  sequenceNumber   String                 @unique @map("sequenceNumber_idx")
   finalizedVersion Int?
-  createdBy       String                 @default("system")
-  startedBy      String?
-  startedAt      DateTime               @default(now())
-  completedBy    String?
-  completedAt    DateTime?
-  closedBy       String?
-  closedAt       DateTime?
-  approvedBy     String?
-  approvedAt     DateTime?
-  notes          String?
-  createdAt      DateTime               @default(now())
-  updatedAt      DateTime               @updatedAt
-  company        Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  location       Warehouse_Location?    @relation("InventoryCountToLocation", fields: [locationId], references: [id])
-  warehouse      Warehouse              @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
-  countItems     InventoryCount_Item[]
-  syncHistory    InventorySyncHistory[]
-  variances      VarianceReport[]
+  reservedInvoices CountReservedInvoice[]
+  company          Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  location         Warehouse_Location?    @relation("InventoryCountToLocation", fields: [locationId], references: [id])
+  warehouse        Warehouse              @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  countItems       InventoryCount_Item[]
+  syncHistory      InventorySyncHistory[]
+  variances        VarianceReport[]
 
   @@unique([companyId, code])
   @@index([companyId])
@@ -264,27 +265,28 @@ model InventoryCount_Item {
   locationId       String
   itemCode         String
   itemName         String
-  barCodeInv       String?
-  barCodeVt        String?
-  category         String?
-  brand            String?
-  subcategory      String?
-  packQty          Decimal            @default(1)
   uom              String
-  baseUom          String             @default("PZ")
   systemQty        Decimal
-  countedQty       Decimal?
-  lot              String?
-  version          Int                @default(1)
-  status           String             @default("PENDING")
-  hasVariance      Boolean            @default(false)
-  costPrice        Decimal?
-  salePrice        Decimal?
   notes            String?
   countedBy        String?
   countedAt        DateTime?          @default(now())
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
+  baseUom          String             @default("PZ")
+  costPrice        Decimal?
+  packQty          Decimal            @default(1)
+  salePrice        Decimal?
+  status           String             @default("PENDING")
+  countedQty       Decimal?
+  version          Int                @default(1)
+  barCodeInv       String?
+  barCodeVt        String?
+  brand            String?
+  category         String?
+  subcategory      String?
+  itemProv         String?
+  hasVariance      Boolean            @default(false)
+  lot              String?
   count            InventoryCount     @relation(fields: [countId], references: [id], onDelete: Cascade)
   location         Warehouse_Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
   variance_reports VarianceReport[]
@@ -301,7 +303,6 @@ model VarianceReport {
   companyId       String
   countId         String
   countItemId     String
-  version         Int                 @default(1)
   itemCode        String
   itemName        String?
   systemQty       Decimal
@@ -315,6 +316,9 @@ model VarianceReport {
   approvedAt      DateTime?
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
+  version         Int                 @default(1)
+  reservedQty     Decimal             @default(0)
+  itemProv        String?
   company         Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
   count           InventoryCount      @relation(fields: [countId], references: [id], onDelete: Cascade)
   countItem       InventoryCount_Item @relation(fields: [countItemId], references: [id], onDelete: Cascade)
@@ -324,6 +328,34 @@ model VarianceReport {
   @@index([countId])
   @@index([version])
   @@index([status])
+}
+
+model CountReservedInvoice {
+  id            String              @id @default(cuid())
+  countId       String
+  invoiceNumber String
+  clientName    String?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  count         InventoryCount      @relation(fields: [countId], references: [id], onDelete: Cascade)
+  items         CountReservedItem[]
+
+  @@unique([countId, invoiceNumber])
+  @@index([countId])
+}
+
+model CountReservedItem {
+  id          String               @id @default(cuid())
+  invoiceId   String
+  itemCode    String
+  itemName    String?
+  itemProv    String?
+  reservedQty Decimal
+  uom         String?
+  invoice     CountReservedInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([itemCode])
 }
 
 model InventoryAdjustment {
@@ -352,7 +384,6 @@ model InventorySyncHistory {
   id          String         @id @default(cuid())
   companyId   String
   countId     String
-  version     Int            @default(1)
   status      String
   strategy    String
   itemsSynced Int
@@ -364,6 +395,7 @@ model InventorySyncHistory {
   duration    Int
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
+  version     Int            @default(1)
   company     Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
   count       InventoryCount @relation(fields: [countId], references: [id], onDelete: Cascade)
 
@@ -421,17 +453,17 @@ model AIChatMessage {
 }
 
 model AppConfig {
-  id              String   @id @default(cuid())
-  companyId       String   @unique
-  appTitle        String                   @default("Cigua Inventory")
-  logoUrl         String?
-  primaryColor    String?                  @default("#6366f1")
-  secondaryColor  String?                  @default("#8b5cf6")
-  faviconUrl      String?
-  loginMessage    String?
-  footerText      String?
-  updatedAt       DateTime                 @updatedAt
-  company         Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  id             String   @id @default(cuid())
+  companyId      String   @unique
+  appTitle       String   @default("Cigua Inventory")
+  logoUrl        String?
+  primaryColor   String?  @default("#6366f1")
+  secondaryColor String?  @default("#8b5cf6")
+  faviconUrl     String?
+  loginMessage   String?
+  footerText     String?
+  updatedAt      DateTime @updatedAt
+  company        Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@index([companyId])
 }

@@ -24,6 +24,7 @@ interface InventoryCountsTableProps {
   syncingItemIds?: Set<string>;
   syncedItemIds?: Set<string>;
   hasSystemView?: boolean;
+  canEditItems?: boolean;
 }
 
 export function InventoryCountsTable({
@@ -33,6 +34,7 @@ export function InventoryCountsTable({
   syncingItemIds = new Set(),
   syncedItemIds = new Set(),
   hasSystemView = true,
+  canEditItems = true,
 }: InventoryCountsTableProps) {
   const getVariance = (item: CountItem) => {
     const systemQty = typeof item.systemQty === 'string' ? parseFloat(item.systemQty) : item.systemQty;
@@ -96,7 +98,7 @@ export function InventoryCountsTable({
                   {(typeof item.systemQty === 'string' ? parseFloat(item.systemQty) : item.systemQty).toFixed(1)}
                 </TableCell>
               )}
-              <TableCell className="text-right">
+              <TableCell className="text-right actions-cell pr-6">
                 <div className="flex justify-end">
                   <Input
                     type="number"
@@ -106,7 +108,7 @@ export function InventoryCountsTable({
                     }
                     placeholder="0"
                     className="w-24 text-right text-sm"
-                    disabled={isLoading}
+                    disabled={isLoading || !canEditItems}
                   />
                 </div>
               </TableCell>
@@ -118,9 +120,9 @@ export function InventoryCountsTable({
                   </div>
                 </TableCell>
               )}
-              <TableCell className="text-center">
+              <TableCell className="text-right actions-cell pr-6">
                 {item.countedQty !== undefined && (
-                  <div className="flex items-center justify-center">
+                  <div className="flex gap-2 justify-end">
                     {syncingItemIds.has(item.id) ? (
                       <span className="text-[var(--accent-primary)] font-semibold text-[10px] animate-pulse">⟳ GUARDANDO...</span>
                     ) : syncedItemIds.has(item.id) ? (

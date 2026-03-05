@@ -120,6 +120,21 @@ export class CountStateService {
 
         this.fastify.log.info(`📋 [completeInventoryCount] Calculando varianzas para conteo ${count.code}...`);
 
+        // 1. Obtener ítems reservados (facturados pero no despachados)
+        const reservedInvoices = await this.fastify.prisma.countReservedInvoice.findMany({
+            where: { countId },
+            include: { items: true }
+        });
+
+        // Agrupar reservas por itemCode
+        const reservedMap = new Map<string, number>();
+        for (const inv of reservedInvoices) {
+            for (const item of inv.items) {
+                const current = reservedMap.get(item.itemCode) || 0;
+                reservedMap.set(item.itemCode, current + Number(item.reservedQty));
+            }
+        }
+
         const items = await this.fastify.prisma.inventoryCount_Item.findMany({
             where: { countId, version: count.currentVersion },
         });
@@ -130,7 +145,10 @@ export class CountStateService {
         for (const item of items) {
             const countedVal = item.countedQty ? Number(item.countedQty) : 0;
             const systemVal = Number(item.systemQty);
-            const diff = countedVal - systemVal;
+            const reservedVal = reservedMap.get(item.itemCode) || 0;
+
+            // Formula Maestra: Varianza = Físico - Reserva - Sistema
+            const diff = countedVal - reservedVal - systemVal;
             const hasVariance = diff !== 0;
 
             await this.fastify.prisma.inventoryCount_Item.update({
@@ -144,6 +162,7 @@ export class CountStateService {
             });
 
             if (hasVariance) {
+                // El denominador para el % suele ser el sistema, pero si es 0, usamos 0.
                 const variancePercent = systemVal > 0 ? (diff / systemVal) * 100 : 0;
 
                 await this.fastify.prisma.varianceReport.upsert({
@@ -156,6 +175,7 @@ export class CountStateService {
                     },
                     update: {
                         countedQty: countedVal,
+                        reservedQty: reservedVal, // Snapshot de la reserva en esta versión
                         difference: diff,
                         variancePercent,
                         status: 'PENDING'
@@ -169,6 +189,7 @@ export class CountStateService {
                         itemName: item.itemName,
                         systemQty: systemVal,
                         countedQty: countedVal,
+                        reservedQty: reservedVal,
                         difference: diff,
                         variancePercent,
                         status: 'PENDING'

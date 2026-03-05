@@ -133,7 +133,17 @@ body {
   overflow-y: auto;
   overflow-x: hidden;
   box-shadow: var(--shadow-md);
-  transition: width 0.2s ease, transform 0.2s ease;
+  transition: width 0.2s ease, transform 0.3s ease-in-out;
+}
+
+@media (max-width: 1023px) {
+  .sidebar {
+    transform: translateX(-100%);
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
 }
 
 .sidebar-logo {
@@ -198,7 +208,14 @@ body {
   padding: 0 24px;
   z-index: 30;
   box-shadow: var(--shadow-sm);
-  transition: background 0.2s, border-color 0.2s, left 0.2s;
+  transition: background 0.2s, border-color 0.2s, left 0.3s ease-in-out;
+}
+
+@media (max-width: 1023px) {
+  .topbar {
+    left: 0;
+    padding: 0 16px;
+  }
 }
 
 /* ─── Main Content ──────────────────────────────────────────────── */
@@ -208,7 +225,34 @@ body {
   flex: 1;
   padding: 24px;
   min-height: calc(100vh - 56px);
-  transition: margin-left 0.2s;
+  transition: margin-left 0.3s ease-in-out;
+}
+
+@media (max-width: 1023px) {
+  .main-content {
+    margin-left: 0;
+    padding: 16px;
+  }
+}
+
+/* ─── Overlay ───────────────────────────────────────────────────── */
+.sidebar-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(2px);
+  z-index: 35;
+  animation: fadeInOverlay 0.2s ease;
+}
+
+@keyframes fadeInOverlay {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 /* ─── Utility Cards ─────────────────────────────────────────────── */
@@ -359,4 +403,17 @@ body {
 .dark .badge-gray {
   background: rgba(100, 116, 139, 0.2);
   color: #94a3b8;
+}
+
+/* ─── Utils for Alignment ────────────────────────────────────────── */
+.actions-cell {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 0.5rem !important;
+  white-space: nowrap !important;
+}
+
+.no-wrap {
+  white-space: nowrap !important;
 }

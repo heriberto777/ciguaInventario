@@ -40,6 +40,10 @@ export async function inventoryCountsRoutes(fastify: FastifyInstance) {
     controller.loadCountFromMapping(request, reply)
   );
 
+  fastify.post('/inventory-counts/preview-erp-items', { preHandler: tenantGuard }, (request, reply) =>
+    controller.previewERPItems(request, reply)
+  );
+
   // Diagnostic endpoint - Debug mapping content
   fastify.get('/inventory-counts/:countId/mapping-debug/:mappingId', { preHandler: tenantGuard }, async (request, reply) => {
     const { countId, mappingId } = request.params as { countId: string; mappingId: string };
@@ -199,5 +203,18 @@ export async function inventoryCountsRoutes(fastify: FastifyInstance) {
     '/inventory-counts/excel-preview',
     { preHandler: tenantGuard },
     (request, reply) => controller.previewExcelFile(request, reply)
+  );
+
+  // ── Reserved Invoices (Despachos Pendientes)
+  fastify.post('/inventory-counts/:countId/reserve-invoice', { preHandler: tenantGuard }, (request, reply) =>
+    controller.reserveInvoice(request, reply)
+  );
+
+  fastify.get('/inventory-counts/:countId/reserved-invoices', { preHandler: tenantGuard }, (request, reply) =>
+    controller.getReservedInvoices(request, reply)
+  );
+
+  fastify.delete('/inventory-counts/:countId/reserved-invoices/:invoiceId', { preHandler: tenantGuard }, (request, reply) =>
+    controller.removeInvoiceReservation(request, reply)
   );
 }

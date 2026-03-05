@@ -27,7 +27,17 @@ const STANDARD_FIELDS: Record<string, Array<{ name: string; dataType: string; re
     { name: 'category', dataType: 'string', required: false }, // a.CLASIFICACION_1
     { name: 'subcategory', dataType: 'string', required: false }, // a.CLASIFICACION_2
     { name: 'brand', dataType: 'string', required: false }, // a.CLASIFICACION_3
+    { name: 'itemProv', dataType: 'string', required: false }, // Artículo del Proveedor
     { name: 'lot', dataType: 'string', required: false }, // LOTE
+  ],
+  PENDING_INVOICES: [
+    { name: 'invoiceNumber', dataType: 'string', required: true },
+    { name: 'itemCode', dataType: 'string', required: true },
+    { name: 'itemName', dataType: 'string', required: true },
+    { name: 'systemQty', dataType: 'number', required: true }, // Representa cantidad facturada
+    { name: 'uom', dataType: 'string', required: false },
+    { name: 'itemProv', dataType: 'string', required: false },
+    { name: 'clientName', dataType: 'string', required: false },
   ],
   STOCK: [
     { name: 'itemCode', dataType: 'string', required: true },

@@ -3,6 +3,7 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { AdminLayout } from '@/components/templates/AdminLayout';
 import { getApiClient } from '@/services/api';
 import { Button } from '@/components/atoms/Button';
+import { usePermissions } from '@/hooks/usePermissions';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -16,6 +17,7 @@ interface ReportItem {
   category: string;
   brand: string;
   systemQty: number;
+  reservedQty: number;
   countedQty: number | null;
   difference: number | null;
   costPrice: number;
@@ -29,6 +31,7 @@ interface GroupedReport {
   totalSystemValue: number;
   totalCountedValue: number;
   totalVarianceCost: number;
+  totalReservedQty: number;
 }
 
 interface VarianceSummary {
@@ -45,6 +48,8 @@ export function ReportsPage() {
   const [filterMode, setFilterMode] = useState<'ALL' | 'VARIANCE'>('ALL');
   const [selectedBrand, setSelectedBrand] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
+  const { hasPermission } = usePermissions();
+  const canExport = hasPermission('reports:export');
 
   // Queries
   const { data: counts = [] } = useQuery({
@@ -105,6 +110,7 @@ export function ReportsPage() {
         Categoria: (item as any).categoryName || item.category,
         Costo: item.costPrice,
         Sistema: item.systemQty,
+        Reservado: item.reservedQty,
         Fisico: item.countedQty ?? 0,
         Diferencia: item.difference ?? 0,
         Costo_Diferencia: item.varianceCost ?? 0
@@ -160,6 +166,7 @@ export function ReportsPage() {
         item.itemName,
         (item as any).categoryName || item.category,
         item.systemQty,
+        item.reservedQty,
         item.countedQty ?? '–',
         item.difference ?? '–',
         item.varianceCost ? `$${item.varianceCost.toLocaleString()}` : '–'
@@ -168,16 +175,17 @@ export function ReportsPage() {
 
     autoTable(doc, {
       startY: (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 10 : 70,
-      head: [['Marca', 'Artículo', 'Descripción', 'Categoría', 'Sist.', 'Fis.', 'Dif.', 'Costo Dif.']],
+      head: [['Marca', 'Artículo', 'Descripción', 'Categoría', 'Sist.', 'Res.', 'Fis.', 'Dif.', 'Costo Dif.']],
       body: tableData,
       theme: 'grid',
       headStyles: { fillColor: [40, 40, 40] },
-      styles: { fontSize: 8 },
+      styles: { fontSize: 7 },
       columnStyles: {
         4: { halign: 'right' },
         5: { halign: 'right' },
         6: { halign: 'right' },
-        7: { halign: 'right' }
+        7: { halign: 'right' },
+        8: { halign: 'right' }
       }
     });
 
@@ -253,23 +261,27 @@ export function ReportsPage() {
             </button>
           </div>
 
-          <Button
-            onClick={exportToExcel}
-            disabled={!selectedCountId || isReportLoading}
-            variant="secondary"
-            className="flex items-center gap-2"
-          >
-            📊 Excel
-          </Button>
+          {canExport && (
+            <>
+              <Button
+                onClick={exportToExcel}
+                disabled={!selectedCountId || isReportLoading}
+                variant="secondary"
+                className="flex items-center gap-2"
+              >
+                📊 Excel
+              </Button>
 
-          <Button
-            onClick={exportToPDF}
-            disabled={!selectedCountId || isReportLoading}
-            variant="secondary"
-            className="flex items-center gap-2 bg-red-50 text-red-600 border-red-200 hover:bg-red-100"
-          >
-            📄 PDF
-          </Button>
+              <Button
+                onClick={exportToPDF}
+                disabled={!selectedCountId || isReportLoading}
+                variant="secondary"
+                className="flex items-center gap-2 bg-red-50 text-red-600 border-red-200 hover:bg-red-100"
+              >
+                📄 PDF
+              </Button>
+            </>
+          )}
         </div>
 
         {selectedCountId ? (
@@ -314,6 +326,7 @@ export function ReportsPage() {
                         <th className="px-4 py-3">Descripción</th>
                         <th className="px-4 py-3">Categoría</th>
                         <th className="px-4 py-3 text-right">Sistema</th>
+                        <th className="px-4 py-3 text-right text-blue-600 font-black">Res.</th>
                         <th className="px-4 py-3 text-right">Físico</th>
                         <th className="px-4 py-3 text-right">Dif.</th>
                         <th className="px-4 py-3 text-right">Costo Dif.</th>
@@ -323,10 +336,10 @@ export function ReportsPage() {
                       {reportData.map((group) => (
                         <React.Fragment key={group.brand}>
                           <tr className="bg-blue-50/50">
-                            <td colSpan={7} className="px-4 py-2 font-bold text-blue-700">
+                            <td colSpan={8} className="px-4 py-2 font-bold text-blue-700">
                               📦 MARCA: {group.brand}
                               <span className="ml-4 text-[10px] text-gray-500">
-                                (Impacto: ${group.totalVarianceCost.toLocaleString()})
+                                (Impacto: ${group.totalVarianceCost.toLocaleString()} | Total Reservas: {group.totalReservedQty})
                               </span>
                             </td>
                           </tr>
@@ -334,8 +347,9 @@ export function ReportsPage() {
                             <tr key={item.itemCode} className="border-b border-gray-50 hover:bg-gray-50">
                               <td className="px-4 py-2 font-mono text-gray-600">{item.itemCode}</td>
                               <td className="px-4 py-2 text-gray-800">{item.itemName}</td>
-                              <td className="px-4 py-2 text-gray-600">{item.categoryName}</td>
+                              <td className="px-4 py-2 text-gray-600 text-[10px] uppercase font-bold tracking-tighter">{(item as any).categoryName || item.category}</td>
                               <td className="px-4 py-2 text-right">{item.systemQty}</td>
+                              <td className="px-4 py-2 text-right font-black text-blue-600 bg-blue-50/30">{item.reservedQty || '0'}</td>
                               <td className="px-4 py-2 text-right font-semibold">{item.countedQty ?? '–'}</td>
                               <td className={`px-4 py-2 text-right font-bold ${item.difference && item.difference < 0 ? 'text-red-600' : item.difference && item.difference > 0 ? 'text-green-600' : 'text-gray-400'}`}>
                                 {item.difference ?? '–'}

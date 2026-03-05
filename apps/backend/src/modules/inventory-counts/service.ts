@@ -1,11 +1,12 @@
 import { FastifyInstance } from 'fastify';
 import { InventoryCountRepository } from './repository';
-import { CreateInventoryCountDTO, AddCountItemDTO, UpdateCountItemDTO } from './schema';
+import { CreateInventoryCountDTO, AddCountItemDTO, UpdateCountItemDTO, PreviewCountItemsDTO } from './schema';
 import { AppError } from '../../utils/errors';
 import { ERPDataLoaderService } from './erp-data-loader.service';
 import { CountStateService } from './count-state.service';
 import { ExcelCountItem } from './excel-loader';
 import { ExcelExporterService } from './excel-exporter.service';
+import { ReservedInvoicesService } from './reserved-invoices.service';
 
 /**
  * InventoryCountService — Responsabilidad: operaciones CRUD del conteo e items.
@@ -20,12 +21,14 @@ export class InventoryCountService {
   readonly erpLoader: ERPDataLoaderService;
   readonly countState: CountStateService;
   readonly excelExporter: ExcelExporterService;
+  readonly reservedInvoices: ReservedInvoicesService;
 
   constructor(private fastify: FastifyInstance) {
     this.repository = new InventoryCountRepository(fastify);
     this.erpLoader = new ERPDataLoaderService(fastify);
     this.countState = new CountStateService(fastify);
     this.excelExporter = new ExcelExporterService(fastify);
+    this.reservedInvoices = new ReservedInvoicesService(fastify);
   }
 
   // ── CRUD Conteos ─────────────────────────────────────────────────────────
@@ -128,8 +131,13 @@ export class InventoryCountService {
   // ── Delegación a sub-servicios (mantiene compatibilidad con el controller) ──
 
   /** @see ERPDataLoaderService.loadCountFromMapping */
-  async loadCountFromMapping(companyId: string, countId: string, warehouseId: string, mappingId: string, locationId: string) {
-    return this.erpLoader.loadCountFromMapping(companyId, countId, warehouseId, mappingId, locationId);
+  async loadCountFromMapping(companyId: string, countId: string, warehouseId: string, mappingId: string, locationId: string, itemCodes?: string[]) {
+    return this.erpLoader.loadCountFromMapping(companyId, countId, warehouseId, mappingId, locationId, itemCodes);
+  }
+
+  /** @see ERPDataLoaderService.previewFilteredItems */
+  async previewFilteredItems(companyId: string, params: PreviewCountItemsDTO) {
+    return this.erpLoader.previewFilteredItems(companyId, params);
   }
 
   /** @see ERPDataLoaderService.prepareCountItems */

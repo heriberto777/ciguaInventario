@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { getApiClient } from '@/services/api';
 import { NotificationModal } from '@/components/atoms/NotificationModal';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface QueryBuilderState {
   mainTable: { name: string; alias: string };
@@ -48,6 +49,9 @@ export const QueryExplorerPage: React.FC = () => {
   });
 
   const apiClient = getApiClient();
+  const { hasPermission } = usePermissions();
+  const canExecute = hasPermission('queries:execute');
+  const canSaveMapping = hasPermission('mappings:manage');
 
   // Cargar conexiones ERP disponibles
   useEffect(() => {
@@ -425,9 +429,14 @@ FROM ${query.mainTable.name} ${query.mainTable.alias}`;
       {query.mainTable.name && query.selectedColumns.length > 0 && (
         <div style={{ marginTop: '20px' }}>
           <button
-            style={{ ...columnStyles.button, ...columnStyles.primaryButton }}
+            style={{
+              ...columnStyles.button,
+              ...columnStyles.primaryButton,
+              ...(!canExecute ? { opacity: 0.5, cursor: 'not-allowed', filter: 'grayscale(1)' } : {})
+            }}
             onClick={handleExecuteQuery}
-            disabled={loading}
+            disabled={loading || !canExecute}
+            title={!canExecute ? 'No tienes permiso para ejecutar queries' : ''}
           >
             {loading ? '⏳ Ejecutando...' : '▶️ Ejecutar Query'}
           </button>
@@ -467,9 +476,14 @@ FROM ${query.mainTable.name} ${query.mainTable.alias}`;
                 ))}
               </select>
               <button
-                style={{ ...columnStyles.button, ...columnStyles.successButton }}
+                style={{
+                  ...columnStyles.button,
+                  ...columnStyles.successButton,
+                  ...(!canSaveMapping ? { opacity: 0.5, cursor: 'not-allowed', filter: 'grayscale(1)' } : {})
+                }}
                 onClick={handleSaveAsMapping}
-                disabled={savingMapping || !mappingName.trim() || !mappingWarehouse}
+                disabled={savingMapping || !mappingName.trim() || !mappingWarehouse || !canSaveMapping}
+                title={!canSaveMapping ? 'No tienes permiso para guardar mappings' : ''}
               >
                 {savingMapping ? '⏳ Guardando...' : '💾 Guardar como Mapping'}
               </button>

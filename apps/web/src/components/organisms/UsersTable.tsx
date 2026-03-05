@@ -77,7 +77,7 @@ export const UsersTable: React.FC<UsersTableProps> = ({
                   {user.isActive ? 'Activo' : 'Inactivo'}
                 </span>
               </td>
-              <td className="px-6 py-4 space-x-2 text-right">
+              <td className="px-6 py-4 actions-cell">
                 {onEdit && (
                   <Button
                     variant="secondary"

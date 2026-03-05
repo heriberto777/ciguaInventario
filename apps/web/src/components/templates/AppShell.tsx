@@ -33,34 +33,37 @@ const NAV_SECTIONS: NavSection[] = [
                 label: 'Dashboard',
                 path: '/inventory',
                 icon: <Icon d="M3 3h7v7H3zm11 0h7v7h-7zM3 14h7v7H3zm11 3a4 4 0 1 0 8 0 4 4 0 0 0-8 0" />,
+                requiredPermission: 'dashboards:view',
             },
             {
                 label: 'Conteos',
                 path: '/inventory/counts',
                 icon: <Icon d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />,
+                requiredPermission: 'inv_counts:view',
             },
             {
                 label: 'Varianzas',
                 path: '/inventory/variances',
                 icon: <Icon d="M18 20V10M12 20V4M6 20v-6" />,
-                requiredPermission: 'inventory:view_qty',
+                requiredPermission: 'inventory:view_variances',
             },
             {
                 label: 'Chat con IA',
                 path: '/inventory/chat-ai',
                 icon: <Icon d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8zm1-13h-2v2h2zm0 4h-2v6h2z" />,
+                requiredPermission: 'ai:chat',
             },
             {
                 label: 'Reportes',
                 path: '/reports',
                 icon: <Icon d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8" />,
-                requiredPermission: 'inventory:view_qty',
+                requiredPermission: 'reports:view',
             },
             {
                 label: 'Auditoría IA',
                 path: '/inventory/audit',
                 icon: <Icon d="M9 12l2 2 4-4M3 21h18M3 10V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5" />,
-                requiredPermission: 'inventory:view_qty',
+                requiredPermission: 'ai:audit',
             },
         ],
     },
@@ -71,19 +74,19 @@ const NAV_SECTIONS: NavSection[] = [
                 label: 'Almacenes',
                 path: '/inventory/warehouses',
                 icon: <Icon d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z M9 22V12h6v10" />,
-                requiredPermission: 'inventory:manage',
+                requiredPermission: 'warehouses:view',
             },
             {
                 label: 'Clasificaciones',
                 path: '/admin/classifications',
                 icon: <Icon d="M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2zM12 12H8M16 12h-1" />,
-                requiredPermission: 'inventory:manage',
+                requiredPermission: 'classifications:view',
             },
             {
                 label: 'Empresas',
                 path: '/admin/companies',
                 icon: <Icon d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />,
-                requiredPermission: 'companies:manage',
+                requiredPermission: 'companies:view',
             },
         ],
     },
@@ -94,13 +97,19 @@ const NAV_SECTIONS: NavSection[] = [
                 label: 'Conexión',
                 path: '/admin/erp-connections',
                 icon: <Icon d="M5 12h14M12 5v14M5.5 5.5l13 13M18.5 5.5l-13 13" />,
-                requiredPermission: 'erp:manage',
+                requiredPermission: 'erp_conn:view',
             },
             {
                 label: 'Mapping',
                 path: '/admin/mapping',
                 icon: <Icon d="M8 3H2v6h6V3zM16 15h6v6h-6v-6zM15 3l6 6-6 6M9 15l-6 6 6 6" />,
-                requiredPermission: 'erp:manage',
+                requiredPermission: 'mappings:view',
+            },
+            {
+                label: 'Explorer',
+                path: '/admin/query-explorer',
+                icon: <Icon d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />,
+                requiredPermission: 'queries:view',
             },
         ],
     },
@@ -111,19 +120,19 @@ const NAV_SECTIONS: NavSection[] = [
                 label: 'Usuarios',
                 path: '/admin/users',
                 icon: <Icon d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />,
-                requiredPermission: 'users:manage',
+                requiredPermission: 'users:view',
             },
             {
                 label: 'Roles',
                 path: '/admin/roles',
                 icon: <Icon d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />,
-                requiredPermission: 'users:manage',
+                requiredPermission: 'roles:view',
             },
             {
                 label: 'Permisos',
                 path: '/admin/permissions',
                 icon: <Icon d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />,
-                requiredPermission: 'users:manage',
+                requiredPermission: 'permissions:view',
             },
         ],
     },
@@ -140,7 +149,13 @@ const NAV_SECTIONS: NavSection[] = [
                 label: 'Sesiones',
                 path: '/admin/sessions',
                 icon: <Icon d="M12 22C6.5 22 2 17.5 2 12S6.5 2 12 2s10 4.5 10 10-4.5 10-10 10zm0-6v-4m0-4h.01" />,
-                requiredPermission: 'users:manage',
+                requiredPermission: 'sessions:view',
+            },
+            {
+                label: 'Personalización',
+                path: '/admin/branding',
+                icon: <Icon d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" />,
+                requiredPermission: 'branding:view',
             },
         ],
     },
@@ -158,6 +173,9 @@ export function AppShell({ children }: AppShellProps) {
     const { mutate: logoutApi } = useLogout();
     const { data: config } = useAppConfig();
     const [showUserMenu, setShowUserMenu] = useState(false);
+    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+    const toggleMobileMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
 
     const isDark = theme === 'dark';
 
@@ -184,8 +202,16 @@ export function AppShell({ children }: AppShellProps) {
 
     return (
         <div className="app-shell">
+            {/* Overlay para móvil */}
+            {isMobileMenuOpen && (
+                <div
+                    className="sidebar-overlay"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                />
+            )}
+
             {/* ─── Sidebar ─── */}
-            <aside className="sidebar">
+            <aside className={`sidebar ${isMobileMenuOpen ? 'open' : ''}`}>
                 {/* Logo */}
                 <div className="sidebar-logo">
                     {config?.logoUrl ? (
@@ -232,7 +258,10 @@ export function AppShell({ children }: AppShellProps) {
                                 {visibleItems.map((item) => (
                                     <button
                                         key={item.path}
-                                        onClick={() => navigate(item.path)}
+                                        onClick={() => {
+                                            navigate(item.path);
+                                            setIsMobileMenuOpen(false);
+                                        }}
                                         className={`sidebar-link ${isActive(item.path) ? 'active' : ''}`}
                                         title={item.label}
                                     >
@@ -268,6 +297,15 @@ export function AppShell({ children }: AppShellProps) {
 
             {/* ─── Top Bar ─── */}
             <header className="topbar">
+                {/* Hamburger Menu (Sólo Mobile) */}
+                <button
+                    className="lg:hidden p-2 -ml-2 text-primary hover:bg-hover rounded-lg transition-colors"
+                    onClick={toggleMobileMenu}
+                    aria-label="Abrir menú"
+                >
+                    <Icon d="M4 6h16M4 12h16M4 18h16" size={24} />
+                </button>
+
                 {/* Breadcrumb / Page title */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>

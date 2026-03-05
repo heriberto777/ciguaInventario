@@ -5,6 +5,7 @@ import { RoleForm } from '@/components/organisms/RoleForm';
 import { RolesTable } from '@/components/organisms/RolesTable';
 import { Button } from '@/components/atoms/Button';
 import { getApiClient } from '@/services/api';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface Role {
   id: string;
@@ -46,6 +47,8 @@ export const RolesContent: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
+  const { hasPermission } = usePermissions();
+  const canManage = hasPermission('roles:manage');
 
   // Fetch roles
   const { data: rolesData, isLoading: rolesLoading } = useQuery<RolesResponse>({
@@ -173,15 +176,17 @@ export const RolesContent: React.FC = () => {
           <h1 className="text-3xl font-black text-[var(--text-primary)]">Roles</h1>
           <p className="text-[var(--text-secondary)] mt-1">Manage roles and permissions</p>
         </div>
-        <Button
-          onClick={() => {
-            setEditingRole(null);
-            setShowForm(!showForm);
-          }}
-          disabled={showForm}
-        >
-          {showForm ? 'Cancel' : 'Create Role'}
-        </Button>
+        {canManage && (
+          <Button
+            onClick={() => {
+              setEditingRole(null);
+              setShowForm(!showForm);
+            }}
+            disabled={showForm}
+          >
+            {showForm ? 'Cancel' : 'Create Role'}
+          </Button>
+        )}
       </div>
 
       {/* Error Alert */}
@@ -246,15 +251,15 @@ export const RolesContent: React.FC = () => {
         <RolesTable
           roles={rolesData?.data || []}
           isLoading={rolesLoading}
-          onEdit={(role) => {
+          onEdit={canManage ? (role) => {
             setEditingRole(role);
             setShowForm(true);
-          }}
-          onDelete={handleDeleteRole}
-          onManagePermissions={(role) => {
+          } : undefined}
+          onDelete={canManage ? handleDeleteRole : undefined}
+          onManagePermissions={canManage ? (role) => {
             setEditingRole(role);
             setShowForm(true);
-          }}
+          } : undefined}
         />
       </div>
 
