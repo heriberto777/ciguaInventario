@@ -31,6 +31,7 @@ export function initializeApiClient() {
   apiClient = axios.create({
     baseURL,
     withCredentials: true,
+    timeout: 300000, // 5 minutos de espera global para peticiones lentas (IA local)
   });
 
   // Adjunta el accessToken a cada request de forma reactiva

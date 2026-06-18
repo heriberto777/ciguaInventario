@@ -13,6 +13,7 @@
     "android": "expo run:android",
     "ios": "expo run:ios"
   },
-  "devDependencies": {},
-  "dependencies": {}
+  "dependencies": {
+    "pnpm": "10.33.4"
+  }
 }

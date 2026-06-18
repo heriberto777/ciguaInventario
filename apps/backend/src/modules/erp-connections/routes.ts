@@ -1,32 +1,31 @@
 import { FastifyInstance } from 'fastify';
-import { erpConnectionsController } from './controller';
+import { createERPConnectionsController } from './controller';
 import { tenantGuard } from '../../guards/tenant';
 
 export async function erpConnectionsRoutes(app: FastifyInstance) {
-  app.get('/erp-connections', { preHandler: [tenantGuard] }, async (request, reply) => erpConnectionsController.listConnections(request, reply));
-  app.get('/erp-connections/:id', { preHandler: [tenantGuard] }, async (request, reply) => erpConnectionsController.getConnection(request, reply));
-  app.post('/erp-connections', { preHandler: [tenantGuard] }, async (request, reply) => erpConnectionsController.createConnection(request, reply));
-  app.patch('/erp-connections/:id', { preHandler: [tenantGuard] }, async (request, reply) => erpConnectionsController.updateConnection(request, reply));
-  app.delete('/erp-connections/:id', { preHandler: [tenantGuard] }, async (request, reply) => erpConnectionsController.deleteConnection(request, reply));
-  app.post('/erp-connections/test', { preHandler: [tenantGuard] }, async (request, reply) => erpConnectionsController.testConnection(request, reply));
-  app.post('/erp-connections/:id/toggle', { preHandler: [tenantGuard] }, async (request, reply) => erpConnectionsController.toggleConnection(request, reply));
+  const controller = createERPConnectionsController(app);
+
+  app.get('/erp-connections', { preHandler: [tenantGuard] }, async (request, reply) => controller.listConnections(request, reply));
+  app.get('/erp-connections/:id', { preHandler: [tenantGuard] }, async (request, reply) => controller.getConnection(request, reply));
+  app.post('/erp-connections', { preHandler: [tenantGuard] }, async (request, reply) => controller.createConnection(request, reply));
+  app.patch('/erp-connections/:id', { preHandler: [tenantGuard] }, async (request, reply) => controller.updateConnection(request, reply));
+  app.delete('/erp-connections/:id', { preHandler: [tenantGuard] }, async (request, reply) => controller.deleteConnection(request, reply));
+  app.post('/erp-connections/test', { preHandler: [tenantGuard] }, async (request, reply) => controller.testConnection(request, reply));
+  app.post('/erp-connections/:id/toggle', { preHandler: [tenantGuard] }, async (request, reply) => controller.toggleConnection(request, reply));
 
   // ═══════════════════════════════════════════════════════════════
-  // INTROSPECTION ENDPOINTS - Obtener estructura del ERP
+  // INTROSPECTION ENDPOINTS
   // ═══════════════════════════════════════════════════════════════
 
-  // Obtener todas las tablas disponibles en el ERP
   app.get('/erp-connections/:connectionId/tables', { preHandler: [tenantGuard] }, async (request, reply) =>
-    erpConnectionsController.getAvailableTables(request, reply)
+    controller.getAvailableTables(request, reply)
   );
 
-  // Obtener esquema de múltiples tablas
   app.post('/erp-connections/:connectionId/table-schemas', { preHandler: [tenantGuard] }, async (request, reply) =>
-    erpConnectionsController.getTableSchemas(request, reply)
+    controller.getTableSchemas(request, reply)
   );
 
-  // Preview de query SQL
   app.post('/erp-connections/:connectionId/preview-query', { preHandler: [tenantGuard] }, async (request, reply) =>
-    erpConnectionsController.previewQuery(request, reply)
+    controller.previewQuery(request, reply)
   );
 }

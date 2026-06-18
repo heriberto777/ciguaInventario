@@ -30,9 +30,32 @@ const COLORS = [
 function ChartRenderer({ content }: { content: string }) {
     const chartData = useMemo(() => {
         try {
-            const jsonMatch = content.match(/```(?:json|chart)?\s*(\{[\s\S]*?\})\s*```/);
-            if (!jsonMatch) return null;
-            return JSON.parse(jsonMatch[1]);
+            // 1. Intentar con bloques de código markdown (el método más limpio)
+            const blockMatch = content.match(/```(?:json|json-chart|chart)?\s*(\{[\s\S]*?\})\s*```/);
+            if (blockMatch) return JSON.parse(blockMatch[1]);
+            
+            // 2. Extractor Robusto de "Llaves Balanceadas" para JSON sueltos
+            const startIdx = content.search(/\{\s*"type"\s*:\s*"(?:bar|line|pie)"/);
+            if (startIdx !== -1) {
+                let braceCount = 0;
+                let endIdx = -1;
+                for (let i = startIdx; i < content.length; i++) {
+                    if (content[i] === '{') braceCount++;
+                    if (content[i] === '}') {
+                        braceCount--;
+                        if (braceCount === 0) {
+                            endIdx = i;
+                            break;
+                        }
+                    }
+                }
+                if (endIdx !== -1) {
+                    const rawJson = content.slice(startIdx, endIdx + 1);
+                    return JSON.parse(rawJson);
+                }
+            }
+
+            return null;
         } catch (e) {
             return null;
         }
@@ -41,56 +64,73 @@ function ChartRenderer({ content }: { content: string }) {
     if (!chartData || !chartData.type || !chartData.data) return null;
     const { type, data, title } = chartData;
 
+    // Normalización agresiva de datos
+    const normalizedData = Array.isArray(data) ? data.map((d: any) => ({
+        name: d.name || d.label || 'N/A',
+        value: Number(d.value || d.amount || 0)
+    })) : [];
+
+    if (normalizedData.length === 0) return null;
+
     return (
-        <div className="mt-6 p-8 bg-app rounded-3xl border border-border-default overflow-hidden min-h-[320px] shadow-inner">
-            {title && <h4 className="text-center text-[10px] font-black uppercase tracking-[0.2em] text-muted mb-8">{title}</h4>}
+        <div className="mt-6 p-6 bg-white rounded-lg border border-slate-200 overflow-hidden min-h-[350px] shadow-sm">
+            {title && (
+                <div className="mb-8 text-center">
+                    <h4 className="text-[10px] font-black uppercase tracking-[0.25em] text-accent-primary mb-1">Visualización Estratégica</h4>
+                    <p className="text-sm font-bold text-primary">{title}</p>
+                </div>
+            )}
             <div className="h-[250px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
                     {type === 'bar' ? (
-                        <BarChart data={data}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="var(--border-default)" vertical={false} opacity={0.5} />
-                            <XAxis dataKey="name" fontSize={10} tick={{ fill: 'var(--text-secondary)', fontWeight: 700 }} axisLine={false} tickLine={false} />
+                        <BarChart data={normalizedData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="var(--border-default)" vertical={false} opacity={0.3} />
+                            <XAxis dataKey="name" fontSize={9} tick={{ fill: 'var(--text-secondary)', fontWeight: 800 }} axisLine={false} tickLine={false} />
                             <YAxis fontSize={10} tick={{ fill: 'var(--text-secondary)', fontWeight: 700 }} axisLine={false} tickLine={false} />
                             <RechartsTooltip
-                                contentStyle={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-default)', borderRadius: '12px', fontSize: '11px', fontWeight: 700, boxShadow: 'var(--shadow-lg)' }}
+                                contentStyle={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-default)', borderRadius: '16px', fontSize: '11px', fontWeight: 700, boxShadow: 'var(--shadow-xl)' }}
                                 cursor={{ fill: 'var(--bg-hover)', opacity: 0.4 }}
                             />
-                            <Bar dataKey="value" radius={[6, 6, 0, 0]} barSize={35}>
-                                {data.map((entry: any, index: number) => (
-                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                            {/* Base 0 para manejar positivos y negativos */}
+                            <Bar dataKey="value" radius={[6, 6, 6, 6]} barSize={32}>
+                                {normalizedData.map((entry: any, index: number) => (
+                                    <Cell 
+                                        key={`cell-${index}`} 
+                                        fill={entry.value < 0 ? 'var(--accent-danger, #ef4444)' : COLORS[index % COLORS.length]} 
+                                    />
                                 ))}
                             </Bar>
                         </BarChart>
                     ) : type === 'pie' ? (
                         <PieChart>
                             <Pie
-                                data={data}
+                                data={normalizedData}
                                 cx="50%"
                                 cy="50%"
-                                innerRadius={70}
-                                outerRadius={90}
-                                paddingAngle={8}
+                                innerRadius={60}
+                                outerRadius={85}
+                                paddingAngle={10}
                                 dataKey="value"
                                 stroke="none"
                             >
-                                {data.map((entry: any, index: number) => (
+                                {normalizedData.map((entry: any, index: number) => (
                                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                 ))}
                             </Pie>
                             <RechartsTooltip
-                                contentStyle={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-default)', borderRadius: '12px', fontSize: '11px', fontWeight: 700 }}
+                                contentStyle={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-default)', borderRadius: '16px', fontSize: '11px', fontWeight: 700 }}
                             />
-                            <Legend iconType="circle" wrapperStyle={{ fontSize: '10px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', paddingTop: '20px' }} />
+                            <Legend verticalAlign="bottom" iconType="circle" wrapperStyle={{ fontSize: '9px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', paddingTop: '20px' }} />
                         </PieChart>
                     ) : (
-                        <LineChart data={data}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="var(--border-default)" vertical={false} opacity={0.5} />
-                            <XAxis dataKey="name" fontSize={10} tick={{ fill: 'var(--text-secondary)', fontWeight: 700 }} axisLine={false} />
+                        <LineChart data={normalizedData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="var(--border-default)" vertical={false} opacity={0.3} />
+                            <XAxis dataKey="name" fontSize={9} tick={{ fill: 'var(--text-secondary)', fontWeight: 800 }} axisLine={false} />
                             <YAxis fontSize={10} tick={{ fill: 'var(--text-secondary)', fontWeight: 700 }} axisLine={false} />
                             <RechartsTooltip
-                                contentStyle={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-default)', borderRadius: '12px', fontSize: '11px', fontWeight: 700 }}
+                                contentStyle={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-default)', borderRadius: '16px', fontSize: '11px', fontWeight: 700 }}
                             />
-                            <Line type="monotone" dataKey="value" stroke="var(--accent-primary)" strokeWidth={4} dot={{ r: 5, fill: 'var(--accent-primary)', strokeWidth: 2, stroke: 'var(--bg-card)' }} activeDot={{ r: 7, strokeWidth: 0 }} />
+                            <Line type="monotone" dataKey="value" stroke="var(--accent-primary)" strokeWidth={4} dot={{ r: 4, fill: 'var(--accent-primary)', strokeWidth: 2, stroke: 'var(--bg-card)' }} activeDot={{ r: 6 }} />
                         </LineChart>
                     )}
                 </ResponsiveContainer>
@@ -140,13 +180,13 @@ export function AIChatPage() {
     // Auto-trigger from state
     useEffect(() => {
         if (location.state?.message && !isLoading && !isLoadingHistory) {
-            handleSendWithText(location.state.message);
+            handleSendWithText(location.state.message, location.state.topic);
             // Clear state
             window.history.replaceState({}, document.title);
         }
     }, [location.state, historyData, isLoadingHistory]);
 
-    const handleSendWithText = async (text: string) => {
+    const handleSendWithText = async (text: string, topic?: string) => {
         if (!text.trim() || isLoading) return;
         const userMsg: Message = { role: 'user', content: text };
         setMessages(prev => [...prev, userMsg]);
@@ -155,6 +195,7 @@ export function AIChatPage() {
         try {
             const response = await apiClient.post('/reports/chat-ai', {
                 message: text,
+                topic: topic, // Enviamos el tópico si existe
                 context: { previousMessages: messages.slice(-5) }
             });
             setMessages(prev => [...prev, { role: 'assistant', content: response.data.analysis }]);
@@ -177,56 +218,56 @@ export function AIChatPage() {
     return (
         <>
             <AdminLayout title="Cigua AI Intelligence">
-                <div className="max-w-5xl mx-auto h-[calc(100vh-140px)] flex flex-col bg-card rounded-[2.5rem] border border-border-default shadow-2xl overflow-hidden">
-                    {/* Header Flat */}
-                    <div className="p-8 flex items-center justify-between border-b border-border-default bg-hover/30 backdrop-blur-md">
-                        <div className="flex items-center gap-5">
-                            <div className="w-14 h-14 bg-card rounded-2xl flex items-center justify-center text-3xl border border-border-default shadow-lg">
-                                🧠
+                <div className="w-full h-[calc(100vh-120px)] flex flex-col bg-slate-50 border border-slate-200 shadow-sm overflow-hidden rounded-xl">
+                    {/* Header Solid & Professional */}
+                    <div className="px-8 py-6 flex items-center justify-between border-b border-slate-200 bg-white shadow-sm">
+                        <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 bg-indigo-600 rounded-lg flex items-center justify-center text-2xl shadow-inner">
+                                🤖
                             </div>
                             <div>
-                                <h2 className="text-xl font-black text-primary tracking-tight">Cigua Core AI</h2>
+                                <h2 className="text-lg font-bold text-slate-900 tracking-tight">Cigua Core AI</h2>
                                 <div className="flex items-center gap-2">
-                                    <span className="w-2.5 h-2.5 bg-success rounded-full animate-pulse"></span>
-                                    <p className="text-[10px] text-secondary font-black uppercase tracking-[0.2em]">Auditoría en tiempo real</p>
+                                    <span className="w-2 h-2 bg-emerald-500 rounded-full"></span>
+                                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Consultoría de Inventario Activa</p>
                                 </div>
                             </div>
                         </div>
-                        <div>
+                        <div className="flex items-center gap-4">
                             <button
-                                onClick={() => setMessages([{ role: 'assistant', content: 'Sesión reiniciada. ¿En qué puedo ayudarte?' }])}
-                                className="text-[10px] font-black uppercase tracking-widest text-muted hover:text-danger hover:scale-105 transition-all"
+                                onClick={() => setMessages([{ role: 'assistant', content: 'Sesión reiniciada. ¿Qué datos del inventario deseas explorar hoy?' }])}
+                                className="px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-400 hover:text-rose-600 transition-colors border border-transparent hover:border-rose-100 rounded-md"
                             >
                                 Limpiar Canal
                             </button>
                         </div>
                     </div>
 
-                    {/* Chat Area Flat */}
+                    {/* Chat Area - Solid & Structured */}
                     <div
                         ref={scrollRef}
-                        className="flex-1 overflow-y-auto p-10 space-y-10 scroll-smooth custom-scrollbar bg-card/50"
+                        className="flex-1 overflow-y-auto p-6 md:p-10 space-y-8 scroll-smooth custom-scrollbar bg-slate-50"
                     >
                         {isLoadingHistory ? (
-                            <div className="flex flex-col items-center justify-center h-full gap-6">
-                                <div className="w-12 h-12 border-4 border-border-default border-t-accent-primary rounded-full animate-spin"></div>
-                                <p className="text-muted text-[10px] font-black uppercase tracking-[0.3em]">Iniciando Protocolos AI...</p>
+                            <div className="flex flex-col items-center justify-center h-full gap-4">
+                                <div className="w-8 h-8 border-2 border-slate-200 border-t-indigo-600 rounded-full animate-spin"></div>
+                                <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Sincronizando con el núcleo...</p>
                             </div>
                         ) : (
                             messages.map((msg, i) => (
-                                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-4 duration-500`}>
-                                    <div className={`flex gap-5 max-w-[90%] ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
-                                        <div className={`w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center text-[10px] font-black border border-border-default shadow-md
-                                            ${msg.role === 'user' ? 'bg-accent-primary text-white border-none' : 'bg-hover text-primary'}`}>
-                                            {msg.role === 'user' ? 'USR' : 'BOT'}
+                                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                    <div className={`flex gap-4 max-w-[85%] ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+                                        <div className={`w-9 h-9 rounded-md flex-shrink-0 flex items-center justify-center text-[10px] font-bold shadow-sm
+                                            ${msg.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-900 border border-slate-200'}`}>
+                                            {msg.role === 'user' ? 'USR' : 'AI'}
                                         </div>
-                                        <div className="flex flex-col gap-2">
-                                            <div className={`p-6 rounded-[1.8rem] border shadow-xl transition-all
+                                        <div className="flex flex-col gap-1.5">
+                                            <div className={`px-6 py-4 rounded-lg shadow-sm border
                                                 ${msg.role === 'user'
-                                                    ? 'bg-accent-primary/5 text-primary border-accent-primary/20 rounded-tr-none'
-                                                    : 'bg-hover/50 border-border-default text-primary rounded-tl-none'
+                                                    ? 'bg-indigo-600 text-white border-indigo-700'
+                                                    : 'bg-white border-slate-200 text-slate-800'
                                                 }`}>
-                                                <div className="text-[15px] leading-relaxed markdown-content font-medium">
+                                                <div className={`text-[14px] leading-relaxed markdown-content ${msg.role === 'user' ? 'text-white' : 'text-slate-700'}`}>
                                                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
                                                         {msg.content}
                                                     </ReactMarkdown>
@@ -234,7 +275,7 @@ export function AIChatPage() {
                                                 </div>
                                             </div>
                                             {msg.createdAt && (
-                                                <span className={`text-[9px] font-black uppercase tracking-widest text-muted/50 ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
+                                                <span className={`text-[9px] font-bold text-slate-400 ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
                                                     {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                                 </span>
                                             )}
@@ -244,28 +285,28 @@ export function AIChatPage() {
                             ))
                         )}
                         {isLoading && (
-                            <div className="flex justify-start animate-pulse">
-                                <div className="flex gap-5">
-                                    <div className="w-10 h-10 rounded-xl bg-hover border border-border-default flex items-center justify-center text-[10px] font-bold">
+                            <div className="flex justify-start">
+                                <div className="flex gap-4">
+                                    <div className="w-9 h-9 rounded-md bg-white border border-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-400">
                                         ...
                                     </div>
-                                    <div className="bg-hover/50 border border-border-default px-6 py-4 rounded-[1.8rem] rounded-tl-none flex gap-2 items-center shadow-lg">
-                                        <div className="w-2 h-2 bg-accent-primary rounded-full animate-bounce"></div>
-                                        <div className="w-2 h-2 bg-accent-primary rounded-full animate-bounce [animation-delay:0.2s]"></div>
-                                        <div className="w-2 h-2 bg-accent-primary rounded-full animate-bounce [animation-delay:0.4s]"></div>
+                                    <div className="bg-white border border-slate-200 px-5 py-3 rounded-lg flex gap-1.5 items-center shadow-sm">
+                                        <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce"></div>
+                                        <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:0.2s]"></div>
+                                        <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:0.4s]"></div>
                                     </div>
                                 </div>
                             </div>
                         )}
                     </div>
 
-                    {/* Input Area Flat */}
-                    <div className="p-8 border-t border-border-default bg-card">
-                        <div className="max-w-4xl mx-auto">
-                            <div className="flex gap-4 items-end bg-hover/40 p-3 rounded-3xl border border-border-default focus-within:border-accent-primary/50 focus-within:bg-hover/60 transition-all shadow-inner group">
+                    {/* Input Area - Full Width Solid */}
+                    <div className="p-6 bg-white border-t border-slate-200">
+                        <div className="w-full flex flex-col gap-4">
+                            <div className="flex gap-3 items-end bg-slate-50 p-2 rounded-lg border border-slate-200 focus-within:border-indigo-400 focus-within:ring-1 focus-within:ring-indigo-100 transition-all group">
                                 <textarea
-                                    className="flex-1 bg-transparent border-none focus:ring-0 text-[15px] text-primary placeholder:text-muted/50 resize-none py-4 px-5 min-h-[60px] max-h-[180px] font-medium"
-                                    placeholder="Consultar métricas, discrepancias o tendencias..."
+                                    className="flex-1 bg-transparent border-none focus:ring-0 text-[14px] text-slate-800 placeholder:text-slate-400 resize-none py-3 px-4 min-h-[50px] max-h-[200px]"
+                                    placeholder="Escribe tu consulta sobre mermas, stock o auditorías..."
                                     rows={1}
                                     value={input}
                                     onChange={(e) => setInput(e.target.value)}
@@ -279,24 +320,22 @@ export function AIChatPage() {
                                 <button
                                     onClick={handleSend}
                                     disabled={!input.trim() || isLoading}
-                                    className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all shrink-0 mb-1.5 mr-1.5 shadow-xl
+                                    className={`px-6 h-11 rounded-md font-bold text-xs uppercase tracking-widest transition-all
                                         ${!input.trim() || isLoading
-                                            ? 'bg-border-default text-muted'
-                                            : 'bg-accent-primary text-white hover:bg-accent-hover hover:scale-105 active:scale-95'}`}
+                                            ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                            : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm active:scale-95'}`}
                                 >
-                                    <svg viewBox="0 0 24 24" className="w-6 h-6" fill="currentColor">
-                                        <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
-                                    </svg>
+                                    Enviar
                                 </button>
                             </div>
 
-                            {/* Quick Prompts Flat */}
-                            <div className="mt-6 flex flex-wrap gap-3 justify-center">
-                                {["Resumen de Inventario", "Altas Varianzas", "Valoración de Stock"].map(label => (
+                            {/* Action Pills */}
+                            <div className="flex flex-wrap gap-2 justify-start">
+                                {["Comparar Conteos", "Mermas por Marca", "Valoración Total"].map(label => (
                                     <button
                                         key={label}
                                         onClick={() => setInput(label)}
-                                        className="text-[10px] font-black uppercase tracking-widest py-2 px-5 bg-hover/50 hover:bg-border-default text-secondary rounded-xl border border-border-default transition-all hover:scale-105 active:scale-95 shadow-md"
+                                        className="text-[10px] font-bold uppercase tracking-wider py-1.5 px-4 bg-white hover:bg-slate-50 text-slate-600 rounded-md border border-slate-200 transition-all"
                                     >
                                         {label}
                                     </button>

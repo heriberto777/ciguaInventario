@@ -1,14 +1,17 @@
 import { FastifyRequest, FastifyReply, FastifyInstance } from 'fastify';
 import { ReportsService } from './service';
 import { AIInsightsService } from './ai-service';
+import { EmailService } from './email-service';
 
 export class ReportsController {
     private reportsService: ReportsService;
     private aiService: AIInsightsService;
+    private emailService: EmailService;
 
     constructor(private fastify: FastifyInstance) {
         this.reportsService = new ReportsService(fastify);
         this.aiService = new AIInsightsService(fastify);
+        this.emailService = new EmailService(fastify.prisma);
     }
     async getPhysicalInventoryReport(request: FastifyRequest, reply: FastifyReply) {
         const { companyId } = request.user as { companyId: string };
@@ -43,12 +46,25 @@ export class ReportsController {
         }
     }
 
-    async analyzeWithAI(request: FastifyRequest, reply: FastifyReply) {
+    async compareCounts(request: FastifyRequest, reply: FastifyReply) {
         const { companyId } = request.user as { companyId: string };
-        const { question } = request.body as { question: string };
+        const { countIds } = request.body as { countIds: string[] };
 
         try {
-            const result = await this.aiService.analyzeWithAI(companyId, question);
+            const data = await this.reportsService.getCrossCountReconciliation({ companyId, countIds });
+            return { success: true, data };
+        } catch (error: any) {
+            request.log.error(error);
+            return reply.status(500).send({ success: false, message: error.message });
+        }
+    }
+
+    async analyzeWithAI(request: FastifyRequest, reply: FastifyReply) {
+        const { companyId } = request.user as { companyId: string };
+        const { question, topic } = request.body as { question: string, topic?: string };
+
+        try {
+            const result = await this.aiService.analyzeWithAI(companyId, question, [], undefined, topic || 'CROSS_COUNT');
             return {
                 success: true,
                 data: {
@@ -71,14 +87,15 @@ export class ReportsController {
 
         const userId = user.userId || user.id;
         const companyId = user.companyId;
-        const { message, context } = request.body as { message: string, context?: any };
+        const { message, context, topic } = request.body as { message: string, context?: any, topic?: string };
 
         try {
             const result = await this.aiService.analyzeWithAI(
                 companyId,
                 message,
                 context?.previousMessages || [],
-                userId
+                userId,
+                topic || 'GENERAL_CHAT'
             );
             return {
                 success: true,
@@ -123,15 +140,28 @@ export class ReportsController {
         const user = request.user as any;
         const userId = user.userId || user.id;
         const companyId = user.companyId;
-        const { auditIds } = request.body as { auditIds: string[] };
+        const { auditIds, topic } = request.body as { auditIds: string[], topic?: string };
 
         try {
-            const result = await this.aiService.performDeepAudit(companyId, auditIds, userId);
+            const result = await this.aiService.performDeepAudit(companyId, auditIds, userId, topic || 'VARIANCE_AUDIT');
             return {
                 success: true,
                 analysis: result.analysis,
                 mode: result.mode
             };
+        } catch (error: any) {
+            request.log.error(error);
+            return reply.status(500).send({ success: false, message: error.message });
+        }
+    }
+
+    async sendEmail(request: FastifyRequest, reply: FastifyReply) {
+        const { companyId } = request.user as { companyId: string };
+        const { to, subject, analysis, pdfBase64 } = request.body as { to: string, subject: string, analysis: string, pdfBase64?: string };
+
+        try {
+            await this.emailService.sendAuditReport(companyId, to, subject, analysis, pdfBase64);
+            return { success: true, message: 'Correo enviado correctamente' };
         } catch (error: any) {
             request.log.error(error);
             return reply.status(500).send({ success: false, message: error.message });

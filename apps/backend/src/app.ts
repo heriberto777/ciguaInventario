@@ -21,7 +21,7 @@ import { erpConnectionsRoutes } from './modules/erp-connections/routes';
 import { auditLogsRoutes } from './modules/audit-logs/routes';
 import { sessionsRoutes } from './modules/sessions/routes';
 import { warehousesRoutes } from './modules/warehouses/routes';
-import { inventoryCountsRoutes } from './modules/inventory-counts/routes';
+import { inventoryRoutes } from './modules/inventory/routes';
 import { varianceReportsRoutes } from './modules/variance-reports/routes';
 import { adjustmentsRoutes } from './modules/adjustments/routes';
 import { itemClassificationsRoutes } from './modules/item-classifications/routes';
@@ -46,6 +46,9 @@ export async function createApp() {
 
   const app = Fastify({
     logger: logger as any,
+    connectionTimeout: 300000, // 5 minutos
+    keepAliveTimeout: 300000,
+    requestTimeout: 300000,
   });
 
   // Register plugins
@@ -86,7 +89,7 @@ export async function createApp() {
   await app.register(auditLogsRoutes, { prefix: '/api' });
   await app.register(sessionsRoutes, { prefix: '/api' });
   await app.register(warehousesRoutes, { prefix: '/api' });
-  await app.register(inventoryCountsRoutes, { prefix: '/api' });
+  await app.register(inventoryRoutes, { prefix: '/api' });
   await app.register(varianceReportsRoutes, { prefix: '/api' });
   await app.register(adjustmentsRoutes, { prefix: '/api' });
   await app.register(itemClassificationsRoutes, { prefix: '/api' });

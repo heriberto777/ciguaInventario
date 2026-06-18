@@ -17,8 +17,10 @@ import { AIConfigPage } from '@/pages/AIConfigPage';
 import { AIChatPage } from '@/pages/AIChatPage';
 import SettingsPage from '@/pages/SettingsPage';
 import InventoryDashboardPage from '@/pages/InventoryDashboardPage';
-import InventoryCountPage from '@/pages/InventoryCountPage';
+import InventoryCountListPage from '@/pages/InventoryCountListPage';
+import InventoryCountProcessPage from '@/pages/InventoryCountProcessPage';
 import VarianceReportsPage from '@/pages/VarianceReportsPage';
+import { CrossCountReportPage } from '@/pages/CrossCountReportPage';
 import AuditHubPage from '@/pages/AuditHubPage';
 import WarehousesPage from '@/pages/WarehousesPage';
 import ItemClassificationsPage from '@/pages/ItemClassificationsPage';
@@ -46,7 +48,6 @@ function App() {
         const key = localStorage.key(i);
         if (!key) continue;
 
-        // No tocar keys de sistema o de auth si parecen válidas
         if (key === 'auth-store' || key === 'theme-store') {
           const val = localStorage.getItem(key);
           if (val && val.includes('<!DOCTYPE')) {
@@ -59,8 +60,6 @@ function App() {
         if (!value) continue;
 
         const trimmed = value.trim();
-
-        // Detección de valores que NO son JSON pero deberían serlo (o que rompen el parser)
         const shouldBeJson = key.includes('store') || key.startsWith('inventory_count_') || key.startsWith('cigua_');
 
         if (shouldBeJson || trimmed.startsWith('{') || trimmed.startsWith('[')) {
@@ -107,8 +106,13 @@ function App() {
           <Route path="/inventory" element={<PrivateRoute><InventoryDashboardPage /></PrivateRoute>} />
           <Route path="/inventory/dashboard" element={<Navigate to="/inventory" replace />} />
           <Route path="/inventory/hub" element={<PrivateRoute><InventoryDashboardNavPage /></PrivateRoute>} />
-          <Route path="/inventory/counts" element={<PrivateRoute><InventoryCountPage /></PrivateRoute>} />
+          
+          {/* Refactored Inventory Count Routes */}
+          <Route path="/inventory/counts" element={<PrivateRoute><InventoryCountListPage /></PrivateRoute>} />
+          <Route path="/inventory/counts/:id" element={<PrivateRoute><InventoryCountProcessPage /></PrivateRoute>} />
+          
           <Route path="/inventory/variances" element={<PrivateRoute><VarianceReportsPage /></PrivateRoute>} />
+          <Route path="/inventory/compare" element={<PrivateRoute><CrossCountReportPage /></PrivateRoute>} />
           <Route path="/inventory/audit" element={<PrivateRoute><AuditHubPage /></PrivateRoute>} />
           <Route path="/inventory/warehouses" element={<PrivateRoute><WarehousesPage /></PrivateRoute>} />
           <Route path="/inventory/chat-ai" element={<PrivateRoute><AIChatPage /></PrivateRoute>} />

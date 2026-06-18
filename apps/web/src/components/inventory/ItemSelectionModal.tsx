@@ -54,10 +54,17 @@ export const ItemSelectionModal: React.FC<ItemSelectionModalProps> = ({
                 apiClient.get('/item-classifications?groupType=CATEGORY'),
                 apiClient.get('/item-classifications?groupType=BRAND'),
             ]);
-            setCategories(catsRes.data?.data || catsRes.data || []);
-            setBrands(brandsRes.data?.data || brandsRes.data || []);
+            
+            // Ensure we are setting arrays, avoiding React child object errors
+            const cats = catsRes.data?.data || catsRes.data;
+            const brnds = brandsRes.data?.data || brandsRes.data;
+            
+            setCategories(Array.isArray(cats) ? cats : []);
+            setBrands(Array.isArray(brnds) ? brnds : []);
         } catch (error) {
             console.error('Error fetching classifications:', error);
+            setCategories([]);
+            setBrands([]);
         } finally {
             setLoading(false);
         }
@@ -74,13 +81,55 @@ export const ItemSelectionModal: React.FC<ItemSelectionModalProps> = ({
                 randomLimit: randomLimit ? Number(randomLimit) : undefined,
             });
 
-            const newItems = response.data?.items || [];
-            setItems(newItems);
+            const newItems = response.data?.items || response.data || [];
+            const itemsArray = Array.isArray(newItems) ? newItems : [];
+            setItems(itemsArray);
 
             // Por defecto, seleccionar todos los del preview
-            setSelectedCodes(new Set(newItems.map((i: any) => i.itemCode)));
+            setSelectedCodes(new Set(itemsArray.map((i: any) => i.itemCode)));
         } catch (error) {
             console.error('Error previewing items:', error);
+        } finally {
+            setSearching(false);
+        }
+    };
+
+    const handleSearchInDB = async () => {
+        if (!searchTerm.trim()) return;
+        try {
+            setSearching(true);
+            const response = await apiClient.post('/inventory-counts/preview-erp-items', {
+                warehouseId,
+                mappingId,
+                category: selectedCategories.length > 0 ? selectedCategories : undefined,
+                brand: selectedBrands.length > 0 ? selectedBrands : undefined,
+                randomLimit: randomLimit ? Number(randomLimit) : undefined,
+                search: searchTerm.trim(),
+            });
+
+            const newItems = response.data?.items || response.data || [];
+            const itemsArray = Array.isArray(newItems) ? newItems : [];
+
+            setItems(prevItems => {
+                const combined = [...prevItems];
+                const existingCodes = new Set(combined.map(i => i.itemCode));
+                for (const item of itemsArray) {
+                    if (!existingCodes.has(item.itemCode)) {
+                        combined.push(item);
+                    }
+                }
+                return combined;
+            });
+
+            setSelectedCodes(prevSelected => {
+                const next = new Set(prevSelected);
+                for (const item of itemsArray) {
+                    next.add(item.itemCode);
+                }
+                return next;
+            });
+        } catch (error) {
+            console.error('Error searching items in ERP:', error);
         } finally {
             setSearching(false);
         }
@@ -241,19 +290,42 @@ export const ItemSelectionModal: React.FC<ItemSelectionModalProps> = ({
                         <div className="relative flex-1">
                             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
                             <Input
-                                placeholder="Filtrar por código o nombre en los resultados..."
+                                placeholder="Filtrar local o presiona Enter para buscar en BD (ERP)..."
                                 className="pl-10 h-10 rounded-xl"
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        handleSearchInDB();
+                                    }
+                                }}
                             />
                         </div>
                         {searchTerm && (
-                            <Button variant="secondary" size="sm" onClick={() => setSearchTerm('')} className="h-10 px-4">
-                                Limpiar
-                            </Button>
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    variant="primary"
+                                    size="sm"
+                                    onClick={handleSearchInDB}
+                                    isLoading={searching}
+                                    className="h-10 px-4 whitespace-nowrap bg-blue-600 hover:bg-blue-700 text-white"
+                                >
+                                    Buscar en ERP
+                                </Button>
+                                <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() => setSearchTerm('')}
+                                    className="h-10 px-4"
+                                    disabled={searching}
+                                >
+                                    Limpiar
+                                </Button>
+                            </div>
                         )}
                     </div>
-
+ 
                     <div className="border rounded-xl overflow-hidden bg-white">
                         <div className="max-h-[400px] overflow-y-auto">
                             <table className="w-full text-left text-sm">
@@ -278,7 +350,24 @@ export const ItemSelectionModal: React.FC<ItemSelectionModalProps> = ({
                                     {filteredItems.length === 0 ? (
                                         <tr>
                                             <td colSpan={6} className="px-4 py-12 text-center text-gray-400">
-                                                {searching ? 'Buscando ítems en el ERP...' : searchTerm ? 'No hay resultados que coincidan con la búsqueda' : 'Usa los filtros y haz clic en Previsualizar'}
+                                                {searching ? (
+                                                    'Buscando ítems en el ERP...'
+                                                ) : searchTerm ? (
+                                                    <div className="flex flex-col items-center justify-center space-y-3">
+                                                        <p className="text-gray-500">No se encontraron resultados locales para "{searchTerm}"</p>
+                                                        <Button
+                                                            variant="primary"
+                                                            size="sm"
+                                                            onClick={handleSearchInDB}
+                                                            isLoading={searching}
+                                                            className="h-9 px-4 bg-blue-600 hover:bg-blue-700 text-white"
+                                                        >
+                                                            🔍 Buscar "{searchTerm}" en la Base de Datos (ERP)
+                                                        </Button>
+                                                    </div>
+                                                ) : (
+                                                    'Usa los filtros y haz clic en Previsualizar'
+                                                )}
                                             </td>
                                         </tr>
                                     ) : (

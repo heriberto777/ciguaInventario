@@ -1,15 +1,21 @@
-import { prisma } from '../../utils/db';
+export interface ERPConnectionRepository {
+  createConnection(companyId: string, data: any): Promise<any>;
+  getConnectionById(id: string, companyId: string): Promise<any>;
+  listConnections(companyId: string, filters: any): Promise<{ data: any[]; pagination: any }>;
+  updateConnection(id: string, companyId: string, data: any): Promise<any>;
+  toggleConnection(id: string, companyId: string, isActive: boolean): Promise<any>;
+  deleteConnection(id: string, companyId: string): Promise<any>;
+  getConnectionByTypeAndCompany(companyId: string, erpType: string): Promise<any>;
+  countConnectionsByCompany(companyId: string): Promise<number>;
+  getERPTypes(): Promise<string[]>;
+  countMappingConfigsByConnection(connectionId: string): Promise<number>;
+}
 
-export const erpConnectionsRepository = {
-  async createConnection(companyId: string, data: {
-    erpType: string;
-    host: string;
-    port: number;
-    database: string;
-    username: string;
-    password: string;
-  }) {
-    return await prisma.eRPConnection.create({
+export class PrismaERPConnectionRepository implements ERPConnectionRepository {
+  constructor(private prisma: any) {}
+
+  async createConnection(companyId: string, data: any) {
+    return await this.prisma.eRPConnection.create({
       data: {
         companyId,
         erpType: data.erpType,
@@ -21,57 +27,40 @@ export const erpConnectionsRepository = {
         isActive: true,
       },
     });
-  },
+  }
 
   async getConnectionById(id: string, companyId: string) {
-    return await prisma.eRPConnection.findFirst({
+    return await this.prisma.eRPConnection.findFirst({
       where: { id, companyId },
     });
-  },
+  }
 
-  async listConnections(companyId: string, filters: {
-    skip?: number;
-    take?: number;
-    erpType?: string;
-    isActive?: boolean;
-  }) {
+  async listConnections(companyId: string, filters: any) {
     const skip = filters.skip || 0;
     const take = filters.take || 10;
-
     const where: any = { companyId };
 
-    if (filters.erpType) {
-      where.erpType = filters.erpType;
-    }
-
-    if (filters.isActive !== undefined) {
-      where.isActive = filters.isActive;
-    }
+    if (filters.erpType) where.erpType = filters.erpType;
+    if (filters.isActive !== undefined) where.isActive = filters.isActive;
 
     const [data, total] = await Promise.all([
-      prisma.eRPConnection.findMany({
+      this.prisma.eRPConnection.findMany({
         where,
         skip,
         take,
         orderBy: { createdAt: 'desc' },
       }),
-      prisma.eRPConnection.count({ where }),
+      this.prisma.eRPConnection.count({ where }),
     ]);
 
     return {
       data,
       pagination: { skip, take, total },
     };
-  },
+  }
 
-  async updateConnection(id: string, companyId: string, data: {
-    host?: string;
-    port?: number;
-    database?: string;
-    username?: string;
-    password?: string;
-  }) {
-    return await prisma.eRPConnection.update({
+  async updateConnection(id: string, companyId: string, data: any) {
+    return await this.prisma.eRPConnection.update({
       where: { id },
       data: {
         ...(data.host && { host: data.host }),
@@ -81,45 +70,44 @@ export const erpConnectionsRepository = {
         ...(data.password && { password: data.password }),
       },
     });
-  },
+  }
 
   async toggleConnection(id: string, companyId: string, isActive: boolean) {
-    return await prisma.eRPConnection.update({
+    return await this.prisma.eRPConnection.update({
       where: { id },
       data: { isActive },
     });
-  },
+  }
 
   async deleteConnection(id: string, companyId: string) {
-    return await prisma.eRPConnection.delete({
+    return await this.prisma.eRPConnection.delete({
       where: { id },
     });
-  },
+  }
 
   async getConnectionByTypeAndCompany(companyId: string, erpType: string) {
-    return await prisma.eRPConnection.findFirst({
+    return await this.prisma.eRPConnection.findFirst({
       where: { companyId, erpType },
     });
-  },
+  }
 
   async countConnectionsByCompany(companyId: string) {
-    return await prisma.eRPConnection.count({
+    return await this.prisma.eRPConnection.count({
       where: { companyId },
     });
-  },
+  }
 
   async getERPTypes() {
-    const connections = await prisma.eRPConnection.findMany({
+    const connections = await this.prisma.eRPConnection.findMany({
       distinct: ['erpType'],
       select: { erpType: true },
     });
+    return connections.map((c: any) => c.erpType);
+  }
 
-    return connections.map((c) => c.erpType);
-  },
-};
-
-
-
-
-
-
+  async countMappingConfigsByConnection(connectionId: string) {
+    return await this.prisma.mappingConfig.count({
+      where: { erpConnectionId: connectionId },
+    });
+  }
+}

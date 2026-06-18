@@ -222,7 +222,7 @@ export function SyncToERPPage() {
             <div style={styles.summaryItem}>
               <span style={styles.summaryLabel}>Total Variance:</span>
               <span style={{ ...styles.summaryValue, color: syncRequest.totalVariance > 0 ? '#ef4444' : '#3b82f6' }}>
-                {syncRequest.totalVariance > 0 ? '+' : ''}{syncRequest.totalVariance.toFixed(2)}
+                {syncRequest.totalVariance > 0 ? '+' : ''}{Number(syncRequest.totalVariance || 0).toFixed(2)}
               </span>
             </div>
           </div>
@@ -307,7 +307,7 @@ export function SyncToERPPage() {
                     <td>{item.systemQty}</td>
                     <td>{item.countedQty}</td>
                     <td style={{ color: item.variance > 0 ? '#ef4444' : '#3b82f6', fontWeight: 'bold' }}>
-                      {item.variance > 0 ? '+' : ''}{item.variance.toFixed(2)}
+                      {item.variance > 0 ? '+' : ''}{Number(item.variance || 0).toFixed(2)}
                     </td>
                   </tr>
                 ))}
@@ -351,7 +351,7 @@ export function SyncToERPPage() {
             <div style={styles.resultItem}>
               <span style={styles.resultLabel}>Success Rate:</span>
               <span style={styles.resultValue}>
-                {((syncResult.itemsSynced / (syncResult.itemsSynced + syncResult.itemsFailed)) * 100).toFixed(1)}%
+                {((syncResult.itemsSynced / (syncResult.itemsSynced + syncResult.itemsFailed)) * 100 || 0).toFixed(1)}%
               </span>
             </div>
           </div>
@@ -377,7 +377,7 @@ export function SyncToERPPage() {
                     <td>{item.systemQty}</td>
                     <td>{item.countedQty}</td>
                     <td style={{ color: item.variance > 0 ? '#ef4444' : '#3b82f6', fontWeight: 'bold' }}>
-                      {item.variance > 0 ? '+' : ''}{item.variance.toFixed(2)}
+                      {item.variance > 0 ? '+' : ''}{Number(item.variance || 0).toFixed(2)}
                     </td>
                     <td
                       style={{

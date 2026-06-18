@@ -58,6 +58,15 @@ export const InventoryDashboardNavPage: React.FC = () => {
       requiredPermission: 'reports:view',
     },
     {
+      id: 'cross-count-compare',
+      title: '🔄 Auditoría Cruzada',
+      description: 'Compara múltiples conteos, analiza tendencias y verifica la corrección de varianzas.',
+      icon: '🔄',
+      color: '#f59e0b',
+      route: '/inventory/compare',
+      status: 'ready',
+    },
+    {
       id: 'audit-hub',
       title: '🤖 Auditoría Inteligente IA',
       description: 'Análisis estratégico de múltiples conteos, tendencias de mermas y auditoría con IA.',

@@ -316,19 +316,19 @@ export function PhysicalCountPage() {
           <div style={styles.varianceStats}>
             <div>
               <span style={styles.varianceLabel}>Total Variance:</span>
-              <span style={styles.varianceValue}>{varianceSummary.totalVariance.toFixed(2)}</span>
-              <span style={styles.variancePercent}>({varianceSummary.totalVariancePercent.toFixed(2)}%)</span>
+              <span style={styles.varianceValue}>{Number(varianceSummary.totalVariance || 0).toFixed(2)}</span>
+              <span style={styles.variancePercent}>({Number(varianceSummary.totalVariancePercent || 0).toFixed(2)}%)</span>
             </div>
             <div>
               <span style={styles.varianceLabel}>Overages:</span>
               <span style={{ ...styles.varianceValue, color: '#ef4444' }}>
-                {varianceSummary.overages.toFixed(2)}
+                {Number(varianceSummary.overages || 0).toFixed(2)}
               </span>
             </div>
             <div>
               <span style={styles.varianceLabel}>Shortages:</span>
               <span style={{ ...styles.varianceValue, color: '#3b82f6' }}>
-                {varianceSummary.shortages.toFixed(2)}
+                {Number(varianceSummary.shortages || 0).toFixed(2)}
               </span>
             </div>
           </div>
@@ -355,9 +355,9 @@ export function PhysicalCountPage() {
                       <td>{item.systemQty}</td>
                       <td>{item.countedQty}</td>
                       <td style={{ color: item.variance > 0 ? '#ef4444' : '#3b82f6' }}>
-                        {item.variance > 0 ? '+' : ''}{item.variance.toFixed(2)}
+                        {item.variance > 0 ? '+' : ''}{Number(item.variance || 0).toFixed(2)}
                       </td>
-                      <td>{item.variancePercent.toFixed(2)}%</td>
+                      <td>{Number(item.variancePercent || 0).toFixed(2)}%</td>
                     </tr>
                   ))}
                 </tbody>
@@ -407,10 +407,10 @@ export function PhysicalCountPage() {
                     color: item.countedQty === 0 ? '#999' : item.variance > 0 ? '#ef4444' : item.variance < 0 ? '#3b82f6' : '#22c55e',
                   }}
                 >
-                  {item.countedQty === 0 ? '-' : `${item.variance > 0 ? '+' : ''}${item.variance.toFixed(2)}`}
+                  {item.countedQty === 0 ? '-' : `${item.variance > 0 ? '+' : ''}${Number(item.variance || 0).toFixed(2)}`}
                 </td>
                 <td>
-                  {item.countedQty === 0 ? '-' : `${item.variancePercent.toFixed(2)}%`}
+                  {item.countedQty === 0 ? '-' : `${Number(item.variancePercent || 0).toFixed(2)}%`}
                 </td>
                 <td>{item.notes || '-'}</td>
                 <td>

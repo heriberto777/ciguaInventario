@@ -145,7 +145,13 @@ export class ConfigMappingRepository {
       isActive: mapping.isActive,
       createdAt: mapping.createdAt,
       updatedAt: mapping.updatedAt,
-    };
+      // Incluir la relación para que el Frontend pueda mostrar el nombre
+      erpConnection: mapping.erpConnection ? {
+        id: mapping.erpConnection.id,
+        name: mapping.erpConnection.name,
+        erpType: mapping.erpConnection.erpType,
+      } : undefined,
+    } as any;
   }
 }
 

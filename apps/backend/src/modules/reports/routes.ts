@@ -12,13 +12,21 @@ export async function reportsRoutes(fastify: FastifyInstance) {
     // Report and AI Chat routes
     fastify.get('/:countId/physical-inventory', reportsController.getPhysicalInventoryReport.bind(reportsController));
     fastify.get('/:countId/variance-summary', reportsController.getVarianceSummary.bind(reportsController));
+    fastify.post('/compare', reportsController.compareCounts.bind(reportsController));
     fastify.post('/analyze-ai', { preHandler: [tenantGuard] }, (req, res) => reportsController.analyzeWithAI(req, res));
     fastify.post('/chat-ai', { preHandler: [tenantGuard] }, (req, res) => reportsController.chatAI(req, res));
     fastify.get('/chat-history', { preHandler: [tenantGuard] }, (req) => reportsController.getChatHistory(req));
     fastify.post('/ai-audit', { preHandler: [tenantGuard] }, (req, rep) => reportsController.aiAudit(req, rep));
     fastify.get('/historical-audit', { preHandler: [tenantGuard] }, (req) => reportsController.getHistoricalAuditData(req));
+    fastify.post('/send-email', { preHandler: [tenantGuard] }, (req, rep) => reportsController.sendEmail(req, rep));
 
     // Config routes
-    fastify.get('/ai-config', aiConfigController.getConfig.bind(aiConfigController));
-    fastify.post('/ai-config', aiConfigController.createOrUpdateConfig.bind(aiConfigController));
+    fastify.get('/ai-config', aiConfigController.getConfigs.bind(aiConfigController));
+    fastify.post('/ai-config', aiConfigController.saveConfig.bind(aiConfigController));
+    fastify.delete('/ai-config/:id', aiConfigController.deleteConfig.bind(aiConfigController));
+    
+    // Prompts
+    fastify.get('/ai-prompts', aiConfigController.getPrompts.bind(aiConfigController));
+    fastify.post('/ai-prompts', aiConfigController.savePrompt.bind(aiConfigController));
+    fastify.delete('/ai-prompts/:id', aiConfigController.deletePrompt.bind(aiConfigController));
 }

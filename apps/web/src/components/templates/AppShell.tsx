@@ -48,6 +48,11 @@ const NAV_SECTIONS: NavSection[] = [
                 requiredPermission: 'inventory:view_variances',
             },
             {
+                label: 'Auditoría Cruzada',
+                path: '/inventory/compare',
+                icon: <Icon d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />,
+            },
+            {
                 label: 'Chat con IA',
                 path: '/inventory/chat-ai',
                 icon: <Icon d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8zm1-13h-2v2h2zm0 4h-2v6h2z" />,
@@ -109,7 +114,7 @@ const NAV_SECTIONS: NavSection[] = [
                 label: 'Explorer',
                 path: '/admin/query-explorer',
                 icon: <Icon d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />,
-                requiredPermission: 'queries:view',
+                requiredPermission: 'super_admin_only', // Custom flag to restrict to SuperAdmin
             },
         ],
     },
@@ -246,9 +251,10 @@ export function AppShell({ children }: AppShellProps) {
                         const roles = user?.roles || [];
                         const isSuperAdmin = roles.includes('SuperAdmin');
 
-                        const visibleItems = section.items.filter(item =>
-                            isSuperAdmin || !item.requiredPermission || permissions.includes(item.requiredPermission)
-                        );
+                        const visibleItems = section.items.filter(item => {
+                            if (item.requiredPermission === 'super_admin_only') return isSuperAdmin;
+                            return isSuperAdmin || !item.requiredPermission || permissions.includes(item.requiredPermission);
+                        });
 
                         if (visibleItems.length === 0) return null;
 

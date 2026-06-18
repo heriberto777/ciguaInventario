@@ -33,21 +33,25 @@ export class ReportsService {
             include: { items: true }
         });
 
-        // Consolidar reservas por itemCode y itemProv
-        const reservedByCode = new Map<string, number>();
-        const reservedByProv = new Map<string, number>();
+        // Consolidar reservas por itemCode y itemProv discriminando por TIPO
+        const reservedSeparatedByCode = new Map<string, number>();
+        const reservedInAisleByCode = new Map<string, number>();
         const inferredProvByCode = new Map<string, string>();
 
         for (const inv of reservedInvoices) {
+            const isSeparated = inv.type === 'SEPARATED';
             for (const item of inv.items) {
                 const itemCodeNorm = item.itemCode.trim().toUpperCase();
-                const itemProvNorm = item.itemProv ? item.itemProv.trim().toUpperCase() : null;
                 const qty = Number(item.reservedQty);
 
-                reservedByCode.set(itemCodeNorm, (reservedByCode.get(itemCodeNorm) || 0) + qty);
-                if (itemProvNorm) {
-                    reservedByProv.set(itemProvNorm, (reservedByProv.get(itemProvNorm) || 0) + qty);
-                    inferredProvByCode.set(itemCodeNorm, itemProvNorm);
+                if (isSeparated) {
+                    reservedSeparatedByCode.set(itemCodeNorm, (reservedSeparatedByCode.get(itemCodeNorm) || 0) + qty);
+                } else {
+                    reservedInAisleByCode.set(itemCodeNorm, (reservedInAisleByCode.get(itemCodeNorm) || 0) + qty);
+                }
+                
+                if (item.itemProv) {
+                    inferredProvByCode.set(itemCodeNorm, item.itemProv.trim().toUpperCase());
                 }
             }
         }
@@ -87,17 +91,15 @@ export class ReportsService {
 
             // Lógica de Matching de Reservas
             const itemCodeNorm = item.itemCode.trim().toUpperCase();
-            let itemProvNorm = item.itemProv ? item.itemProv.trim().toUpperCase() : inferredProvByCode.get(itemCodeNorm) || null;
+            
+            const reservedSeparated = reservedSeparatedByCode.get(itemCodeNorm) || 0;
+            const reservedInAisle = reservedInAisleByCode.get(itemCodeNorm) || 0;
 
-            let reservedQty = 0;
-            if (itemProvNorm && reservedByProv.has(itemProvNorm)) {
-                reservedQty = reservedByProv.get(itemProvNorm) || 0;
-            } else {
-                reservedQty = reservedByCode.get(itemCodeNorm) || 0;
-            }
-
-            // FORMULA MAESTRA: Diferencia = Físico - Reservado - Sistema
-            const difference = countedQty.minus(reservedQty).minus(systemQty);
+            // FORMULA MAESTRA UNIFICADA: 
+            // Stock Esperado = ERP - Separado + Pasillo
+            const expectedStock = systemQty.minus(reservedSeparated).plus(reservedInAisle);
+            const difference = countedQty.minus(expectedStock);
+            
             const costPrice = item.costPrice || new Decimal(0);
             const varianceCost = difference.times(costPrice);
 
@@ -113,7 +115,9 @@ export class ReportsService {
                 brandName: brandDesc ? `${brandDesc} (${item.brand})` : (item.brand || 'SIN MARCA'),
                 subcategory: item.subcategory,
                 systemQty: systemQty.toNumber(),
-                reservedQty: reservedQty,
+                reservedSeparated: reservedSeparated,
+                reservedInAisle: reservedInAisle,
+                expectedStock: expectedStock.toNumber(),
                 countedQty: item.countedQty !== null ? countedQty.toNumber() : null,
                 difference: item.countedQty !== null ? difference.toNumber() : null,
                 costPrice: costPrice.toNumber(),
@@ -137,20 +141,19 @@ export class ReportsService {
                     totalSystemValue: 0,
                     totalCountedValue: 0,
                     totalVarianceCost: 0,
-                    totalReservedQty: 0,
+                    totalReservedSeparated: 0,
+                    totalReservedInAisle: 0,
                 };
             }
 
             acc[brandLabel].items.push(item);
 
             // Totales del grupo
-            const systemVal = item.systemQty * item.costPrice;
-            const countedVal = (item.countedQty || 0) * item.costPrice;
-
-            acc[brandLabel].totalSystemValue += systemVal;
-            acc[brandLabel].totalCountedValue += countedVal;
+            acc[brandLabel].totalSystemValue += item.systemQty * item.costPrice;
+            acc[brandLabel].totalCountedValue += (item.countedQty || 0) * item.costPrice;
             acc[brandLabel].totalVarianceCost += (item.varianceCost || 0);
-            acc[brandLabel].totalReservedQty += item.reservedQty;
+            acc[brandLabel].totalReservedSeparated += item.reservedSeparated;
+            acc[brandLabel].totalReservedInAisle += item.reservedInAisle;
 
             return acc;
         }, {} as Record<string, any>);
@@ -169,17 +172,19 @@ export class ReportsService {
             select: { currentVersion: true }
         });
 
-        // Obtener Reservas
-        const reservedInvoices = await this.prisma.countReservedInvoice.findMany({
+        // Obtener Reservas por tipo
+        const allReservedInvoices = await this.prisma.countReservedInvoice.findMany({
             where: { countId },
             include: { items: true }
         });
 
-        const reservedMap = new Map<string, number>();
-        for (const inv of reservedInvoices) {
+        const separatedMap = new Map<string, number>();
+        const inAisleMap = new Map<string, number>();
+        for (const inv of allReservedInvoices) {
+            const targetMap = inv.type === 'SEPARATED' ? separatedMap : inAisleMap;
             for (const item of inv.items) {
                 const code = item.itemCode.trim().toUpperCase();
-                reservedMap.set(code, (reservedMap.get(code) || 0) + Number(item.reservedQty));
+                targetMap.set(code, (targetMap.get(code) || 0) + Number(item.reservedQty));
             }
         }
 
@@ -188,28 +193,45 @@ export class ReportsService {
                 countId: countId,
                 version: count?.currentVersion || 1,
                 count: { companyId: companyId },
-                NOT: { countedQty: null }
             }
         });
 
-        let totalLoss = new Decimal(0);
-        let totalGain = new Decimal(0);
+        let totalLossValue = new Decimal(0);
+        let totalGainValue = new Decimal(0);
         let itemsWithVariance = 0;
+        let totalMissing = 0;
+        let totalSurplus = 0;
+        let totalPhysicalValue = new Decimal(0);
+        let totalSystemValue = new Decimal(0);
+        let totalReservedValue = new Decimal(0);
 
         items.forEach(item => {
             const code = item.itemCode.trim().toUpperCase();
-            const reservedVal = reservedMap.get(code) || 0;
+            const separatedQty = separatedMap.get(code) || 0;
+            const inAisleQty = inAisleMap.get(code) || 0;
 
-            // Formula Maestra en Resumen
-            const diff = (item.countedQty as Decimal).minus(reservedVal).minus(item.systemQty);
-            const cost = diff.times(item.costPrice || 0);
+            const systemQty = item.systemQty || new Decimal(0);
+            const countedQty = item.countedQty || new Decimal(0);
+            const costPrice = item.costPrice || new Decimal(0);
+
+            // Fórmula unificada: Stock Esperado = ERP - Separado + Pasillo
+            const expected = systemQty.minus(separatedQty).plus(inAisleQty);
+            const diff = countedQty.minus(expected);
+            const cost = diff.times(costPrice);
+
+            // Valores de inventario
+            totalSystemValue = totalSystemValue.plus(expected.times(costPrice));
+            totalPhysicalValue = totalPhysicalValue.plus(countedQty.times(costPrice));
+            totalReservedValue = totalReservedValue.plus(new Decimal(separatedQty + inAisleQty).times(costPrice));
 
             if (!diff.isZero()) {
                 itemsWithVariance++;
-                if (cost.isNegative()) {
-                    totalLoss = totalLoss.plus(cost.abs());
+                if (diff.isNegative()) {
+                    totalMissing++;
+                    totalLossValue = totalLossValue.plus(cost.abs());
                 } else {
-                    totalGain = totalGain.plus(cost);
+                    totalSurplus++;
+                    totalGainValue = totalGainValue.plus(cost);
                 }
             }
         });
@@ -217,10 +239,15 @@ export class ReportsService {
         return {
             totalItems: items.length,
             itemsWithVariance,
+            totalMissing,
+            totalSurplus,
             accuracyRate: items.length > 0 ? ((items.length - itemsWithVariance) / items.length) * 100 : 100,
-            netVarianceCost: totalGain.minus(totalLoss).toNumber(),
-            totalLossValue: totalLoss.toNumber(),
-            totalGainValue: totalGain.toNumber(),
+            netVarianceCost: totalGainValue.minus(totalLossValue).toNumber(),
+            totalLossValue: totalLossValue.toNumber(),
+            totalGainValue: totalGainValue.toNumber(),
+            totalPhysicalValue: totalPhysicalValue.toNumber(),
+            totalSystemValue: totalSystemValue.toNumber(),
+            totalReservedValue: totalReservedValue.toNumber(),
         };
     }
 
@@ -274,5 +301,135 @@ export class ReportsService {
         }));
 
         return summaries;
+    }
+
+    /**
+     * Cross-Count Reconciliation (Comparador de Múltiples Conteos)
+     * Analiza la evolución de las varianzas a lo largo de varios conteos.
+     */
+    async getCrossCountReconciliation(params: {
+        companyId: string;
+        countIds: string[];
+    }) {
+        const { companyId, countIds } = params;
+
+        if (!countIds || countIds.length < 2) {
+            throw new Error("Se requieren al menos 2 conteos para hacer una comparación cruzada.");
+        }
+
+        // Obtener detalles de los conteos y ordenarlos cronológicamente
+        const counts = await this.prisma.inventoryCount.findMany({
+            where: { id: { in: countIds }, companyId },
+            orderBy: { createdAt: 'asc' },
+            select: { id: true, sequenceNumber: true, code: true, createdAt: true, completedAt: true, currentVersion: true, description: true }
+        });
+
+        if (counts.length === 0) return { counts: [], matrix: [] };
+
+        // Obtener reservas consolidadas para todos los conteos
+        const reservedInvoices = await this.prisma.countReservedInvoice.findMany({
+            where: { countId: { in: countIds } },
+            include: { items: true }
+        });
+
+        // reservationMap: countId -> itemCode -> { separated: qty, inAisle: qty }
+        const reservationsByCount = new Map<string, Map<string, { separated: number, inAisle: number }>>();
+        for (const count of counts) {
+            reservationsByCount.set(count.id, new Map());
+        }
+
+        for (const inv of reservedInvoices) {
+            const countMap = reservationsByCount.get(inv.countId);
+            if (!countMap) continue;
+
+            const isSeparated = inv.type === 'SEPARATED';
+            for (const item of inv.items) {
+                const code = item.itemCode.trim().toUpperCase();
+                let current = countMap.get(code) || { separated: 0, inAisle: 0 };
+                const qty = Number(item.reservedQty);
+                if (isSeparated) current.separated += qty;
+                else current.inAisle += qty;
+                countMap.set(code, current);
+            }
+        }
+
+        // Obtener items por cada conteo (en su currentVersion)
+        const allItems = await Promise.all(counts.map(async (count) => {
+            const countItems = await this.prisma.inventoryCount_Item.findMany({
+                where: { countId: count.id, version: count.currentVersion },
+            });
+            return { countId: count.id, items: countItems };
+        }));
+
+        // Matriz por ItemCode
+        const matrixMap = new Map<string, any>();
+
+        for (const countGroup of allItems) {
+            const countId = countGroup.countId;
+            const countMap = reservationsByCount.get(countId);
+
+            for (const item of countGroup.items) {
+                const code = item.itemCode.trim().toUpperCase();
+                
+                if (!matrixMap.has(code)) {
+                    matrixMap.set(code, {
+                        itemCode: item.itemCode,
+                        itemName: item.itemName,
+                        brand: item.brand || 'N/A',
+                        category: item.category || 'N/A',
+                        results: {}
+                    });
+                }
+
+                const matrixItem = matrixMap.get(code);
+                
+                const systemQty = new Decimal(item.systemQty || 0);
+                const countedQty = new Decimal(item.countedQty || 0);
+                const costPrice = new Decimal(item.costPrice || 0);
+
+                const res = countMap?.get(code) || { separated: 0, inAisle: 0 };
+                
+                // Fórmula Maestra Unificada
+                const expectedStock = systemQty.minus(res.separated).plus(res.inAisle);
+                const difference = countedQty.minus(expectedStock);
+                const varianceCost = difference.times(costPrice);
+
+                matrixItem.results[countId] = {
+                    systemQty: systemQty.toNumber(),
+                    countedQty: item.countedQty !== null ? countedQty.toNumber() : null,
+                    expectedStock: expectedStock.toNumber(),
+                    variance: item.countedQty !== null ? difference.toNumber() : null,
+                    varianceCost: item.countedQty !== null ? varianceCost.toNumber() : null,
+                    costPrice: costPrice.toNumber(),
+                    hasVariance: item.countedQty !== null ? !difference.isZero() : false
+                };
+            }
+        }
+
+        const matrix = Array.from(matrixMap.values());
+
+        // Calcular la tendencia (comparando el primer y último conteo donde el item apareció)
+        for (const row of matrix) {
+            const activeCounts = counts.filter(c => row.results[c.id] && row.results[c.id].countedQty !== null);
+            if (activeCounts.length >= 2) {
+                const first = row.results[activeCounts[0].id];
+                const last = row.results[activeCounts[activeCounts.length - 1].id];
+                
+                const firstVar = Math.abs(first.variance || 0);
+                const lastVar = Math.abs(last.variance || 0);
+
+                if (lastVar === 0 && firstVar > 0) row.trend = 'RESOLVED';
+                else if (lastVar < firstVar) row.trend = 'IMPROVED';
+                else if (lastVar > firstVar) row.trend = 'WORSENED';
+                else row.trend = 'UNCHANGED';
+            } else {
+                row.trend = 'INSUFFICIENT_DATA';
+            }
+        }
+
+        return {
+            counts: counts.map(c => ({ id: c.id, code: c.sequenceNumber || c.code, date: c.completedAt || c.createdAt, description: c.description })),
+            matrix: matrix.sort((a, b) => a.itemCode.localeCompare(b.itemCode))
+        };
     }
 }

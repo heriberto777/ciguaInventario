@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { PhysicalCountService } from './physical-count.service';
+import { PrismaInventoryRepository } from './inventory.repository';
 import { z } from 'zod';
 
 const UpdateItemCountSchema = z.object({
@@ -19,7 +20,15 @@ interface AuthenticatedRequest extends FastifyRequest {
 }
 
 export async function createPhysicalCountController(fastify: any) {
-  const service = new PhysicalCountService(fastify);
+  // Dependency Injection: Repository & Logger
+  const repository = new PrismaInventoryRepository(fastify);
+  const auditLogger = async (data: any) => {
+    if (fastify.auditLog) {
+      await fastify.auditLog(data);
+    }
+  };
+  
+  const service = new PhysicalCountService(repository, auditLogger);
 
   return {
     /**
@@ -50,7 +59,7 @@ export async function createPhysicalCountController(fastify: any) {
         if (error.statusCode) {
           return reply.status(error.statusCode).send({ error: error.message });
         }
-        return reply.status(500).send({ error: 'Failed to update item count' });
+        return reply.status(500).send({ error: `Failed to update item count: ${error.message}` });
       }
     },
 

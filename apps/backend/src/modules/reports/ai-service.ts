@@ -18,11 +18,11 @@ export class AIInsightsService {
         const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
 
         const [lastCompleted, currentWork, lastMonthCounts, topClassifications] = await Promise.all([
-            // Últimos 5 completados generales
+            // 1. Obtener los últimos 50 conteos para visibilidad amplia
             this.prisma.inventoryCount.findMany({
-                where: { companyId, status: 'COMPLETED' },
-                orderBy: { completedAt: 'desc' },
-                take: 5,
+                where: { companyId },
+                orderBy: { startedAt: 'desc' },
+                take: 50,
                 select: { id: true, sequenceNumber: true, completedAt: true, status: true }
             }),
             // Trabajo actual
@@ -180,7 +180,7 @@ NOTA: Las consultas son vía Prisma. No inventes campos. Si no estás seguro, co
     /**
      * Genera el análisis utilizando el proveedor configurado (Con soporte a Consultas Dinámicas)
      */
-    async analyzeWithAI(companyId: string, question: string, previousMessages: any[] = [], userId?: string) {
+    async analyzeWithAI(companyId: string, question: string, previousMessages: any[] = [], userId?: string, topic: string = 'GENERAL_CHAT') {
         if (userId) await this.saveChatMessage(companyId, userId, 'user', question);
 
         const config = await this.prisma.aIConfig.findFirst({ where: { companyId, isActive: true } });
@@ -193,23 +193,48 @@ NOTA: Las consultas son vía Prisma. No inventes campos. Si no estás seguro, co
             };
         }
 
-        const systemPrompt = `
-"Actúa como un Auditor de Inventarios Profesional Cigua AI.
+        let activePrompt = config.systemPrompt || "Analiza los datos de inventario y responde las dudas del usuario con precisión técnica.";
+
+        // Attempt to find a specific prompt template
+        const promptTemplate = await this.prisma.aIPromptTemplate.findFirst({
+            where: { 
+                companyId, 
+                topic: topic as any, 
+                isDefault: true 
+            }
+        });
+
+        if (promptTemplate) {
+            activePrompt = promptTemplate.content;
+        }
+
+        // --- LÓGICA DE PROMPT POR TÓPICO ---
+        let systemPrompt = "";
+
+        if (topic === 'GENERAL_CHAT') {
+            // Modo Conversacional: La IA es un asistente que ayuda y ofrece opciones.
+            systemPrompt = `Actúa como un Asistente de Inventario Natural y Profesional.
 ${this.getDatabaseSchemaContext()}
 
-DIRECTIVA PRINCIPAL (Tus Reglas de Negocio):
-${config.systemPrompt || "Analiza los datos de inventario y responde las dudas del usuario con precisión técnica."}
+DIRECTIVA PRINCIPAL:
+${activePrompt}
 
-INSTRUCCIÓN TÉCNICA FINAL (CRITICAL): Si el SNAPSHOT inicial no tiene los datos suficientes para una auditoría real (ej: no ves los ítems contados o quieres buscar un nombre), DEBES generar una consulta [QUERY]. 
-- NO pidas permiso al usuario para consultar. 
-- Genera el bloque [QUERY] inmediatamente como parte de tu flujo de pensamiento inicial.
+1. Sé natural y conversacional. No hagas auditorías pesadas a menos que se te pida.
+2. Si el usuario pide un LISTADO, BUSQUEDA o DETALLE, DEBES generar un [QUERY] para consultar la base de datos real. No te limites al resumen inicial.
+3. Responde siempre en español. No uses bloques <think>.`;
+        } else {
+            // Estilo Estricto para Tópicos Específicos (Auditoría, Mermas, etc.)
+            // Aquí tu plantilla de base de datos es la única ley.
+            systemPrompt = `${activePrompt}
 
-GENERACIÓN DE GRÁFICOS: Si el usuario pide estadísticas visuales, DEBES añadir al final de tu respuesta un bloque:
-\`\`\`json-chart
-        { "type": "bar" | "line" | "pie", "title": "Título", "data": [{ "name": "Etiqueta", "value": 123 }] }
-\`\`\`
+---
+CONTEXTO TÉCNICO (Solo para consultas):
+${this.getDatabaseSchemaContext()}
 
-Responde siempre en español."`;
+INSTRUCCIÓN DE SEGURIDAD: 
+- Usa [QUERY] si necesitas más datos de los proporcionados en el snapshot.
+- No inventes campos de base de datos.`;
+        }
 
         try {
             // --- PASO 1: Preparación del Contexto ---
@@ -259,8 +284,11 @@ Responde siempre en español."`;
                 }
             }
 
-            if (userId) await this.saveChatMessage(companyId, userId, 'assistant', lastAIResponse);
-            return { analysis: lastAIResponse, mode: 'live', provider: config.provider };
+            // Limpieza final de seguridad
+            const finalAnalysis = lastAIResponse.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
+            if (userId) await this.saveChatMessage(companyId, userId, 'assistant', finalAnalysis);
+            return { analysis: finalAnalysis, mode: 'live', provider: config.provider };
         } catch (error: any) {
             this.fastify.log.error(error);
             const errorMsg = error.response?.data?.error?.message || error.message;
@@ -273,18 +301,51 @@ Responde siempre en español."`;
      */
     private async callAIProvider(config: any, systemPrompt: string, history: any[], userPrompt: string, retries = 2): Promise<string> {
         const executeCall = async () => {
-            if (config.provider === 'OPENAI') {
-                const res = await axios.post(config.baseUrl || 'https://api.openai.com/v1/chat/completions', {
-                    model: config.modelName || 'gpt-4',
+            // Caso 1: OpenAI o Local (Compatible con OpenAI API)
+            if (config.provider === 'OPENAI' || config.provider === 'LOCAL') {
+                const url = config.baseUrl || (config.provider === 'OPENAI' ? 'https://api.openai.com/v1/chat/completions' : 'http://localhost:8080/v1/chat/completions');
+                
+                const res = await axios.post(url, {
+                    model: config.modelName || (config.provider === 'OPENAI' ? 'gpt-4' : 'local-model'),
                     messages: [
-                        { role: 'system', content: systemPrompt },
+                        { role: 'system', content: systemPrompt + "\nIMPORTANTE: Sé extremadamente conciso. No listes más de 15 artículos críticos. Máximo 2000 tokens." },
                         ...history.map(m => ({ role: m.role, content: m.content })),
                         { role: 'user', content: userPrompt }
-                    ]
-                }, { headers: { 'Authorization': `Bearer ${config.apiKey}` } });
+                    ],
+                    temperature: 0.3,
+                    max_tokens: 2000
+                }, { 
+                    timeout: 300000, // 5 minutos de espera para modelos locales lentos
+                    headers: { 
+                        'Authorization': `Bearer ${config.apiKey}`,
+                        'Content-Type': 'application/json'
+                    } 
+                });
                 return res.data.choices[0].message.content;
             }
 
+            // Caso 2: Anthropic Claude (Si se configura)
+            if (config.provider === 'CLAUDE') {
+                const res = await axios.post('https://api.anthropic.com/v1/messages', {
+                    model: config.modelName || 'claude-3-opus-20240229',
+                    max_tokens: 4096,
+                    system: systemPrompt,
+                    messages: [
+                        ...history.map(m => ({ role: m.role, content: m.content })),
+                        { role: 'user', content: userPrompt }
+                    ]
+                }, { 
+                    timeout: 300000,
+                    headers: { 
+                        'x-api-key': config.apiKey,
+                        'anthropic-version': '2023-06-01',
+                        'content-type': 'application/json'
+                    } 
+                });
+                return res.data.content[0].text;
+            }
+
+            // Caso 3: Google Gemini
             if (config.provider === 'GEMINI') {
                 const model = config.modelName || 'gemini-1.5-flash';
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${config.apiKey}`;
@@ -306,7 +367,7 @@ Responde siempre en español."`;
                         temperature: 0.2,
                         maxOutputTokens: 2048,
                     }
-                });
+                }, { timeout: 300000 });
 
                 if (!res.data.candidates?.[0]?.content?.parts?.[0]?.text) {
                     throw new Error(`Respuesta vacía de Gemini: ${JSON.stringify(res.data)}`);
@@ -340,7 +401,8 @@ Responde siempre en español."`;
         };
 
         try {
-            return await executeCall();
+            const rawContent = await executeCall();
+            return (typeof rawContent === 'string') ? rawContent.replace(/<think>[\s\S]*?<\/think>/gi, '').trim() : rawContent;
         } catch (error: any) {
             if (error.response?.status === 429 && retries > 0) {
                 await new Promise(resolve => setTimeout(resolve, 2000));
@@ -361,7 +423,7 @@ Responde siempre en español."`;
     /**
      * Realiza una auditoría profunda sobre un set específico de conteos
      */
-    async performDeepAudit(companyId: string, auditIds: string[], userId: string) {
+    async performDeepAudit(companyId: string, auditIds: string[], userId: string, topic: string = 'VARIANCE_AUDIT') {
         // 1. Obtener detalles de los conteos y sus varianzas
         const counts = await this.prisma.inventoryCount.findMany({
             where: { id: { in: auditIds }, companyId },
@@ -378,7 +440,10 @@ Responde siempre en español."`;
                         countedQty: true,
                         costPrice: true
                     },
-                    take: 200 // Limitar para no saturar tokens
+                    orderBy: {
+                        countedQty: 'asc' // Traer los que tienen menor cantidad contada (posibles mermas) primero
+                    },
+                    take: 500 
                 }
             }
         });
@@ -420,6 +485,6 @@ Responde siempre en español."`;
 
         const prompt = `AUDITORÍA ESTRATÉGICA DE BLOQUE.\nAnaliza los siguientes ${counts.length} conteos. Los datos han sido resumidos para eficiencia.\nDetecta:\n1. Qué marcas están generando mayor pérdida acumulada.\n2. Si hay patrones recurrentes en las top anomalías.\n3. Recomendaciones de control de inventario.\n\nDATOS RESUMIDOS:\n${JSON.stringify(auditContext, null, 2)}`;
         // 3. Ejecutar análisis
-        return this.analyzeWithAI(companyId, prompt, [], userId);
+        return this.analyzeWithAI(companyId, prompt, [], userId, topic);
     }
 }

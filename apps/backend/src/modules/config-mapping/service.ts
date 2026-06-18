@@ -67,11 +67,13 @@ export class ConfigMappingService {
 
     try {
       // Importar dinámicamente para evitar dependencias circulares
-      const { LoadInventoryFromERPService } = await import('../inventory/load-from-erp.service');
+      const { LoadInventoryFromERPService } = await import('../inventory/services/load-from-erp.service');
       const { ERPIntrospectionService } = await import('../erp-connections/erp-introspection');
 
       // Construir la query REAL del mapping (normaliza el formato array del SimpleMappingBuilder)
-      const loaderService = new LoadInventoryFromERPService(this.fastify);
+      const { PrismaInventoryRepository } = await import('../inventory/inventory.repository');
+      const repository = new PrismaInventoryRepository(this.fastify.prisma);
+      const loaderService = new LoadInventoryFromERPService(repository);
       const { sql } = loaderService.buildQueryFromMapping(mapping);
 
       // Crear conector y ejecutar preview

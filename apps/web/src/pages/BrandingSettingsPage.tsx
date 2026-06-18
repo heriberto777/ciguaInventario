@@ -17,7 +17,12 @@ const BrandingSettingsPage: React.FC = () => {
         primaryColor: '#6366f1',
         secondaryColor: '#8b5cf6',
         loginMessage: '',
-        footerText: ''
+        footerText: '',
+        smtpHost: '',
+        smtpPort: 587,
+        smtpUser: '',
+        smtpPass: '',
+        smtpFrom: ''
     });
 
     useEffect(() => {
@@ -28,7 +33,12 @@ const BrandingSettingsPage: React.FC = () => {
                 primaryColor: config.primaryColor || '#6366f1',
                 secondaryColor: config.secondaryColor || '#8b5cf6',
                 loginMessage: config.loginMessage || '',
-                footerText: config.footerText || ''
+                footerText: config.footerText || '',
+                smtpHost: (config as any).smtpHost || '',
+                smtpPort: (config as any).smtpPort || 587,
+                smtpUser: (config as any).smtpUser || '',
+                smtpPass: (config as any).smtpPass || '',
+                smtpFrom: (config as any).smtpFrom || ''
             });
         }
     }, [config]);
@@ -197,6 +207,50 @@ const BrandingSettingsPage: React.FC = () => {
                                         onChange={handleChange}
                                         placeholder="© 2026 Cigua Inventory"
                                     />
+                                </div>
+
+                                <div className="space-y-6 pt-6 border-t border-border-default">
+                                    <h3 className="text-sm font-black uppercase tracking-[0.2em] text-muted">Configuración de Correo (SMTP)</h3>
+                                    <p className="text-[10px] text-muted -mt-4">Configura tu servidor para el envío de reportes desde el backend.</p>
+                                    
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <Input
+                                            label="Servidor SMTP (Host)"
+                                            name="smtpHost"
+                                            value={(formData as any).smtpHost || ''}
+                                            onChange={handleChange}
+                                            placeholder="smtp.gmail.com"
+                                        />
+                                        <Input
+                                            label="Puerto"
+                                            name="smtpPort"
+                                            type="number"
+                                            value={(formData as any).smtpPort || 587}
+                                            onChange={handleChange}
+                                        />
+                                        <Input
+                                            label="Usuario SMTP"
+                                            name="smtpUser"
+                                            value={(formData as any).smtpUser || ''}
+                                            onChange={handleChange}
+                                            placeholder="tu-correo@ejemplo.com"
+                                        />
+                                        <Input
+                                            label="Contraseña SMTP"
+                                            name="smtpPass"
+                                            type="password"
+                                            value={(formData as any).smtpPass || ''}
+                                            onChange={handleChange}
+                                        />
+                                        <Input
+                                            label="Remitente (From)"
+                                            name="smtpFrom"
+                                            value={(formData as any).smtpFrom || ''}
+                                            onChange={handleChange}
+                                            placeholder='"Cigua AI" <no-reply@ciguainv.com>'
+                                            className="md:col-span-2"
+                                        />
+                                    </div>
                                 </div>
 
                                 <div className="pt-8 flex items-center justify-between border-t border-border-default">

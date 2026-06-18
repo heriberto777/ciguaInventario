@@ -6,13 +6,14 @@ settings:
 
 importers:
 
-  .: {}
+  .:
+    dependencies:
+      pnpm:
+        specifier: 10.33.4
+        version: 10.33.4
 
   apps/backend:
     dependencies:
-      '@cigua-inv/shared':
-        specifier: workspace:*
-        version: link:../../packages/shared
       '@fastify/cookie':
         specifier: ^9.4.0
         version: 9.4.0
@@ -40,18 +41,30 @@ importers:
       bcrypt:
         specifier: ^6.0.0
         version: 6.0.0
+      dotenv:
+        specifier: ^16.3.1
+        version: 16.4.7
       fastify:
         specifier: ^4.25.2
         version: 4.29.1
       fastify-plugin:
         specifier: ^4.5.1
         version: 4.5.1
+      marked:
+        specifier: 18.0.3
+        version: 18.0.3
       mssql:
         specifier: ^9.3.2
         version: 9.3.2(@azure/core-client@1.10.1)
+      nodemailer:
+        specifier: 8.0.7
+        version: 8.0.7
       pino:
         specifier: ^8.17.2
         version: 8.21.0
+      pino-pretty:
+        specifier: ^10.3.1
+        version: 10.3.1
       xlsx:
         specifier: ^0.18.5
         version: 0.18.5
@@ -62,9 +75,9 @@ importers:
       '@types/node':
         specifier: ^20.10.5
         version: 20.19.33
-      pino-pretty:
-        specifier: ^10.3.1
-        version: 10.3.1
+      '@types/nodemailer':
+        specifier: 8.0.0
+        version: 8.0.0
       prisma:
         specifier: ^5.7.0
         version: 5.22.0
@@ -1398,7 +1411,7 @@ packages:
 
   '@expo/bunyan@4.0.1':
     resolution: {integrity: sha512-+Lla7nYSiHZirgK+U/uYzsLv/X+HaJienbD5AKX1UQZHYfWaP+9uuQluRB4GrEVWF0GZ7vEVp/jzaOT9k/SQlg==}
-    engines: {'0': node >=0.10.0}
+    engines: {node: '>=0.10.0'}
 
   '@expo/cli@0.22.28':
     resolution: {integrity: sha512-lvt72KNitGuixYD2l3SZmRKVu2G4zJpmg5V7WfUBNpmUU5oODBw/6qmiJ6kSLAlfDozscUk+BBGknBBzxUrwrA==}
@@ -2033,6 +2046,9 @@ packages:
 
   '@types/node@20.19.33':
     resolution: {integrity: sha512-Rs1bVAIdBs5gbTIKza/tgpMuG1k3U/UMJLWecIMxNdJFDMzcM5LOiLVRYh3PilWEYDIeUDv7bpiHPLPsbydGcw==}
+
+  '@types/nodemailer@8.0.0':
+    resolution: {integrity: sha512-fyf8jWULsCo0d0BuoQ75i6IeoHs47qcqxWc7yUdUcV0pOZGjUTTOvwdG1PRXUDqN/8A64yQdQdnA2pZgcdi+cA==}
 
   '@types/pako@2.0.4':
     resolution: {integrity: sha512-VWDCbrLeVXJM9fihYodcLiIv0ku+AlOa/TQ1SvYOaBuyrSKgEcro95LJyIsJ4vSo6BXIxOKxiJAat04CmST9Fw==}
@@ -4145,6 +4161,11 @@ packages:
   markdown-table@3.0.4:
     resolution: {integrity: sha512-wiYz4+JrLyb/DqW2hkFJxP7Vd7JuTDm77fvbM8VfEQdmSMqcImWeeRbHwZjBjIFki/VaMK2BhFi7oUUZeM5bqw==}
 
+  marked@18.0.3:
+    resolution: {integrity: sha512-7VT90JOkDeaRWpfjOReRGPEKn0ecdARBkDGL+tT1wZY0efPPqkUxLUSmzy/C7TIylQYJC9STISEsCHrqb/7VIA==}
+    engines: {node: '>= 20'}
+    hasBin: true
+
   marky@1.3.0:
     resolution: {integrity: sha512-ocnPZQLNpvbedwTy9kNrQEsknEfgvcLMvOtz3sFeWApDq1MXH1TqkCIx58xlpESsfwQOnuBO9beyQuNGzVvuhQ==}
 
@@ -4531,6 +4552,10 @@ packages:
   node-releases@2.0.27:
     resolution: {integrity: sha512-nmh3lCkYZ3grZvqcCH+fjmQ7X+H0OeZgP40OierEaAptX4XofMh5kwNbWh7lBduUzCcV/8kZ+NDLCwm2iorIlA==}
 
+  nodemailer@8.0.7:
+    resolution: {integrity: sha512-pkjE4mkBzQjdJT4/UmlKl3pX0rC9fZmjh7c6C9o7lv66Ac6w9WCnzPzhbPNxwZAzlF4mdq4CSWB5+FbK6FWCow==}
+    engines: {node: '>=6.0.0'}
+
   normalize-path@3.0.0:
     resolution: {integrity: sha512-6eZs5Ls3WtCisHWp9S2GUy8dqkpGi4BVSz3GaqiE6ezub0512ESztXUwUB6C6IKbQkY2Pnb/mD4WYojCRwcwLA==}
     engines: {node: '>=0.10.0'}
@@ -4778,6 +4803,11 @@ packages:
   pngjs@3.4.0:
     resolution: {integrity: sha512-NCrCHhWmnQklfH4MtJMRjZ2a8c80qXeMlQMv2uVp9ISJMTt562SbGd6n2oq0PaPgKm7Z6pL9E2UlLIhC+SHL3w==}
     engines: {node: '>=4.0.0'}
+
+  pnpm@10.33.4:
+    resolution: {integrity: sha512-HGezs1my1AgRm6HtKJ80uPw8aHNBK+xv0mT73IJInlEPy+y5zp0i2ufzt2Jp2EQQRgFL3KU7mXnNelYa1jG4AA==}
+    engines: {node: '>=18.12'}
+    hasBin: true
 
   possible-typed-array-names@1.1.0:
     resolution: {integrity: sha512-/+5VFTchJDoVj3bhoqi6UeymcD00DAwb1nJwamzPvHEszJ4FpF6SNNbUbOS8yI56qHzdV8eK0qEfOSiodkTdxg==}
@@ -8279,6 +8309,10 @@ snapshots:
     dependencies:
       undici-types: 6.21.0
 
+  '@types/nodemailer@8.0.0':
+    dependencies:
+      '@types/node': 20.19.33
+
   '@types/pako@2.0.4': {}
 
   '@types/prop-types@15.7.15': {}
@@ -10629,6 +10663,8 @@ snapshots:
 
   markdown-table@3.0.4: {}
 
+  marked@18.0.3: {}
+
   marky@1.3.0: {}
 
   match-sorter@6.3.4:
@@ -11308,6 +11344,8 @@ snapshots:
 
   node-releases@2.0.27: {}
 
+  nodemailer@8.0.7: {}
+
   normalize-path@3.0.0: {}
 
   npm-package-arg@11.0.3:
@@ -11564,6 +11602,8 @@ snapshots:
       xmlbuilder: 15.1.1
 
   pngjs@3.4.0: {}
+
+  pnpm@10.33.4: {}
 
   possible-typed-array-names@1.1.0: {}
 

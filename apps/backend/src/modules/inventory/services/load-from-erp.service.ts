@@ -1,9 +1,7 @@
-import { PrismaClient } from '@prisma/client';
-import { FastifyInstance } from 'fastify';
-import { AppError } from '../../utils/errors';
-import { erpConnectionsService } from '../erp-connections/service';
-import { ERPConnectorFactory } from '../erp-connections/erp-connector-factory';
-import { ERPIntrospectionService } from '../erp-connections/erp-introspection';
+import { InventoryRepository } from '../inventory.repository';
+import { AppError } from '../../../utils/errors';
+import { ERPConnectorFactory } from '../../erp-connections/erp-connector-factory';
+import { ERPIntrospectionService } from '../../erp-connections/erp-introspection';
 
 interface LoadInventoryParams {
   mappingId: string;
@@ -19,18 +17,17 @@ export interface LoadedItem {
   uom: string;
   baseUom: string;
   packQty: number;
-  // Campos opcionales — se mapean desde el ERP si están configurados
   costPrice?: number;
   salePrice?: number;
-  barCodeInv?: string;   // Código de barras inventario
-  barCodeVt?: string;    // Código de barras venta
-  brand?: string;        // Marca
-  category?: string;     // Categoría
-  subcategory?: string;  // Subcategoría
-  itemProv?: string;     // Código del proveedor (para agrupación de alias)
-  lot?: string;          // Lote
-  invoiceNumber?: string; // Número de factura (para dataset PENDING_INVOICES)
-  clientName?: string;    // Nombre del cliente (para dataset PENDING_INVOICES)
+  barCodeInv?: string;
+  barCodeVt?: string;
+  brand?: string;
+  category?: string;
+  subcategory?: string;
+  itemProv?: string;
+  lot?: string;
+  invoiceNumber?: string;
+  clientName?: string;
 }
 
 interface LoadInventoryResult {
@@ -42,26 +39,20 @@ interface LoadInventoryResult {
 }
 
 export class LoadInventoryFromERPService {
-  constructor(private fastify: FastifyInstance) { }
+  constructor(
+    private repository: InventoryRepository,
+    private logger?: any,
+    private auditLogger?: (data: any) => Promise<void>
+  ) { }
 
   /**
    * Cargar inventario desde ERP basado en configuración de mapeo
-   *
-   * Proceso:
-   * 1. Obtener configuración de mapeo
-   * 2. Obtener conexión ERP
-   * 3. Crear conector y ejecutar query
-   * 4. Transformar datos según mapeo
-   * 5. Crear InventoryCount y cargar items
    */
   async loadInventoryFromERP(params: LoadInventoryParams): Promise<LoadInventoryResult> {
     const { mappingId, warehouseId, companyId, userId } = params;
 
     try {
-      // 1. Validar que el mapeo existe y pertenece a la empresa
-      const mappingConfig = await (this.fastify.prisma as any).mappingConfig.findUnique({
-        where: { id: mappingId },
-      });
+      const mappingConfig = await this.repository.findMappingConfigById(mappingId);
 
       if (!mappingConfig || mappingConfig.companyId !== companyId) {
         throw new AppError(404, 'Mapping configuration not found');
@@ -75,26 +66,21 @@ export class LoadInventoryFromERPService {
         throw new AppError(400, 'Mapping configuration is not active');
       }
 
-      // 2. Validar que el warehouse existe
-      const warehouse = await (this.fastify.prisma as any).warehouse.findUnique({
-        where: { id: warehouseId },
-      });
+      const warehouse = await this.repository.findWarehouseById(warehouseId);
 
       if (!warehouse || warehouse.companyId !== companyId) {
         throw new AppError(404, 'Warehouse not found');
       }
 
-      // 3. Obtener conexión ERP
-      const connection = await erpConnectionsService.getConnection(
+      const connection = await this.repository.findERPConnectionById(
         mappingConfig.erpConnectionId,
         companyId
       );
 
-      if (!connection.isActive) {
-        throw new AppError(400, 'ERP connection is not active');
+      if (!connection || !connection.isActive) {
+        throw new AppError(400, 'ERP connection not found or not active');
       }
 
-      // 4. Crear conector ERP
       const connector = ERPConnectorFactory.create({
         erpType: connection.erpType,
         host: connection.host,
@@ -104,99 +90,76 @@ export class LoadInventoryFromERPService {
         password: connection.password,
       });
 
-      // 5. Ejecutar query para obtener datos
       const introspection = new ERPIntrospectionService(connector);
-
-      // Usar la query de mapeo o construirla desde las tablas
       let sqlQuery = mappingConfig.sourceQuery;
 
       if (!sqlQuery) {
-        // Construir query automáticamente desde sourceTables y fieldMappings
         const queryObj = this.buildQueryFromMapping(mappingConfig);
         sqlQuery = queryObj.sql;
       }
 
-      // Ejecutar query
       let rawData: any[] = [];
       try {
-        rawData = await introspection.previewQuery(sqlQuery, 10000); // Máximo 10k items
+        rawData = await introspection.previewQuery(sqlQuery, 10000); 
       } catch (error: any) {
-        throw new AppError(
-          400,
-          `Failed to execute ERP query: ${error.message}`
-        );
+        throw new AppError(400, `Failed to execute ERP query: ${error.message}`);
       }
 
       if (!rawData || rawData.length === 0) {
         throw new AppError(400, 'No data returned from ERP query');
       }
 
-      // 6. Transformar datos según fieldMappings
       const transformedItems = this.transformData(rawData, mappingConfig);
 
-      // 7. Crear InventoryCount
-      const inventoryCount = await (this.fastify.prisma as any).inventoryCount.create({
-        data: {
-          companyId,
-          warehouseId,
-          code: this.generateCountCode(companyId),
-          description: `Loaded from ERP via ${mappingConfig.datasetType}`,
-          status: 'DRAFT',
-          startedBy: userId,
-          startedAt: new Date(),
-        },
+      const inventoryCount = await this.repository.createCount({
+        companyId,
+        warehouseId,
+        code: this.generateCountCode(companyId),
+        description: `Loaded from ERP via ${mappingConfig.datasetType}`,
+        status: 'DRAFT',
+        startedBy: userId,
+        startedAt: new Date(),
+        sequenceNumber: this.generateSequenceNumber(), 
       });
 
-      // 8. Obtener ubicaciones del warehouse
-      const locations = await (this.fastify.prisma as any).warehouse_Location.findMany({
-        where: { warehouseId },
-      });
+      let locations = await this.repository.findLocationsByWarehouseId(warehouseId);
 
       if (locations.length === 0) {
-        // Si no hay ubicaciones, crear una por defecto
-        const defaultLocation = await (this.fastify.prisma as any).warehouse_Location.create({
-          data: {
-            warehouseId,
-            code: 'DEFAULT',
-            name: 'Default Location',
-            type: 'FLOOR',
-          },
+        const defaultLocation = await this.repository.createLocation({
+          warehouseId,
+          code: 'DEFAULT',
+          name: 'Default Location',
+          type: 'FLOOR',
         });
-        locations.push(defaultLocation);
+        locations = [defaultLocation];
       }
 
-      // 9. Cargar items en la BD
       const createdItems: typeof transformedItems = [];
       const errors: string[] = [];
 
       for (const item of transformedItems) {
         try {
-          // Usar la primera ubicación disponible
           const location = locations[0];
-
-          const createdItem = await (this.fastify.prisma as any).inventoryCount_Item.create({
-            data: {
-              countId: inventoryCount.id,
-              locationId: location.id,
-              itemCode: item.itemCode,
-              itemName: item.itemName,
-              systemQty: item.systemQty,
-              countedQty: null,           // Usuario llenará durante el conteo físico
-              uom: item.uom || 'PZ',
-              baseUom: item.baseUom || 'PZ',
-              packQty: item.packQty || 1,
-              // Campos enriquecidos del ERP
-              ...(item.costPrice != null && { costPrice: item.costPrice }),
-              ...(item.salePrice != null && { salePrice: item.salePrice }),
-              ...(item.barCodeInv && { barCodeInv: item.barCodeInv }),
-              ...(item.barCodeVt && { barCodeVt: item.barCodeVt }),
-              ...(item.brand && { brand: item.brand }),
-              ...(item.category && { category: item.category }),
-              ...(item.subcategory && { subcategory: item.subcategory }),
-              ...(item.lot && { lot: item.lot }),
-              status: 'PENDING',
-              notes: 'Loaded from ERP',
-            },
+          await this.repository.createInventoryCountItem({
+            countId: inventoryCount.id,
+            locationId: location.id,
+            itemCode: item.itemCode,
+            itemName: item.itemName,
+            systemQty: item.systemQty,
+            countedQty: null,
+            uom: item.uom || 'PZ',
+            baseUom: item.baseUom || 'PZ',
+            packQty: item.packQty || 1,
+            ...(item.costPrice != null && { costPrice: item.costPrice }),
+            ...(item.salePrice != null && { salePrice: item.salePrice }),
+            ...(item.barCodeInv && { barCodeInv: item.barCodeInv }),
+            ...(item.barCodeVt && { barCodeVt: item.barCodeVt }),
+            ...(item.brand && { brand: item.brand }),
+            ...(item.category && { category: item.category }),
+            ...(item.subcategory && { subcategory: item.subcategory }),
+            ...(item.lot && { lot: item.lot }),
+            status: 'PENDING',
+            notes: 'Loaded from ERP',
           });
 
           createdItems.push(item);
@@ -205,21 +168,21 @@ export class LoadInventoryFromERPService {
         }
       }
 
-      // 10. Registrar en audit log
-      await this.fastify.auditLog({
-        action: 'CREATE',
-        userId,
-        companyId,
-        resourceId: inventoryCount.id,
-        resource: 'InventoryCount',
-        newValue: {
-          itemsLoaded: createdItems.length,
-          totalAttempted: transformedItems.length,
-          status: inventoryCount.status,
-        },
-      });
+      if (this.auditLogger) {
+        await this.auditLogger({
+          action: 'CREATE',
+          userId,
+          companyId,
+          resourceId: inventoryCount.id,
+          resource: 'InventoryCount',
+          newValue: {
+            itemsLoaded: createdItems.length,
+            totalAttempted: transformedItems.length,
+            status: inventoryCount.status,
+          },
+        });
+      }
 
-      // Determinar status del resultado
       let status: 'SUCCESS' | 'PARTIAL' | 'FAILED' = 'SUCCESS';
       let message = `Successfully loaded ${createdItems.length} items from ERP`;
 
@@ -239,17 +202,11 @@ export class LoadInventoryFromERPService {
         errors: errors.length > 0 ? errors : undefined,
       };
     } catch (error: any) {
-      if (error instanceof AppError) {
-        throw error;
-      }
+      if (error instanceof AppError) throw error;
       throw new AppError(500, `Failed to load inventory from ERP: ${error.message}`);
     }
   }
 
-  /**
-   * Construir query SQL automáticamente desde la configuración de mapeo
-   * Soporta el nuevo formato SimpleMappingBuilder con mainTable, joins, filters, selectedColumns
-   */
   buildQueryFromMapping(mappingConfig: any): { sql: string; parameters: any[] } {
     try {
       let filtersStrOrObj = mappingConfig.filters || {};
@@ -271,7 +228,6 @@ export class LoadInventoryFromERPService {
       };
 
       if (Array.isArray(filters)) {
-        this.fastify.log.info('🔄 [buildQueryFromMapping] Normalizing array-positional filters...');
         for (const element of filters) {
           if (typeof element === 'string') {
             normalizedFilters.mainTable = element;
@@ -309,7 +265,6 @@ export class LoadInventoryFromERPService {
       const whereFilters = [...normalizedFilters.filters, ...rootFilters];
       let selectedColumns = (normalizedFilters.selectedColumns.length > 0) ? normalizedFilters.selectedColumns : (Array.isArray(mappingConfig.selectedColumns) ? mappingConfig.selectedColumns : []);
 
-      // Si aún está vacío, intentar extraer de fieldMappings
       if (selectedColumns.length === 0 && mappingConfig.fieldMappings) {
         let fm = mappingConfig.fieldMappings;
         if (typeof fm === 'string') {
@@ -347,7 +302,8 @@ export class LoadInventoryFromERPService {
           const alias = tableAliasMap[tableName];
           return alias ? `${alias}.${colName}` : col;
         }
-        return col;
+        // Si no tiene punto, le ponemos el alias de la tabla principal por defecto para evitar ambigüedades
+        return `${mainTableAlias}.${col}`;
       });
 
       let sql = `SELECT ${finalColumns.join(', ')} FROM ${mainTable} ${mainTableAlias}`;
@@ -361,6 +317,25 @@ export class LoadInventoryFromERPService {
 
       if (whereFilters.length > 0) {
         const conditions = whereFilters.map(f => {
+          if (f.operator === 'OR_LIKE') {
+            const searchVal = typeof f.value === 'object' ? f.value.search : f.value;
+            const fieldsToSearch = typeof f.value === 'object' && Array.isArray(f.value.fields) ? f.value.fields : [f.field];
+            const subConditions = fieldsToSearch.map((fieldItem: string) => {
+              let field = fieldItem;
+              const lastDot = field.lastIndexOf('.');
+              if (lastDot > 0) {
+                const tableName = field.substring(0, lastDot).split('.').pop() || '';
+                const colName = field.substring(lastDot + 1);
+                const alias = tableAliasMap[tableName];
+                if (alias) field = `${alias}.${colName}`;
+              } else {
+                field = `${mainTableAlias}.${field}`;
+              }
+              return `${field} LIKE '${searchVal}'`;
+            });
+            return `(${subConditions.join(' OR ')})`;
+          }
+
           let field = f.field;
           const lastDot = field.lastIndexOf('.');
           if (lastDot > 0) {
@@ -368,6 +343,9 @@ export class LoadInventoryFromERPService {
             const colName = field.substring(lastDot + 1);
             const alias = tableAliasMap[tableName];
             if (alias) field = `${alias}.${colName}`;
+          } else {
+            // Si no tiene alias, le ponemos el de la tabla principal
+            field = `${mainTableAlias}.${field}`;
           }
 
           if (f.operator === 'IN' && Array.isArray(f.value)) {
@@ -380,17 +358,13 @@ export class LoadInventoryFromERPService {
         sql += ` WHERE ${conditions.join(' AND ')}`;
       }
 
-      this.fastify.log.info(`✅ [buildQueryFromMapping] Generated SQL: ${sql}`);
+      if (this.logger) this.logger.info(`✅ [buildQueryFromMapping] Generated SQL: ${sql}`);
       return { sql, parameters: [] };
     } catch (error: any) {
       throw new AppError(400, `Query Builder Error: ${error.message}`);
     }
   }
 
-  /**
-   * Transformar datos crudos del ERP según fieldMappings
-   * Soporta el nuevo formato SimpleMappingBuilder: [{source, target, dataType}]
-   */
   transformData(rawData: any[], mappingConfig: any): LoadedItem[] {
     let fieldMappings = mappingConfig.fieldMappings || mappingConfig.filters?.fieldMappings || [];
     if (typeof fieldMappings === 'string') fieldMappings = JSON.parse(fieldMappings);
@@ -414,12 +388,12 @@ export class LoadInventoryFromERPService {
       return {
         itemCode: String(result.itemCode || '').trim(),
         itemName: String(result.itemName || '').trim(),
-        systemQty: toNum(result.systemQty ?? result.quantity ?? result.cantDisponible) ?? 0,
+        systemQty: toNum(result.systemQty ?? result.reservedQty ?? result.quantity ?? result.cantDisponible) ?? 0,
         uom: toStr(result.uom) ?? 'PZ',
         baseUom: toStr(result.baseUom) ?? 'PZ',
         packQty: toNum(result.packQty) ?? 1,
-        costPrice: toNum(result.costPrice ?? result.cost),
-        salePrice: toNum(result.salePrice ?? result.price),
+        costPrice: toNum(result.costPrice ?? result.cost ?? result.costo ?? result.costo_promedio ?? result.COSTO_PROMEDIO ?? result.COSTO ?? result.COSTO_ESTANDAR ?? result.ULTIMO_COSTO ?? 0),
+        salePrice: toNum(result.salePrice ?? result.price ?? result.precio ?? result.precio_venta ?? result.PRECIO_VENTA ?? result.PRECIO ?? result.PRECIO_LISTA ?? 0),
         barCodeInv: toStr(result.barCodeInv ?? result.barcode),
         barCodeVt: toStr(result.barCodeVt ?? result.barcodeVt),
         brand: toStr(result.brand ?? result.marca),
@@ -427,22 +401,58 @@ export class LoadInventoryFromERPService {
         subcategory: toStr(result.subcategory ?? result.subcategoria),
         itemProv: toStr(result.itemProv ?? result.articulo_del_prov),
         lot: toStr(result.lot ?? result.lote),
+        invoiceNumber: toStr(result.invoiceNumber),
+        clientName: toStr(result.clientName),
       };
     }).filter(i => i.itemCode) as LoadedItem[];
   }
 
-  /**
-   * Generar código único para el conteo
-   */
   private generateCountCode(companyId: string): string {
     const date = new Date();
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const randomSuffix = Math.random().toString(36).substr(2, 5).toUpperCase();
-    return `INV-${year}-${month}-${randomSuffix}`;
+    return `INV-${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
   }
-}
 
-export async function createLoadInventoryService(fastify: FastifyInstance) {
-  return new LoadInventoryFromERPService(fastify);
+  private generateSequenceNumber(): string {
+    return `CONT-${Date.now()}`; 
+  }
+
+  /**
+   * Fusiona filtros externos en la configuración de mapeo sin romper la estructura.
+   */
+  public mergeFiltersIntoMapping(mapping: any, newFilters: any[]): any {
+    const mappingWithFilters: any = { ...mapping };
+    const originalFilters = mapping.filters;
+    
+    if (Array.isArray(originalFilters)) {
+        const normalizedArray = [...(originalFilters as any[])];
+        let merged = false;
+        
+        // Buscamos si ya existe una sección de filtros (array de objetos con 'field')
+        for (let i = 0; i < normalizedArray.length; i++) {
+            const element = normalizedArray[i];
+            if (Array.isArray(element) && element.length > 0 && typeof element[0] === 'object' && element[0].field) {
+                normalizedArray[i] = [...element, ...newFilters];
+                merged = true; 
+                break;
+            }
+        }
+        
+        if (!merged) {
+            // Si no se encontró un bloque de filtros, lo añadimos al final
+            normalizedArray.push(newFilters);
+        }
+        mappingWithFilters.filters = normalizedArray;
+    } else if (typeof originalFilters === 'object' && originalFilters !== null) {
+        const normalizedObj = { ...originalFilters };
+        normalizedObj.filters = Array.isArray(normalizedObj.filters) 
+            ? [...normalizedObj.filters, ...newFilters] 
+            : newFilters;
+        mappingWithFilters.filters = normalizedObj;
+    } else {
+        // Si no había filtros o era string, creamos la estructura básica
+        mappingWithFilters.filters = newFilters;
+    }
+    
+    return mappingWithFilters;
+  }
 }
