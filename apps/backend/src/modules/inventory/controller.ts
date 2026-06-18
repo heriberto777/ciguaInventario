@@ -116,6 +116,20 @@ export class InventoryController {
         reply.send(this.maskCountData(result, user.permissions));
     }
 
+    async closeCount(request: FastifyRequest, reply: FastifyReply) {
+        const user = (request as any).user;
+        const { id } = request.params as { id: string };
+        const result = await this.countStateService.closeInventoryCount(id, user.companyId, user.id);
+        reply.send(this.maskCountData(result, user.permissions));
+    }
+
+    async cancelCount(request: FastifyRequest, reply: FastifyReply) {
+        const user = (request as any).user;
+        const { id } = request.params as { id: string };
+        const result = await this.countStateService.cancelInventoryCount(id, user.companyId, user.id);
+        reply.send(this.maskCountData(result, user.permissions));
+    }
+
     // ── ERP Integration ──────────────────────────────────────────────────────
 
     async loadFromERP(request: FastifyRequest, reply: FastifyReply) {
@@ -144,6 +158,20 @@ export class InventoryController {
             mappingId: body.mappingId,
             userEmail: user.email
         });
+        reply.send(result);
+    }
+
+    async getSyncHistory(request: FastifyRequest, reply: FastifyReply) {
+        const user = (request as any).user;
+        const { id } = request.params as { id: string };
+        const result = await this.syncToERPService.getSyncHistory(id, user.companyId);
+        reply.send(result);
+    }
+
+    async getSyncDetail(request: FastifyRequest, reply: FastifyReply) {
+        const user = (request as any).user;
+        const { syncId } = request.params as { syncId: string };
+        const result = await this.syncToERPService.getSyncDetail(syncId, user.companyId);
         reply.send(result);
     }
 

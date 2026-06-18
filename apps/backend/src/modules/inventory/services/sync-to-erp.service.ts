@@ -145,18 +145,74 @@ export class SyncToERPService {
                 }
             }
 
-            // Implementation of history recording should be here or in repository
-            // I'll assume we can use the repository for history too if expanded.
-            // For now, I'll use the repository update method for the count.
+            const syncedAt = new Date();
+            await this.repository.createSyncHistory({
+                countId,
+                companyId,
+                version: count.finalizedVersion || count.currentVersion,
+                status: itemsFailed === 0 ? 'COMPLETED' : itemsSynced > 0 ? 'PARTIAL' : 'FAILED',
+                itemsSynced,
+                itemsFailed,
+                totalItems: itemsToSync.length,
+                strategy: input.updateStrategy,
+                details: JSON.stringify(details),
+                syncedBy: input.userEmail || 'system',
+                syncedAt,
+                duration: Date.now() - startTime,
+            });
 
             if (itemsFailed === 0) {
                 await this.repository.updateCount(countId, { status: 'CLOSED', closedAt: new Date() });
             }
 
-            return { success: itemsFailed === 0, itemsSynced, itemsFailed, syncedAt: new Date().toISOString(), details };
+            return { success: itemsFailed === 0, itemsSynced, itemsFailed, syncedAt: syncedAt.toISOString(), details };
         } finally {
             await connector.disconnect();
         }
+    }
+
+    async getSyncHistory(countId: string, companyId: string) {
+        const count = await this.repository.findCountById(countId);
+        if (!count || count.companyId !== companyId) throw new AppError(403, 'Access denied to this count');
+
+        const syncs = await this.repository.findSyncHistoryByCountId(countId);
+        return {
+            countId,
+            totalSyncs: syncs.length,
+            syncs: syncs.map((s: any) => ({
+                id: s.id,
+                status: s.status,
+                itemsSynced: s.itemsSynced,
+                itemsFailed: s.itemsFailed,
+                totalItems: s.totalItems,
+                successRate: s.totalItems > 0 ? ((s.itemsSynced / s.totalItems) * 100).toFixed(2) + '%' : '0%',
+                strategy: s.strategy,
+                version: s.version,
+                syncedAt: s.syncedAt,
+                duration: s.duration + 'ms',
+            })),
+        };
+    }
+
+    async getSyncDetail(syncHistoryId: string, companyId: string) {
+        const record = await this.repository.findSyncHistoryById(syncHistoryId);
+        if (!record) throw new AppError(404, 'Sync record not found');
+        if (record.companyId !== companyId) throw new AppError(403, 'Access denied');
+
+        return {
+            id: record.id,
+            countId: record.countId,
+            status: record.status,
+            itemsSynced: record.itemsSynced,
+            itemsFailed: record.itemsFailed,
+            totalItems: record.totalItems,
+            successRate: record.totalItems > 0 ? ((record.itemsSynced / record.totalItems) * 100).toFixed(2) + '%' : '0%',
+            strategy: record.strategy,
+            version: record.version,
+            duration: record.duration + 'ms',
+            syncedAt: record.syncedAt,
+            details: JSON.parse(record.details || '[]'),
+        };
     }
 
     private async generateNextConsecutive(connector: any, mapping: any, tableName: string): Promise<string> {

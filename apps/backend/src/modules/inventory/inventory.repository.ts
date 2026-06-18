@@ -33,6 +33,9 @@ export interface InventoryRepository {
   deleteVarianceReportsByCountId(countId: string, version?: number, itemId?: string): Promise<any>;
   findVarianceReportsByCountId(countId: string): Promise<any[]>;
   deleteSyncHistoryByCountId(countId: string): Promise<any>;
+  createSyncHistory(data: any): Promise<any>;
+  findSyncHistoryByCountId(countId: string): Promise<any[]>;
+  findSyncHistoryById(id: string): Promise<any>;
 
   findMappingConfigByDatasetType(companyId: string, datasetType: string): Promise<any>;
   findERPConnectionById(id: string, companyId: string): Promise<any>;
@@ -316,6 +319,25 @@ export class PrismaInventoryRepository implements InventoryRepository {
     return await this.prisma.inventorySyncHistory.deleteMany({
       where: { countId }
     });
+  }
+
+  async createSyncHistory(data: any) {
+    return await this.prisma.inventorySyncHistory.create({ data });
+  }
+
+  async findSyncHistoryByCountId(countId: string) {
+    return await this.prisma.inventorySyncHistory.findMany({
+      where: { countId },
+      orderBy: { syncedAt: 'desc' },
+      select: {
+        id: true, status: true, itemsSynced: true, itemsFailed: true,
+        totalItems: true, strategy: true, syncedAt: true, duration: true, version: true,
+      },
+    });
+  }
+
+  async findSyncHistoryById(id: string) {
+    return await this.prisma.inventorySyncHistory.findUnique({ where: { id } });
   }
 
   async findMappingConfigByDatasetType(companyId: string, datasetType: string) {

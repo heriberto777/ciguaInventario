@@ -47,8 +47,8 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
     fastify.post('/inventory-counts/:id/resume', (req, rep) => controller.resumeCount(req, rep));
     fastify.post('/inventory-counts/:id/finalize', (req, rep) => controller.finalizeCount(req, rep));
     fastify.post('/inventory-counts/:id/finalize-physical', (req, rep) => controller.finalizeCount(req, rep));
-    fastify.post('/inventory-counts/:id/close', (req, rep) => controller.pauseCount(req, rep)); // Map to pause or close if added
-    fastify.post('/inventory-counts/:id/cancel', (req, rep) => controller.deleteCount(req, rep)); // Map to cancel
+    fastify.post('/inventory-counts/:id/close', (req, rep) => controller.closeCount(req, rep));
+    fastify.post('/inventory-counts/:id/cancel', (req, rep) => controller.cancelCount(req, rep));
     fastify.post('/inventory-counts/:id/reactivate', (req, rep) => controller.reactivateCount(req, rep));
 
     // ── Routes: ERP & Sync ──────────────────────────────────────────────────
@@ -57,6 +57,8 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
     fastify.post('/inventory-counts/:id/sync-erp', (req, rep) => controller.syncToERP(req, rep));
     fastify.post('/inventory-counts/:id/send-to-erp', (req, rep) => controller.syncToERP(req, rep));
     fastify.post('/inventory-counts/preview-erp-items', (req, rep) => controller.erpLoaderService.previewFilteredItems((req as any).user.companyId, req.body).then(r => rep.send(r)));
+    fastify.get('/inventory-counts/:id/sync-history', (req, rep) => controller.getSyncHistory(req, rep));
+    fastify.get('/inventory-counts/sync/:syncId', (req, rep) => controller.getSyncDetail(req, rep));
 
     // ── Routes: Reservations ────────────────────────────────────────────────
     fastify.post('/inventory-counts/:id/reserve-invoice', (req, rep) => controller.reserveInvoice(req, rep));
