@@ -8,6 +8,8 @@ import { NotificationModal } from '@/components/atoms/NotificationModal';
 import { ConfirmModal } from '@/components/atoms/ConfirmModal';
 import { OperationOverlay } from '@/components/atoms/OperationOverlay';
 import { usePermissions } from '@/hooks/usePermissions';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 // Hooks
 import { useInventorySync } from '@/hooks/useInventorySync';
@@ -33,6 +35,7 @@ export default function InventoryCountProcessPage() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'items' | 'dispatches'>('items');
   const [reservationSubTab, setReservationSubTab] = useState<'invoice' | 'picking' | 'excel'>('invoice');
+  const [showReservationSummary, setShowReservationSummary] = useState(false);
 
   const { hasPermission } = usePermissions();
   const permissions = {
@@ -231,6 +234,62 @@ export default function InventoryCountProcessPage() {
     setActionConfirm({ isOpen: true, title, message, onConfirm: () => { onConfirm(); setActionConfirm(prev => ({ ...prev, isOpen: false })); }, isDangerous });
   };
 
+  // Consolidar todos los ítems reservados agrupados por itemProv (o itemCode si no hay itemProv)
+  const reservationSummary = useMemo(() => {
+    const invoices: any[] = (count as any)?.reservedInvoices || [];
+    const map = new Map<string, { key: string; itemCode: string; itemProv: string; itemName: string; qty: number; uom: string; type: string }>();
+
+    for (const inv of invoices) {
+      for (const item of (inv.items || [])) {
+        const key = item.itemProv ? item.itemProv.trim().toUpperCase() : item.itemCode.trim().toUpperCase();
+        if (map.has(key)) {
+          map.get(key)!.qty += Number(item.reservedQty);
+        } else {
+          map.set(key, {
+            key,
+            itemCode: item.itemCode,
+            itemProv: item.itemProv || '—',
+            itemName: item.itemName || '—',
+            qty: Number(item.reservedQty),
+            uom: item.uom || '',
+            type: inv.type,
+          });
+        }
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => a.itemCode.localeCompare(b.itemCode));
+  }, [(count as any)?.reservedInvoices]);
+
+  const exportReservationPDF = () => {
+    const doc = new jsPDF('p', 'mm', 'a4');
+    doc.setFontSize(14);
+    doc.setTextColor(40, 40, 40);
+    doc.text('RESUMEN DE RESERVAS', 14, 18);
+    doc.setFontSize(9);
+    doc.setTextColor(100);
+    doc.text(`Conteo: ${(count as any)?.code || id}`, 14, 25);
+    doc.text(`Fecha: ${new Date().toLocaleDateString()}`, 14, 30);
+    doc.text(`Total ítems: ${reservationSummary.length}  |  Total unidades: ${reservationSummary.reduce((s, i) => s + i.qty, 0).toLocaleString()}`, 14, 35);
+
+    autoTable(doc, {
+      startY: 42,
+      head: [['Código', 'Art. Prov.', 'Descripción', 'Cant.', 'UOM']],
+      body: reservationSummary.map(r => [r.itemCode, r.itemProv, r.itemName, r.qty.toLocaleString('en', { minimumFractionDigits: 0 }), r.uom]),
+      theme: 'plain',
+      headStyles: { fillColor: [40, 40, 40], textColor: [255, 255, 255], fontSize: 8 },
+      styles: { fontSize: 8, cellPadding: 2 },
+      columnStyles: {
+        0: { cellWidth: 20 },
+        1: { cellWidth: 25 },
+        2: { cellWidth: 90 },
+        3: { halign: 'right', cellWidth: 22 },
+        4: { cellWidth: 18 },
+      },
+    });
+
+    doc.save(`Resumen_Reservas_${(count as any)?.code || id}.pdf`);
+  };
+
   if (isLoading) {
     return (
       <div className="w-full h-full flex items-center justify-center p-20">
@@ -331,10 +390,21 @@ export default function InventoryCountProcessPage() {
             />
           ) : (
             <div className="p-8 space-y-8">
-              <div className="flex gap-2 bg-hover/20 p-1 rounded-xl w-fit border border-border-default">
-                <button onClick={() => setReservationSubTab('invoice')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${reservationSubTab === 'invoice' ? 'bg-card text-primary shadow-sm' : 'text-muted'}`}>📄 Factura Individual</button>
-                <button onClick={() => setReservationSubTab('picking')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${reservationSubTab === 'picking' ? 'bg-card text-primary shadow-sm' : 'text-muted'}`}>📦 Picking List</button>
-                <button onClick={() => setReservationSubTab('excel')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${reservationSubTab === 'excel' ? 'bg-card text-primary shadow-sm' : 'text-muted'}`}>📊 Excel</button>
+              <div className="flex flex-wrap gap-2 items-center justify-between">
+                <div className="flex gap-2 bg-hover/20 p-1 rounded-xl border border-border-default">
+                  <button onClick={() => setReservationSubTab('invoice')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${reservationSubTab === 'invoice' ? 'bg-card text-primary shadow-sm' : 'text-muted'}`}>📄 Factura Individual</button>
+                  <button onClick={() => setReservationSubTab('picking')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${reservationSubTab === 'picking' ? 'bg-card text-primary shadow-sm' : 'text-muted'}`}>📦 Picking List</button>
+                  <button onClick={() => setReservationSubTab('excel')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${reservationSubTab === 'excel' ? 'bg-card text-primary shadow-sm' : 'text-muted'}`}>📊 Excel</button>
+                </div>
+                {reservationSummary.length > 0 && (
+                  <button
+                    onClick={() => setShowReservationSummary(true)}
+                    className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest bg-accent-primary/10 text-accent-primary border border-accent-primary/20 hover:bg-accent-primary hover:text-white transition-all flex items-center gap-2"
+                  >
+                    📋 Resumen Reservas
+                    <span className="bg-accent-primary/20 text-accent-primary px-2 py-0.5 rounded-full text-[9px]">{reservationSummary.length}</span>
+                  </button>
+                )}
               </div>
 
               {reservationSubTab === 'invoice' ? (
@@ -369,6 +439,76 @@ export default function InventoryCountProcessPage() {
       <OperationOverlay isActive={!!activeOperation} message={activeOperation || ''} />
       <ConfirmModal isOpen={actionConfirm.isOpen} onConfirm={actionConfirm.onConfirm} onCancel={() => setActionConfirm(prev => ({ ...prev, isOpen: false }))} title={actionConfirm.title} message={actionConfirm.message} isDangerous={actionConfirm.isDangerous} />
       <NotificationModal isOpen={notification.isOpen} onClose={() => setNotification({ ...notification, isOpen: false })} type={notification.type} title={notification.title} message={notification.message} />
+
+      {/* Modal: Resumen consolidado de reservas */}
+      {showReservationSummary && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowReservationSummary(false)} />
+          <div className="relative bg-card border border-border-default rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden">
+
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b border-border-default bg-hover/20">
+              <div>
+                <h2 className="text-lg font-black text-primary uppercase tracking-tight">📋 Resumen de Reservas</h2>
+                <p className="text-xs text-muted font-bold mt-0.5">
+                  Cantidades acumuladas por artículo · {reservationSummary.length} ítems · {reservationSummary.reduce((s, i) => s + i.qty, 0).toLocaleString()} unidades
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={exportReservationPDF}
+                  className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest bg-red-600 text-white hover:bg-red-700 transition-all flex items-center gap-2"
+                >
+                  📄 Exportar PDF
+                </button>
+                <button
+                  onClick={() => setShowReservationSummary(false)}
+                  className="p-2 rounded-xl text-muted hover:text-primary hover:bg-hover transition-all"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Table */}
+            <div className="overflow-auto flex-1">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-gray-900 text-white">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest">Código</th>
+                    <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest">Art. Prov.</th>
+                    <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest">Descripción</th>
+                    <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest">Cantidad</th>
+                    <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest">UOM</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reservationSummary.map((row, i) => (
+                    <tr key={row.key} className={`border-b border-border-default/40 ${i % 2 === 0 ? 'bg-hover/10' : ''}`}>
+                      <td className="px-4 py-3 font-mono text-xs font-bold text-primary">{row.itemCode}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-muted">{row.itemProv}</td>
+                      <td className="px-4 py-3 text-xs text-secondary">{row.itemName}</td>
+                      <td className="px-4 py-3 text-right font-black text-sm text-accent-secondary">
+                        {row.qty.toLocaleString('en', { minimumFractionDigits: 0 })}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-muted">{row.uom}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="sticky bottom-0 bg-card border-t-2 border-border-default">
+                  <tr>
+                    <td colSpan={3} className="px-4 py-3 text-xs font-black uppercase tracking-widest text-muted">Total</td>
+                    <td className="px-4 py-3 text-right font-black text-base text-primary">
+                      {reservationSummary.reduce((s, i) => s + i.qty, 0).toLocaleString()}
+                    </td>
+                    <td />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
