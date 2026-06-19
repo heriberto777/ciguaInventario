@@ -310,7 +310,7 @@ export default function InventoryCountProcessPage() {
   return (
     <div className="w-full h-full flex flex-col bg-app">
       <div className="flex-shrink-0 border-b border-border-default bg-card px-8 py-6">
-        <div className="max-w-7xl mx-auto flex justify-between items-start">
+        <div className="flex justify-between items-start">
           <div>
             <h1 className="text-4xl font-black text-primary tracking-tighter">{count.sequenceNumber}</h1>
             <p className="text-xs font-bold text-muted uppercase tracking-[0.2em] mt-1">{count.code}</p>
@@ -358,14 +358,14 @@ export default function InventoryCountProcessPage() {
       )}
 
       <div className="bg-card border-b border-border-default px-8">
-        <div className="max-w-7xl mx-auto flex gap-8">
+        <div className="flex gap-8">
           <button onClick={() => setActiveTab('items')} className={`py-4 text-xs font-black uppercase tracking-widest border-b-2 ${activeTab === 'items' ? 'border-accent-primary text-primary' : 'border-transparent text-muted'}`}>📦 Items</button>
           <button onClick={() => setActiveTab('dispatches')} className={`py-4 text-xs font-black uppercase tracking-widest border-b-2 ${activeTab === 'dispatches' ? 'border-accent-primary text-primary' : 'border-transparent text-muted'}`}>📄 Reservas</button>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto custom-scrollbar">
-        <div className="max-w-7xl mx-auto w-full">
+        <div className="w-full">
           {activeTab === 'items' ? (
             <CountItemsList
               items={processHook.filteredItems}

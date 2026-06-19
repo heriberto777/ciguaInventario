@@ -122,8 +122,8 @@ export default function InventoryCountListPage() {
   }
 
   return (
-    <div className="p-8 bg-app min-h-screen">
-      <div className="max-w-7xl mx-auto">
+    <div className="p-4 bg-app min-h-screen">
+      <div className="w-full">
         <div className="flex justify-between items-center mb-10">
           <h1 className="text-5xl font-black text-primary tracking-tighter">Auditoría <span className="text-accent-primary">Inventario</span></h1>
           {permissions.canCreate && (

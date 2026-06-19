@@ -131,7 +131,7 @@ const VarianceReportsPage: React.FC = () => {
 
   return (
     <AdminLayout title="Reportes de Varianza">
-      <div className="max-w-6xl mx-auto">
+      <div className="w-full">
 
         {/* Error Alert */}
         {error && (

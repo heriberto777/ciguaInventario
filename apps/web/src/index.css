@@ -223,7 +223,7 @@ body {
   margin-left: var(--sidebar-width);
   margin-top: 56px;
   flex: 1;
-  padding: 24px;
+  padding: 8px;
   min-height: calc(100vh - 56px);
   transition: margin-left 0.3s ease-in-out;
 }
