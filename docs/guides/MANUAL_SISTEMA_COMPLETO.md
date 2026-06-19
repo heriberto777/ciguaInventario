@@ -467,12 +467,29 @@ pnpm -F @cigua-inv/backend build
 ```bash
 # Desde la raíz del proyecto:
 cd apps/backend
-npx prisma generate    # genera el cliente Prisma
+npx prisma generate    # genera el cliente Prisma en node_modules/
 npx tsc                # compila TypeScript → dist/
 cd ../..
 ```
 
 Ambas opciones generan el mismo resultado en `apps/backend/dist/`.
+
+**Importante — qué hace cada comando y dónde importa:**
+
+| Comando | Genera | ¿Solo en local? | ¿En servidor? |
+|---|---|---|---|
+| `npx prisma generate` | Cliente Prisma en `node_modules/@prisma/client` | ✅ Necesario localmente para que tsc compile | ❌ El servidor ya tiene su propio cliente Linux instalado |
+| `npx tsc` | JavaScript en `apps/backend/dist/` | ✅ Generar aquí y subir | ❌ No hace falta, subes el dist/ |
+
+El `dist/` es JavaScript puro — independiente de plataforma. El servidor solo necesita ese folder actualizado para funcionar.
+
+**La única vez que el servidor necesita `prisma generate`:** cuando se cambia el `schema.prisma`. En ese caso, después de subir los archivos y antes de reiniciar PM2:
+```bash
+# En el servidor:
+./node_modules/.bin/prisma generate
+./node_modules/.bin/prisma migrate deploy
+pm2 restart ciguainv
+```
 
 ---
 

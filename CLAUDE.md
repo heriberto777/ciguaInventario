@@ -30,7 +30,7 @@ pnpm -F @cigua-inv/web build     # tsc + vite build
 pnpm -F @cigua-inv/web preview   # Preview production build
 ```
 
-### Docker (production/staging)
+### Docker (staging/dev)
 ```bash
 docker compose up -d              # Start all containers
 docker compose up -d --build      # Rebuild and start both
@@ -40,6 +40,55 @@ docker compose down               # Stop all
 docker logs cigua_backend -f      # Stream backend logs
 # Seed dentro del contenedor:
 docker exec cigua_backend sh -c "cd /app && node_modules/.bin/tsx apps/backend/prisma/seed.ts"
+```
+
+### Producción — PM2 sin Docker (servidor Linux)
+
+**Compilar el backend (en la máquina de desarrollo):**
+```bash
+# Con pnpm:
+pnpm -F @cigua-inv/backend build
+
+# Sin pnpm (Windows PowerShell o cuando pnpm no está en PATH):
+cd apps/backend
+npx prisma generate   # actualiza node_modules/@prisma/client localmente
+npx tsc               # compila TypeScript → dist/
+cd ../..
+```
+
+**`npx prisma generate` y `npx tsc` se corren SOLO en local — nunca en el servidor para deploys de código.**
+El `dist/` generado es JavaScript puro (independiente de plataforma) y es lo único que se sube.
+
+**Deploy de solo código (sin cambios de schema.prisma):**
+```bash
+rsync -avz apps/backend/dist/ usuario@IP:/ruta/dist/
+ssh usuario@IP "pm2 restart ciguainv"
+```
+
+**Deploy con cambio de schema.prisma (nueva migración):**
+```bash
+# 1. Subir dist/ + migraciones
+rsync -avz apps/backend/dist/ usuario@IP:/ruta/dist/
+rsync -avz apps/backend/prisma/migrations/ usuario@IP:/ruta/prisma/migrations/
+
+# 2. En el servidor: aplicar migración Y regenerar cliente Prisma para Linux
+ssh usuario@IP
+cd /ruta/produccion
+./node_modules/.bin/prisma migrate deploy   # aplica SQL pendiente
+./node_modules/.bin/prisma generate         # regenera cliente para Linux
+pm2 restart ciguainv
+```
+
+**Nunca en producción:**
+- `prisma migrate dev` — usa shadow DB, falla en producción
+- `prisma db push` — aplica schema sin archivos de migración, peligroso
+
+**Resolver migración fallida (error P3009):**
+```bash
+# Si la columna/tabla ya existe en la DB:
+./node_modules/.bin/prisma migrate resolve --applied "NOMBRE_MIGRACION"
+# Si no existe, crearla manualmente y luego marcar como applied
+./node_modules/.bin/prisma migrate deploy  # verificar que dice "No pending migrations"
 ```
 
 ## Docker Setup
