@@ -30,78 +30,178 @@ pnpm -F @cigua-inv/web build     # tsc + vite build
 pnpm -F @cigua-inv/web preview   # Preview production build
 ```
 
-### Database
+### Docker (production/staging)
 ```bash
-docker-compose up -d   # Start PostgreSQL (port 5432, db: cigua_inv)
+docker compose up -d              # Start all containers
+docker compose up -d --build      # Rebuild and start both
+docker compose up -d --build backend  # Rebuild only backend
+docker compose up -d --build web      # Rebuild only web
+docker compose down               # Stop all
+docker logs cigua_backend -f      # Stream backend logs
+# Seed dentro del contenedor:
+docker exec cigua_backend sh -c "cd /app && node_modules/.bin/tsx apps/backend/prisma/seed.ts"
 ```
+
+## Docker Setup
+
+The project runs in Docker pointing to the shared `clinic_postgres` container (PostgreSQL already running on the same host). **Do not start a local postgres** — use the clinic container.
+
+- Backend: `host:3990 → container:3000`
+- Frontend: `host:8285 → container:80`
+- DB: `clinic_postgres:5432` (network `clinic_default`, db: `cigua_inv`)
+- Credentials: `postgres / postgres123`
+
+Files: `apps/backend/Dockerfile`, `apps/web/Dockerfile`, `apps/web/nginx.conf`, `docker-compose.yml`, `.env.docker`
 
 ## Architecture
 
 ### Monorepo layout
 - `apps/backend` — Fastify + Prisma + PostgreSQL API
 - `apps/web` — React 18 + Vite + Tailwind + React Query SPA
-- `apps/mobile` — React Native stub (SQLite offline, keychain auth)
-- `packages/shared` — Domain types (`@cigua-inv/shared`) and Zod schemas shared between backend and web
+- `apps/mobile` — React Native (Expo Router, SQLite offline)
+- `packages/shared` — Domain types (`@cigua-inv/shared`) and Zod schemas
 
 ### Backend (`apps/backend/src/`)
 
 **Plugin loading order** (`app.ts`): `env` → `cors` → `helmet` → `multipart` → `prisma` → `auth` → `audit` → `logger` → routes.
 
 Key plugins:
-- `plugins/auth.ts` — registers `@fastify/jwt`; decorates `fastify.generateTokens()` which produces both access (15 min) and refresh (7 days) JWTs
-- `plugins/prisma.ts` — decorates `fastify.prisma` with the Prisma client
-- `plugins/audit.ts` — decorates `fastify.auditLog()` for writing to `audit_log`
+- `plugins/auth.ts` — registers `@fastify/jwt`; decorates `fastify.generateTokens()` producing access (15 min) and refresh (7 days) JWTs
+- `plugins/prisma.ts` — decorates `fastify.prisma`
+- `plugins/audit.ts` — decorates `fastify.auditLog()`
 
-**`guards/tenant.ts`** — the primary auth middleware. Every authenticated route should use it. It: verifies the JWT, checks the session is still active in the DB (sliding session update), and injects `request.companyId` from the token. Every DB query **must** filter by `companyId`.
+**`guards/tenant.ts`** — the primary auth middleware. Verifies JWT, checks session is active in DB, injects `request.companyId`. Every DB query **must** filter by `companyId`.
 
-**Module structure** (`src/modules/<name>/`): `routes.ts` → `controller.ts` → `service.ts` → `repository.ts`. Controllers handle HTTP I/O; services own business logic; repositories do DB queries only.
+**Module structure** (`src/modules/<name>/`): `routes.ts` → `controller.ts` → `service.ts` → `repository.ts`.
 
-**All API routes are prefixed `/api`**. Health checks: `GET /health` and `GET /api/health`.
+**All API routes are prefixed `/api`**. Health: `GET /health` and `GET /api/health`.
 
-**ERP integration** (`modules/erp-connections`): connects to external SQL Server (mssql). SQL queries use a template allowlist (`ITEMS_QUERY`, `STOCK_QUERY`, `COST_QUERY`, `PRICE_QUERY`, `DESTINATION_QUERY`) with parameterized binding — never raw SQL concatenation.
+### Inventory module (`modules/inventory/`)
+
+The active system lives in:
+- `routes.ts` + `controller.ts` + `inventory.repository.ts`
+- `services/count-state.service.ts` — count lifecycle (DRAFT→ACTIVE→SUBMITTED→COMPLETED→FINALIZED→CLOSED)
+- `services/erp-loader.service.ts` — load items from ERP
+- `services/sync-to-erp.service.ts` — send results to ERP
+- `services/reserved-invoices.service.ts` — PENDING_INVOICES and PICKING_LIST reservations
+- `services/version.service.ts` — multi-version counting
+
+**Count status machine:**
+```
+DRAFT → ACTIVE → ON_HOLD ↔ ACTIVE
+                    ↓
+                SUBMITTED → COMPLETED → FINALIZED → CLOSED
+                CANCELLED (from any state except CLOSED)
+```
+
+**Reservation formula (unified):**
+```
+Expected Stock = ERP_systemQty - SEPARATED + IN_AISLE
+Variance       = Counted - Expected Stock
+```
+Applied in: `count-state.service.ts`, `version.service.ts`, `reports/service.ts`, `sync-to-erp.service.ts`.
+
+**itemProv matching:** Reserved items may use ERP article codes (e.g., `2898`) while inventory items use internal codes (e.g., `100`). All 4 services above do a double-lookup:
+```typescript
+const qty = map.get(internalCode) ?? (itemProv ? map.get(itemProv) ?? 0 : 0);
+```
+This requires `itemProv` to be mapped in the ITEMS mapping and stored in `InventoryCount_Item.itemProv`.
+
+### Mapping system (`modules/mapping-config/`)
+
+**Single active module:** `mapping-config` (routes at `/api/mapping-configs`). The old `config-mapping` module (`/api/config/mapping`) is still registered for legacy compatibility but all new code uses the new one.
+
+**Supported datasetTypes:**
+
+| Type | Used by | Purpose |
+|---|---|---|
+| `ITEMS` | ERP loader | Import article catalog into a count |
+| `DESTINATION` | sync-to-erp | Export count results to ERP table |
+| `PENDING_INVOICES` | reserveInvoice | Fetch invoice items by invoice number (IN_AISLE) |
+| `PICKING_LIST` | reservePickingList | Fetch all dispatches by date range (SEPARATED) |
+| `STOCK` | (future) | Import stock quantities only |
+| `COST` | (future) | Import costs only |
+
+**Storage structure in DB:** `MappingConfig.filters` (JSON) stores the wizard state:
+```json
+{
+  "mainTable": "catelli.ARTICULO",
+  "mainTableAlias": "a",
+  "joins": [...],
+  "filters": [...],
+  "selectedColumns": [...]
+}
+```
+`MappingConfig.fieldMappings` stores the field translations at the top level.
+
+**PICKING_LIST date/seller detection:** `reserved-invoices.service.ts` auto-detects ERP column names via regex patterns when they're not in `fieldMappings`. Patterns: `FECHA|DATE` for date, `VENDEDOR|SELLER` for seller.
 
 ### Web (`apps/web/src/`)
 
-**API client** (`services/api.ts`): singleton Axios instance with base URL `/api` (Vite proxies to backend in dev). Interceptors automatically refresh the access token on 401 and queue concurrent requests during refresh; only logs out on a 401 from the refresh endpoint itself.
+**API client** (`services/api.ts`): singleton Axios with base URL `/api`. Interceptors auto-refresh on 401 and queue concurrent requests.
 
-**State management**: Zustand stores in `store/`. Auth state (`store/auth.ts`) holds `accessToken`, `refreshToken`, and user info.
+**State management:** Zustand in `store/`. Auth (`store/auth.ts`) holds tokens and user info.
 
-**Data fetching**: React Query (`@tanstack/react-query`) for server state. Custom hooks in `hooks/` wrap query/mutation calls.
+**Data fetching:** React Query. `hooks/useApi.ts` wraps key mutations/queries — all mapping hooks now use `/mapping-configs` (not the old `/config/mapping`).
 
-**UI component hierarchy** (`components/`):
-- `atoms/` — Button, Input, Label
-- `molecules/` — Card, Table, LabeledInput
-- `organisms/` — MappingEditor, ConnectionTestPanel
-- `templates/` — AdminLayout
+**Modal pattern** (no `window.alert/confirm/prompt` allowed):
+```typescript
+// Notification
+const [notification, setNotification] = useState({ isOpen: false, type: 'info', title: '', message: '' });
+const showNotification = (type, title, message) => setNotification({ isOpen: true, type, title, message });
+// Confirm
+const [confirmState, setConfirmState] = useState({ isOpen: false, title: '', message: '', onConfirm: () => {}, isDangerous: false });
+const confirmAction = (title, message, onConfirm, isDangerous?) => setConfirmState({ isOpen: true, ... });
+// Render at bottom of JSX:
+<NotificationModal isOpen={...} onClose={...} type={...} title={...} message={...} />
+<ConfirmModal isOpen={...} onConfirm={...} onCancel={...} title={...} message={...} isDangerous={...} />
+```
 
-**Permission checks** in the UI use the `usePermissions` hook, which reads the permissions array from the JWT payload stored in Zustand.
+**useInventoryActions hook** accepts `onNotify?: (type, title, message) => void` — pass `showNotification` from the page component.
+
+**React Query cache keys for inventory:**
+- List: `['inventory-counts']`
+- Detail: `['inventory-count', id]`
+- All mutations must invalidate BOTH keys after success.
 
 ### RBAC
 
-Roles → Permissions model. Permissions follow the `resource:action` pattern (e.g., `users:view`, `inv_counts:execute`). The full permission catalog is in `RBAC_PERMISSIONS_GUIDE.md`. Permission enforcement happens at two layers:
-1. **Backend** — route handlers check `request.user.permissions`
-2. **Frontend** — `usePermissions` hook gates UI elements
+Roles → Permissions model. Pattern: `resource:action` (e.g., `users:view`, `inv_counts:execute`). Full catalog in `RBAC_PERMISSIONS_GUIDE.md`. Enforced at:
+1. Backend — route handlers check `request.user.permissions`
+2. Frontend — `usePermissions` hook gates UI elements
 
 ### Multi-tenancy
 
-`companyId` is embedded in every JWT and injected into `request.companyId` by `tenantGuard`. Every Prisma query **must** include `where: { companyId }`. Soft deletes via `isActive` flag — no hard deletes on audit-sensitive tables.
+`companyId` in every JWT → `request.companyId` via `tenantGuard`. Every Prisma query **must** include `where: { companyId }`. Soft deletes via `isActive` — no hard deletes on audit tables.
 
 ### Database
 
-Managed by Prisma ORM. Schema at `apps/backend/prisma/schema.prisma`. Key conventions:
-- `companyId` foreign key on every tenant-scoped table
-- `audit_log` table tracks all state changes (indexed on `company_id`, `createdAt`, `userId`)
-- Optimistic locking with `version` field on mutable configs (e.g., `MappingConfig`)
+Schema at `apps/backend/prisma/schema.prisma`. Key models: `User`, `Company`, `Role`, `Permission`, `InventoryCount`, `InventoryCount_Item`, `VarianceReport`, `Warehouse`, `ERPConnection`, `MappingConfig`, `CountReservedInvoice`, `CountReservedItem`.
 
-### Shared package
+**Creating manual migrations:** When a schema field is added without running `prisma migrate dev`, create the file manually:
+1. Create `apps/backend/prisma/migrations/YYYYMMDDHHMMSS_name/migration.sql`
+2. Write the `ALTER TABLE` statement
+3. Rebuild the backend — `prisma migrate deploy` runs automatically on startup
 
-`packages/shared/src/types/` exports domain types consumed by both backend and web. Import via `@cigua-inv/shared` (resolved by workspace protocol). TypeScript path alias `@shared/*` maps to `packages/shared/src/*`.
+## Environment Variables (`.env.docker`)
 
-## Environment
+```
+DATABASE_URL   = postgresql://postgres:postgres123@clinic_postgres:5432/cigua_inv
+JWT_SECRET     = [32+ chars]
+JWT_ACCESS_EXPIRY  = 15m    # Must be a duration string with unit. "900" without unit = 900ms!
+JWT_REFRESH_EXPIRY = 7d
+NODE_ENV       = production
+PORT           = 3000
+HOST           = 0.0.0.0
+FRONTEND_URL   = http://localhost:8285   # CORS origin in production
+ERP_MSSQL_HOST = 10.0.11.49
+```
 
-Copy `.env.example` to `.env`. Required vars:
-- `DATABASE_URL` — PostgreSQL connection string
-- `JWT_SECRET` — must be 32+ chars in production
-- `JWT_ACCESS_EXPIRY` / `JWT_REFRESH_EXPIRY` — seconds
-- `PORT` / `HOST` — backend server (default 3000 / 0.0.0.0)
-- `MSSQL_*` — ERP SQL Server connection (optional in dev)
+## Key Policies
+
+- **Never use `window.alert()`, `window.confirm()`, `window.prompt()`** — use `NotificationModal`, `ConfirmModal`, or inline input modals from `atoms/`.
+- **JWT expiry values** must be duration strings (`15m`, `7d`), not plain numbers.
+- **Every mutation** that changes a count must invalidate both `['inventory-counts']` and `['inventory-count', countId]`.
+- **itemProv** must be mapped in ITEMS mapping if the ERP uses different codes for invoices vs. catalog (resolves reservation matching).
+- **Mappings** are stored in `mapping-config` module (`/api/mapping-configs`). The old `config-mapping` module exists for legacy compatibility only.
+- **No `window.alert`** — see modal pattern above.
