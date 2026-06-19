@@ -11,7 +11,7 @@ export const useInventoryProcess = (countId: string | undefined) => {
     category: '',
     subcategory: '',
     brand: '',
-    varianceOnly: false,
+    countStatus: 'all' as 'all' | 'not_counted' | 'counted' | 'variance',
   });
   const [syncingItemIds, setSyncingItemIds] = useState<Set<string>>(new Set());
   const [syncedItemIds, setSyncedItemIds] = useState<Set<string>>(new Set());
@@ -20,7 +20,7 @@ export const useInventoryProcess = (countId: string | undefined) => {
   useEffect(() => {
     setCountItems([]);
     setSearchTerm('');
-    setFilters({ category: '', subcategory: '', brand: '', varianceOnly: false });
+    setFilters({ category: '', subcategory: '', brand: '', countStatus: 'all' });
     setSyncingItemIds(new Set());
     setSyncedItemIds(new Set());
   }, [countId]);
@@ -87,13 +87,27 @@ export const useInventoryProcess = (countId: string | undefined) => {
       const matchesSubcategory = !filters.subcategory || item.subcategory === filters.subcategory;
       const matchesBrand = !filters.brand || item.brand === filters.brand;
 
-      if (filters.varianceOnly) {
-        const systemQty = typeof item.systemQty === 'string' ? parseFloat(item.systemQty) : item.systemQty;
-        const counted = item.countedQty ?? 0;
-        return matchesSearch && matchesCategory && matchesSubcategory && matchesBrand &&
-          Math.round((counted - systemQty) * 10) / 10 !== 0;
+      const baseMatch = matchesSearch && matchesCategory && matchesSubcategory && matchesBrand;
+      if (!baseMatch) return false;
+
+      if (filters.countStatus !== 'all') {
+        const hasCounted = item.countedQty !== null && item.countedQty !== undefined;
+
+        if (filters.countStatus === 'not_counted') return !hasCounted;
+
+        // Para 'counted' y 'variance' usamos expectedStock con reservas — igual que la tabla visual
+        const systemQty = Number(item.systemQty ?? 0);
+        const separated = Number((item as any).reservedSeparated ?? 0);
+        const inAisle = Number((item as any).reservedInAisle ?? 0);
+        const expectedStock = systemQty - separated + inAisle;
+        const hasVariance = hasCounted &&
+          Math.round((Number(item.countedQty) - expectedStock) * 10) / 10 !== 0;
+
+        if (filters.countStatus === 'counted')  return hasCounted && !hasVariance;
+        if (filters.countStatus === 'variance') return hasVariance;
       }
-      return matchesSearch && matchesCategory && matchesSubcategory && matchesBrand;
+
+      return true;
     });
   }, [countItems, searchTerm, filters]);
 

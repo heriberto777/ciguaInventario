@@ -21,7 +21,7 @@ interface CountItemsListProps {
     category: string;
     subcategory: string;
     brand: string;
-    varianceOnly: boolean;
+    countStatus: 'all' | 'not_counted' | 'counted' | 'variance';
   };
   setFilters: (filters: any) => void;
   categories: { label: string; value: string }[];
@@ -120,17 +120,16 @@ export const CountItemsList: React.FC<CountItemsListProps> = ({
               ))}
             </select>
 
-            {hasVarianceView && (
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={filters.varianceOnly}
-                  onChange={(e) => setFilters({ ...filters, varianceOnly: e.target.checked })}
-                  className="rounded w-4 h-4"
-                />
-                <span className="text-sm font-medium">Solo variado</span>
-              </label>
-            )}
+            <select
+              value={filters.countStatus}
+              onChange={(e) => setFilters({ ...filters, countStatus: e.target.value as any })}
+              style={selectStyle}
+            >
+              <option value="all">📋 Todos</option>
+              <option value="not_counted">⬜ Sin Contar</option>
+              <option value="counted">✅ Contados OK</option>
+              {hasVarianceView && <option value="variance">⚠️ Con Varianza</option>}
+            </select>
 
             <div className="h-8 w-px bg-border-default mx-2"></div>
 
@@ -188,7 +187,7 @@ export const CountItemsList: React.FC<CountItemsListProps> = ({
               {items.map((item) => {
                 const { variance, percent } = getVariance(item);
                 return (
-                  <tr key={item.id} className={`border-b border-border-default/50 hover:bg-hover/40 transition-colors ${variance !== 0 ? 'bg-warning/5' : ''}`}>
+                  <tr key={item.id} className={`border-b border-border-default/50 hover:bg-hover/40 transition-colors ${item.countedQty !== null && item.countedQty !== undefined && variance !== 0 ? 'bg-warning/5' : ''}`}>
                     <td className="px-6 py-5">
                       <p className="font-mono text-sm font-black text-primary">{item.itemCode}</p>
                       <p className="text-[10px] text-muted font-bold uppercase tracking-wider truncate max-w-[250px] mt-1">{item.itemName}</p>

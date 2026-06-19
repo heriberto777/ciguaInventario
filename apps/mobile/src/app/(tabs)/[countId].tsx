@@ -459,7 +459,7 @@ export default function CountDetailScreen() {
     const matchesCat = !filterCategory || item.category === filterCategory;
     const matchesSub = !filterSubcat || item.subcategory === filterSubcat;
     const matchesBrand = !filterBrand || item.brand === filterBrand;
-    const matchesVariance = activeFilter === 'all' || (item.status === 'PENDING' || (getVariance(item) !== null && getVariance(item) !== 0));
+    const matchesVariance = activeFilter === 'all' || (getVariance(item) !== null && getVariance(item) !== 0);
     return matchesSearch && matchesCat && matchesSub && matchesBrand && matchesVariance;
   });
 
