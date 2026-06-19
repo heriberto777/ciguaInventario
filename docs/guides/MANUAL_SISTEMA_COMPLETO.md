@@ -456,13 +456,32 @@ La producción corre el backend compilado directamente con PM2. El flujo de depl
 └── .env                   ← variables de entorno
 ```
 
+### Compilar el backend (paso previo a cualquier deploy)
+
+**Con pnpm (si está instalado):**
+```bash
+pnpm -F @cigua-inv/backend build
+```
+
+**Sin pnpm — usando npx directamente (Windows PowerShell o Linux):**
+```bash
+# Desde la raíz del proyecto:
+cd apps/backend
+npx prisma generate    # genera el cliente Prisma
+npx tsc                # compila TypeScript → dist/
+cd ../..
+```
+
+Ambas opciones generan el mismo resultado en `apps/backend/dist/`.
+
+---
+
 ### Pasos para subir cambios de código (sin cambios de DB)
 
 ```bash
-# 1. En la máquina de desarrollo — compilar el backend
-pnpm -F @cigua-inv/backend build
+# 1. Compilar el backend (ver sección arriba)
 
-# 2. Subir solo el dist/ al servidor (ajusta usuario/IP/ruta)
+# 2. Subir solo el dist/ al servidor
 rsync -avz apps/backend/dist/ usuario@IP:/home/heriberto777/proyectos/ciguainv/dist/
 
 # 3. En el servidor — reiniciar PM2
@@ -473,24 +492,37 @@ pm2 restart ciguainv   # o: pm2 restart all
 pm2 logs --lines 20
 ```
 
-### Pasos para subir cambios que incluyen migración de DB
+### Pasos para subir cambios que incluyen migración de DB (schema.prisma)
+
+Cuando se modifica el schema de Prisma y se crea un archivo de migración nuevo:
 
 ```bash
-# 1. Compilar
-pnpm -F @cigua-inv/backend build
+# 1. Compilar el backend
 
-# 2. Subir dist/ Y el nuevo archivo de migración
+# 2. Subir dist/ Y la carpeta de migraciones nueva
 rsync -avz apps/backend/dist/ usuario@IP:/home/heriberto777/proyectos/ciguainv/dist/
 rsync -avz apps/backend/prisma/migrations/ usuario@IP:/home/heriberto777/proyectos/ciguainv/prisma/migrations/
 
-# 3. En el servidor — aplicar migración PRIMERO
+# 3. En el servidor — aplicar la migración PRIMERO (antes de reiniciar PM2)
 ssh usuario@IP
 cd /home/heriberto777/proyectos/ciguainv
 ./node_modules/.bin/prisma migrate deploy
 
+# Salida esperada:
+# "X migrations found in prisma/migrations"
+# "1 migration applied"  ← o "No pending migrations to apply." si ya estaba
+
 # 4. Reiniciar PM2
 pm2 restart ciguainv
 ```
+
+**¿Por qué `prisma migrate deploy` y no `prisma migrate dev`?**
+
+| Comando | Para qué sirve | En producción |
+|---|---|---|
+| `prisma migrate deploy` | Aplica migraciones pendientes. Sin shadow DB. | ✅ USAR ESTE |
+| `prisma migrate dev` | Crea shadow DB, valida todo desde cero, puede crear migraciones nuevas | ❌ NUNCA en producción |
+| `prisma db push` | Aplica el schema directamente sin archivos de migración | ❌ Peligroso en producción |
 
 ### Resolver migración fallida en producción (error P3009)
 
