@@ -259,16 +259,52 @@ Varianza       = Contado - Stock Esperado
 - Stock esperado: 100 - 5 + 3 = 98
 - Varianza real: 90 - 98 = **-8** (merma real sin explicación logística)
 
-### Matching por código alterno (itemProv)
+### Matching por código alterno (itemProv) — Bridge de sub-artículos
 
-Si en tu ERP el mismo artículo tiene dos códigos diferentes (ej: código interno `100`, código ERP `2898`), el sistema usa el campo `itemProv` para relacionarlos:
+En muchos ERPs un mismo producto físico puede tener dos códigos diferentes:
+- **Código principal** (el que aparece en el conteo, ej: `2999`)
+- **Sub-artículo o código de proveedor** (el que aparece en facturas, ej: `2429`)
 
-1. El mapping ITEMS mapea la columna de código alterno a `itemProv`
-2. Al cargar artículos, cada ítem guarda `itemCode=100` y `itemProv=2898`
-3. Al reservar vía picking list, la factura tiene `itemCode=2898`
-4. El sistema busca primero por `itemCode='100'`, si no encuentra busca por `itemProv='100'` vs `'2898'`
+Ambos comparten el **mismo `itemProv`** (código del proveedor, ej: `GT01731A`).
 
-**Requisito:** El mapping ITEMS debe tener el campo `itemProv` mapeado a la columna de código alterno del ERP.
+**El sistema resuelve este caso automáticamente** usando el campo `itemProv` como puente:
+
+```
+Conteo:    itemCode='2999'  itemProv='GT01731A'
+Factura:   itemCode='2429'  itemProv='GT01731A'  ← mismo itemProv
+                                    ↑
+                           El sistema conecta ambos por aquí
+```
+
+**Cómo funciona internamente:**
+
+El sistema construye el mapa de reservas indexando por **dos claves**:
+```
+mapa = {
+  '2429'     → qty reservada,   ← por itemCode del ítem de la factura
+  'GT01731A' → qty reservada    ← por itemProv del ítem de la factura (nuevo)
+}
+```
+
+Al buscar para el ítem del conteo `2999` (con `itemProv='GT01731A'`):
+1. Busca `mapa['2999']` → no encontrado
+2. Busca `mapa['GT01731A']` → **encontrado** ✓ → aplica la reserva
+
+**Esto aplica en 6 puntos del sistema:**
+- Columna Reserva visible en pantalla del auditor
+- Varianza calculada al completar el conteo
+- Stock ajustado que ve el auditor mientras cuenta
+- Reportes de varianzas
+- Resumen financiero del reporte
+- Cantidad enviada al ERP en el sync
+
+**Requisitos para que funcione:**
+
+1. El mapping **ITEMS** debe tener `itemProv` mapeado a la columna del ERP con el código de proveedor (ej: `a.ARTICULO_DEL_PROV`)
+2. El mapping **PENDING_INVOICES** también debe tener `itemProv` mapeado a la misma columna
+3. El mapping **PICKING_LIST** igualmente
+
+Si `itemProv` no está mapeado en las reservas, el campo queda `null` en la DB y el bridge no existe.
 
 ---
 
@@ -403,4 +439,85 @@ docker exec cigua_backend sh -c "cd /app && node_modules/.bin/tsx apps/backend/p
 
 ---
 
-*Manual generado el 2026-06-19. Actualizar cuando se agreguen nuevas funciones.*
+## 10. Deploy a producción (servidor PM2, sin Docker)
+
+La producción corre el backend compilado directamente con PM2. El flujo de deploy es:
+
+### Estructura del servidor de producción
+
+```
+/home/heriberto777/proyectos/ciguainv/
+├── dist/                  ← backend compilado (lo que se sube)
+├── prisma/                ← schema + migraciones
+│   └── migrations/
+├── node_modules/
+├── package.json
+├── pm2-production.config.cjs
+└── .env                   ← variables de entorno
+```
+
+### Pasos para subir cambios de código (sin cambios de DB)
+
+```bash
+# 1. En la máquina de desarrollo — compilar el backend
+pnpm -F @cigua-inv/backend build
+
+# 2. Subir solo el dist/ al servidor (ajusta usuario/IP/ruta)
+rsync -avz apps/backend/dist/ usuario@IP:/home/heriberto777/proyectos/ciguainv/dist/
+
+# 3. En el servidor — reiniciar PM2
+ssh usuario@IP
+pm2 restart ciguainv   # o: pm2 restart all
+
+# 4. Verificar que arrancó bien
+pm2 logs --lines 20
+```
+
+### Pasos para subir cambios que incluyen migración de DB
+
+```bash
+# 1. Compilar
+pnpm -F @cigua-inv/backend build
+
+# 2. Subir dist/ Y el nuevo archivo de migración
+rsync -avz apps/backend/dist/ usuario@IP:/home/heriberto777/proyectos/ciguainv/dist/
+rsync -avz apps/backend/prisma/migrations/ usuario@IP:/home/heriberto777/proyectos/ciguainv/prisma/migrations/
+
+# 3. En el servidor — aplicar migración PRIMERO
+ssh usuario@IP
+cd /home/heriberto777/proyectos/ciguainv
+./node_modules/.bin/prisma migrate deploy
+
+# 4. Reiniciar PM2
+pm2 restart ciguainv
+```
+
+### Resolver migración fallida en producción (error P3009)
+
+Si `prisma migrate deploy` falla con P3009 porque una migración quedó marcada como fallida:
+
+```bash
+# Si la columna/cambio YA existe en la DB (fue aplicado manualmente):
+./node_modules/.bin/prisma migrate resolve --applied "NOMBRE_DE_LA_MIGRACION"
+
+# Si el cambio NO existe en la DB (hay que aplicarlo y volver a intentar):
+# 1. Aplicar el SQL manualmente
+psql -U postgres -d cigua_inv -c "ALTER TABLE ... ADD COLUMN IF NOT EXISTS ..."
+# 2. Marcar como aplicada
+./node_modules/.bin/prisma migrate resolve --applied "NOMBRE_DE_LA_MIGRACION"
+
+# Verificar que quedó limpio:
+./node_modules/.bin/prisma migrate deploy
+# Debe decir: "No pending migrations to apply."
+```
+
+### NUNCA usar en producción
+
+```bash
+prisma migrate dev   # ← solo desarrollo. Crea shadow DB, puede fallar en producción
+prisma db push       # ← peligroso en producción, puede alterar el schema sin registro
+```
+
+---
+
+*Manual actualizado el 2026-06-19.*

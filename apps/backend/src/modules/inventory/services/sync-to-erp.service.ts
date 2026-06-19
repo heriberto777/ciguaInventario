@@ -108,7 +108,13 @@ export class SyncToERPService {
                 const targetMap = inv.type === 'SEPARATED' ? reservedSeparatedMap : reservedInAisleMap;
                 for (const item of inv.items) {
                     const code = item.itemCode.trim().toUpperCase();
-                    targetMap.set(code, (targetMap.get(code) || 0) + Number(item.reservedQty));
+                    const qty = Number(item.reservedQty);
+                    targetMap.set(code, (targetMap.get(code) || 0) + qty);
+                    // Bridge por itemProv del ítem reservado (sub-artículo → artículo del conteo)
+                    if (item.itemProv) {
+                        const prov = item.itemProv.trim().toUpperCase();
+                        targetMap.set(prov, (targetMap.get(prov) || 0) + qty);
+                    }
                 }
             }
 

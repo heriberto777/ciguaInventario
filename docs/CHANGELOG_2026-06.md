@@ -221,4 +221,68 @@ Archivados en `docs/archive/dead-code-inventory-refactor/web/`:
 
 ---
 
-*Documento generado el 2026-06-19*
+## [2026-06-19] Fixes de matching por itemProv — UI de reservas y flujo completo
+
+### 🔗 Bug crítico: columna Reserva en UI no reflejaba sub-artículos
+
+**Escenario:** Artículo `2999` en el conteo tiene `itemProv=XXX`. Factura reservada tiene artículo `2429` con `itemProv=XXX` (mismo código de proveedor). La columna "Reserva" en la pantalla del auditor mostraba `-` (cero) para `2999`.
+
+**Causa raíz:** El sistema tenía 5 puntos donde se construye un mapa de reservas para hacer matching. Todos indexaban el mapa **solo por `itemCode`** del ítem reservado. El lookup usaba `itemCode` del ítem del conteo. Sin un código común, el match fallaba.
+
+**Fix: doble indexación del mapa de reservas**
+
+Al construir el mapa, ahora se indexa por `itemCode` Y por `itemProv` del ítem reservado:
+```typescript
+// ANTES: solo un key
+targetMap.set(itemCode, qty);
+
+// DESPUÉS: dos keys
+targetMap.set(itemCode, qty);
+if (item.itemProv) targetMap.set(item.itemProv, qty);  // bridge por código proveedor
+```
+
+Al buscar, si el lookup por `itemCode` del conteo falla, se intenta por `itemProv` del conteo.
+
+**Archivos corregidos (6 en total):**
+
+| Archivo | Método | Qué controla |
+|---|---|---|
+| `controller.ts` → `maskCountData` | Lookup al cargar conteo | **Columna Reserva visible en UI** ← el más importante |
+| `count-state.service.ts` → `completeInventoryCount` | Construcción del mapa | Varianza al completar |
+| `version.service.ts` → `getCountItems` | Construcción del mapa | Stock ajustado para auditor |
+| `reports/service.ts` → `getPhysicalInventoryReport` | Construcción del mapa | Reporte de varianzas |
+| `reports/service.ts` → `getVarianceSummary` | Construcción del mapa | Resumen financiero |
+| `sync-to-erp.service.ts` → `syncToERP` | Construcción del mapa | Cantidad enviada al ERP |
+
+**Requisito para que funcione:** El mapping PENDING_INVOICES y PICKING_LIST deben tener `itemProv` mapeado a la columna del ERP que contiene el código de proveedor compartido (ej: `a.ARTICULO_DEL_PROV`).
+
+### 📋 Fix: Picking List preview mostraba "1 Factura" con datos vacíos
+
+**Causa:** `transformData` solo mapea columnas ERP que están en `fieldMappings`. Si el mapping de PICKING_LIST no tiene `invoiceNumber` y `clientName` mapeados, todos los ítems tienen `invoiceNumber=undefined` → se colapsan en 1 fila vacía.
+
+**Fix:** El dryRun ahora auto-detecta columnas directamente del raw ERP data por patrón:
+- `FACTURA|INVOICE|FOLIO` → número de factura
+- `NOMBRE_CLIENTE|CLIENTE|CUSTOMER` → cliente
+- `ARTICULO|ITEM_CODE` → artículo
+- `CANTIDAD|QTY` → cantidad
+
+### 🗄️ Proceso de deploy a producción (PM2 sin Docker)
+
+```bash
+# 1. Compilar en local
+pnpm -F @cigua-inv/backend build
+
+# 2. Subir dist/ al servidor
+rsync -avz apps/backend/dist/ usuario@servidor:/ruta/dist/
+
+# 3. Reiniciar PM2
+pm2 restart ciguainv
+
+# 4. Para la migración DB (solo si hay schema changes):
+cd /ruta/produccion && ./node_modules/.bin/prisma migrate deploy
+# Si hay migration fallida: ./node_modules/.bin/prisma migrate resolve --applied "nombre_migration"
+```
+
+---
+
+*Actualizado el 2026-06-19*

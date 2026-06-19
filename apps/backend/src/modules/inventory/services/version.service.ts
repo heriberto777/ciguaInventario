@@ -23,8 +23,14 @@ export class VersionService {
                     const isSeparated = inv.type === 'SEPARATED';
                     for (const resItem of inv.items) {
                         const targetMap = isSeparated ? separatedMap : inAisleMap;
-                        const current = targetMap.get(resItem.itemCode) || 0;
-                        targetMap.set(resItem.itemCode, current + Number(resItem.reservedQty));
+                        const qty = Number(resItem.reservedQty);
+                        const code = (resItem.itemCode || '').trim().toUpperCase();
+                        targetMap.set(code, (targetMap.get(code) || 0) + qty);
+                        // También indexar por itemProv del ítem reservado para el bridge de sub-artículos
+                        if (resItem.itemProv) {
+                            const provCode = resItem.itemProv.trim().toUpperCase();
+                            targetMap.set(provCode, (targetMap.get(provCode) || 0) + qty);
+                        }
                     }
                 }
             }

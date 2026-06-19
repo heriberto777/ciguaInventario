@@ -362,9 +362,18 @@ export class InventoryController {
                     for (const item of inv.items) {
                         const code = item.itemCode.trim().toUpperCase();
                         const qty = Number(item.reservedQty);
-                        
+
+                        // Indexar por itemCode del ítem reservado
                         targetMap.set(code, (targetMap.get(code) || 0) + qty);
                         reservedTotalMap.set(code, (reservedTotalMap.get(code) || 0) + qty);
+
+                        // Indexar también por itemProv del ítem reservado.
+                        // Bridge: sub-artículo (2429, itemProv=XXX) ↔ artículo del conteo (2999, itemProv=XXX)
+                        if (item.itemProv) {
+                            const provCode = item.itemProv.trim().toUpperCase();
+                            targetMap.set(provCode, (targetMap.get(provCode) || 0) + qty);
+                            reservedTotalMap.set(provCode, (reservedTotalMap.get(provCode) || 0) + qty);
+                        }
                     }
                 }
             }
@@ -375,11 +384,15 @@ export class InventoryController {
             masked.countItems = masked.countItems.map((item: any) => {
                 const newItem = { ...item };
                 const code = item.itemCode.trim().toUpperCase();
-                
-                // Set aggregated quantities
-                newItem.reservedQty = reservedTotalMap.get(code) || 0;
-                newItem.reservedInAisle = reservedInAisleMap.get(code) || 0;
-                newItem.reservedSeparated = reservedSeparatedMap.get(code) || 0;
+                const provCode = item.itemProv ? item.itemProv.trim().toUpperCase() : null;
+
+                // Lookup por itemCode; fallback por itemProv para bridge de sub-artículos
+                newItem.reservedQty = reservedTotalMap.get(code)
+                    ?? (provCode ? reservedTotalMap.get(provCode) ?? 0 : 0);
+                newItem.reservedInAisle = reservedInAisleMap.get(code)
+                    ?? (provCode ? reservedInAisleMap.get(provCode) ?? 0 : 0);
+                newItem.reservedSeparated = reservedSeparatedMap.get(code)
+                    ?? (provCode ? reservedSeparatedMap.get(provCode) ?? 0 : 0);
                 
                 if (!canViewQty) {
                     delete newItem.systemQty;

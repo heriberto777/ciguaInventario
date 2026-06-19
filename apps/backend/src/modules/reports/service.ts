@@ -43,15 +43,18 @@ export class ReportsService {
             for (const item of inv.items) {
                 const itemCodeNorm = item.itemCode.trim().toUpperCase();
                 const qty = Number(item.reservedQty);
+                const targetMap = isSeparated ? reservedSeparatedByCode : reservedInAisleByCode;
 
-                if (isSeparated) {
-                    reservedSeparatedByCode.set(itemCodeNorm, (reservedSeparatedByCode.get(itemCodeNorm) || 0) + qty);
-                } else {
-                    reservedInAisleByCode.set(itemCodeNorm, (reservedInAisleByCode.get(itemCodeNorm) || 0) + qty);
-                }
-                
+                // Indexar por itemCode del ítem reservado
+                targetMap.set(itemCodeNorm, (targetMap.get(itemCodeNorm) || 0) + qty);
+
+                // Indexar también por itemProv del ítem reservado.
+                // Bridge: sub-artículo (código distinto) → artículo del conteo
+                // a través del código de proveedor compartido (itemProv).
                 if (item.itemProv) {
-                    inferredProvByCode.set(itemCodeNorm, item.itemProv.trim().toUpperCase());
+                    const provCodeNorm = item.itemProv.trim().toUpperCase();
+                    targetMap.set(provCodeNorm, (targetMap.get(provCodeNorm) || 0) + qty);
+                    inferredProvByCode.set(itemCodeNorm, provCodeNorm);
                 }
             }
         }
@@ -189,7 +192,13 @@ export class ReportsService {
             const targetMap = inv.type === 'SEPARATED' ? separatedMap : inAisleMap;
             for (const item of inv.items) {
                 const code = item.itemCode.trim().toUpperCase();
-                targetMap.set(code, (targetMap.get(code) || 0) + Number(item.reservedQty));
+                const qty = Number(item.reservedQty);
+                targetMap.set(code, (targetMap.get(code) || 0) + qty);
+                // Bridge por itemProv del ítem reservado (sub-artículo → artículo del conteo)
+                if (item.itemProv) {
+                    const prov = item.itemProv.trim().toUpperCase();
+                    targetMap.set(prov, (targetMap.get(prov) || 0) + qty);
+                }
             }
         }
 

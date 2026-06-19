@@ -110,7 +110,15 @@ export class CountStateService {
             const targetMap = inv.type === 'SEPARATED' ? separatedMap : inAisleMap;
             for (const item of (inv.items || [])) {
                 const code = item.itemCode.trim().toUpperCase();
-                targetMap.set(code, (targetMap.get(code) || 0) + Number(item.reservedQty));
+                const qty = Number(item.reservedQty);
+                targetMap.set(code, (targetMap.get(code) || 0) + qty);
+                // Indexar también por itemProv del ítem reservado.
+                // Permite que un sub-artículo (código distinto) conecte con el artículo
+                // del conteo a través del código de proveedor compartido (itemProv).
+                if (item.itemProv) {
+                    const provCode = item.itemProv.trim().toUpperCase();
+                    targetMap.set(provCode, (targetMap.get(provCode) || 0) + qty);
+                }
             }
         }
 
