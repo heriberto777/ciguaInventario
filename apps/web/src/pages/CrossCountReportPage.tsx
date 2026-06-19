@@ -4,6 +4,7 @@ import { getApiClient } from '@/services/api';
 import { AdminLayout } from '@/components/templates/AdminLayout';
 import { Button } from '@/components/atoms/Button';
 import { useNavigate } from 'react-router-dom';
+import { NotificationModal } from '@/components/atoms/NotificationModal';
 import * as XLSX from 'xlsx';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -113,6 +114,9 @@ export function CrossCountReportPage() {
   const navigate = useNavigate();
   const [emailModal, setEmailModal] = useState({ open: false, email: '' });
   const [sendingEmail, setSendingEmail] = useState(false);
+  const [notification, setNotification] = useState({ isOpen: false, type: 'info' as 'success' | 'error' | 'warning' | 'info', title: '', message: '' });
+  const showNotification = (type: 'success' | 'error' | 'warning' | 'info', title: string, message: string) =>
+    setNotification({ isOpen: true, type, title, message });
 
   const handleSendEmail = async () => {
       if (!emailModal.email) return;
@@ -123,10 +127,10 @@ export function CrossCountReportPage() {
               subject: `Informe de Auditoría IA - ${new Date().toLocaleDateString()}`,
               analysis: aiPanel.content
           });
-          alert('Correo enviado correctamente');
+          showNotification('success', 'Correo enviado', 'El correo fue enviado correctamente.');
           setEmailModal({ open: false, email: '' });
       } catch (error) {
-          alert('Error al enviar el correo. Verifica la configuración SMTP.');
+          showNotification('error', 'Error al enviar correo', 'Verifica la configuración SMTP.');
       } finally {
           setSendingEmail(false);
       }
@@ -156,14 +160,14 @@ export function CrossCountReportPage() {
     onSuccess: (data) => {
       setReportData(data);
     },
-    onError: (err) => {
-      alert('Error al comparar conteos. Asegúrate de seleccionar al menos 2 conteos válidos.');
+    onError: () => {
+      showNotification('error', 'Error al comparar', 'Asegúrate de seleccionar al menos 2 conteos válidos.');
     }
   });
 
   const handleCompare = () => {
     if (selectedCountIds.length < 2) {
-      alert('Debes seleccionar al menos 2 conteos para comparar.');
+      showNotification('warning', 'Selección insuficiente', 'Debes seleccionar al menos 2 conteos para comparar.');
       return;
     }
     compareMutation.mutate(selectedCountIds);
@@ -608,6 +612,14 @@ export function CrossCountReportPage() {
           .markdown-content h1, .markdown-content h2, .markdown-content h3 { color: var(--text-primary); font-weight: 900; margin: 1.5rem 0 0.75rem 0; text-transform: uppercase; font-size: 14px; letter-spacing: 0.05em; }
           .markdown-content li { margin-bottom: 0.5rem; border-left: 2px solid var(--accent-primary); padding-left: 1rem; list-style: none; font-size: 13px; }
       `}</style>
+
+      <NotificationModal
+        isOpen={notification.isOpen}
+        onClose={() => setNotification(n => ({ ...n, isOpen: false }))}
+        type={notification.type}
+        title={notification.title}
+        message={notification.message}
+      />
     </AdminLayout>
   );
 }

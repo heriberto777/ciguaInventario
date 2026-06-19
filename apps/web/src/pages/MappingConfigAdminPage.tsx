@@ -218,7 +218,7 @@ export const MappingConfigAdminPage: React.FC = () => {
     setStep('select_type');
   };
 
-  const handleCreateWithType = (type: 'ITEMS' | 'STOCK' | 'PRICES' | 'COST' | 'DESTINATION' | 'PENDING_INVOICES') => {
+  const handleCreateWithType = (type: 'ITEMS' | 'STOCK' | 'PRICE' | 'COST' | 'DESTINATION' | 'PENDING_INVOICES' | 'PICKING_LIST') => {
     if (!connections || connections.length === 0) return;
 
     const firstConnection = connections[0].id;
@@ -314,28 +314,27 @@ export const MappingConfigAdminPage: React.FC = () => {
                     <button
                       onClick={() => {
                         let configToEdit = { ...config };
-                        // Si existe config.filters, lo aplanamos para el builder
-                        if (config.filters) {
+                        // Aplanar el objeto filters (que contiene joins, mainTable, selectedColumns, etc.)
+                        const rawFilters = config.filters;
+                        if (rawFilters) {
                           try {
-                            const parsedFilters = typeof config.filters === 'string'
-                              ? JSON.parse(config.filters)
-                              : config.filters;
-
+                            const pf = typeof rawFilters === 'string' ? JSON.parse(rawFilters) : rawFilters;
                             configToEdit = {
                               ...configToEdit,
-                              ...parsedFilters,
-                              // Asegurar que no quede el objeto original estorbando
-                              filters: Array.isArray(parsedFilters.filters) ? parsedFilters.filters : (configToEdit.filters || []),
-                              joins: Array.isArray(parsedFilters.joins) ? parsedFilters.joins : (configToEdit.joins || []),
-                              mainTable: parsedFilters.mainTable || config.mainTable,
-                              selectedColumns: Array.isArray(parsedFilters.selectedColumns) ? parsedFilters.selectedColumns : (configToEdit.selectedColumns || []),
-                              fieldMappings: Array.isArray(parsedFilters.fieldMappings) ? parsedFilters.fieldMappings : (configToEdit.fieldMappings || []),
+                              mainTable: pf.mainTable || config.mainTable || (config.sourceTables?.[0] ?? ''),
+                              mainTableAlias: pf.mainTableAlias || '',
+                              joins: Array.isArray(pf.joins) ? pf.joins : [],
+                              filters: Array.isArray(pf.filters) ? pf.filters : [],
+                              selectedColumns: Array.isArray(pf.selectedColumns) ? pf.selectedColumns : [],
+                              fieldMappings: Array.isArray(config.fieldMappings) ? config.fieldMappings : [],
                             };
                           } catch (e) {
                             console.error('Error parsing filters for edit:', e);
                           }
+                        } else {
+                          // Fallback: mainTable desde sourceTables
+                          configToEdit.mainTable = config.mainTable || (config.sourceTables?.[0] ?? '');
                         }
-                        console.log('✏️ [MappingConfigAdminPage] Editing config:', configToEdit);
                         setSelectedConfig(configToEdit);
                         setStep('edit');
                       }}
@@ -414,7 +413,19 @@ export const MappingConfigAdminPage: React.FC = () => {
                 <span className="text-3xl">🧾</span>
               </div>
               <h3 className="text-2xl font-black mb-2 text-primary tracking-tight">Reserva de Facturas</h3>
-              <p className="text-sm text-secondary leading-relaxed font-medium">Configura la extracción de facturas pendientes de despacho para conciliación.</p>
+              <p className="text-sm text-secondary leading-relaxed font-medium">Configura la extracción de facturas pendientes de despacho para conciliación (tipo IN_AISLE).</p>
+            </button>
+
+            <button
+              onClick={() => handleCreateWithType('PICKING_LIST')}
+              className="group p-8 border border-border-default bg-card rounded-3xl hover:border-orange-500 hover:shadow-xl-hover transition-all text-left shadow-lg overflow-hidden relative"
+            >
+              <div className="absolute -right-4 -bottom-4 text-7xl opacity-5 group-hover:scale-110 group-hover:opacity-10 transition-all duration-500">📋</div>
+              <div className="w-14 h-14 bg-orange-500/10 text-orange-500 rounded-2xl flex items-center justify-center mb-6 group-hover:bg-orange-500 group-hover:text-white transition-all shadow-inner">
+                <span className="text-3xl">📋</span>
+              </div>
+              <h3 className="text-2xl font-black mb-2 text-primary tracking-tight">Picking List (Separados)</h3>
+              <p className="text-sm text-secondary leading-relaxed font-medium">Extrae órdenes de picking del ERP para marcar mercancía como separada en el conteo (tipo SEPARATED).</p>
             </button>
 
             <button
@@ -533,6 +544,7 @@ const MappingEditor: React.FC<EditorProps> = ({
             connectionId={config.connectionId}
             datasetType={config.datasetType}
             initialConfig={config}
+            initialStep={config.id ? 4 : 1}
             onSave={async (newConfig) => {
               console.log('🔄 [MappingEditor.onSave] newConfig:', newConfig);
               setSaveError(null);

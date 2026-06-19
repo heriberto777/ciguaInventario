@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { useNavigate } from 'react-router-dom';
+import { NotificationModal } from '@/components/atoms/NotificationModal';
 
 interface MappingConfig {
   id: string;
@@ -33,6 +34,9 @@ export const LoadInventoryFromERPPage: React.FC = () => {
   const [openDialog, setOpenDialog] = useState(false);
   const [loadResult, setLoadResult] = useState<LoadResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notification, setNotification] = useState({ isOpen: false, type: 'warning' as 'success' | 'error' | 'warning' | 'info', title: '', message: '' });
+  const showNotification = (type: 'success' | 'error' | 'warning' | 'info', title: string, message: string) =>
+    setNotification({ isOpen: true, type, title, message });
 
   // Cargar configuraciones de mapeo
   const { data: mappings = [], isLoading: mappingsLoading } = useQuery(
@@ -119,7 +123,7 @@ export const LoadInventoryFromERPPage: React.FC = () => {
 
   const handleLoadInventory = () => {
     if (!selectedMapping || !selectedWarehouse || !selectedLocation) {
-      alert('Please select mapping, warehouse, and location');
+      showNotification('warning', 'Campos requeridos', 'Selecciona el mapping, almacén y ubicación antes de continuar.');
       return;
     }
     loadInventory();
@@ -461,6 +465,14 @@ export const LoadInventoryFromERPPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      <NotificationModal
+        isOpen={notification.isOpen}
+        onClose={() => setNotification(n => ({ ...n, isOpen: false }))}
+        type={notification.type}
+        title={notification.title}
+        message={notification.message}
+      />
     </div>
   );
 };

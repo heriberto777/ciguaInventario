@@ -6,6 +6,7 @@ import { CompaniesTable } from '@/components/organisms/CompaniesTable';
 import { Button } from '@/components/atoms/Button';
 import { getApiClient } from '@/services/api';
 import { usePermissions } from '@/hooks/usePermissions';
+import { ConfirmModal } from '@/components/atoms/ConfirmModal';
 
 interface Company {
   id: string;
@@ -39,6 +40,9 @@ export const CompaniesContent: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [confirmState, setConfirmState] = useState<{ isOpen: boolean; title: string; message: string; onConfirm: () => void; isDangerous: boolean }>({ isOpen: false, title: '', message: '', onConfirm: () => {}, isDangerous: false });
+  const confirmAction = (title: string, message: string, onConfirm: () => void, isDangerous = false) =>
+    setConfirmState({ isOpen: true, title, message, onConfirm, isDangerous });
   const queryClient = useQueryClient();
   const { hasPermission } = usePermissions();
   const canManage = hasPermission('companies:manage');
@@ -161,10 +165,10 @@ export const CompaniesContent: React.FC = () => {
     });
   };
 
-  const handleDelete = async (companyId: string) => {
-    if (confirm('Are you sure you want to delete this company?')) {
-      await deleteMutation.mutateAsync(companyId);
-    }
+  const handleDelete = (companyId: string) => {
+    confirmAction('Eliminar empresa', '¿Estás seguro de que deseas eliminar esta empresa? Se eliminarán todos sus datos asociados.', () => {
+      deleteMutation.mutate(companyId);
+    }, true);
   };
 
   const totalPages = companiesData
@@ -307,6 +311,16 @@ export const CompaniesContent: React.FC = () => {
           Error deleting company. Please try again.
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={confirmState.isOpen}
+        title={confirmState.title}
+        message={confirmState.message}
+        onConfirm={() => { confirmState.onConfirm(); setConfirmState(s => ({ ...s, isOpen: false })); }}
+        onCancel={() => setConfirmState(s => ({ ...s, isOpen: false }))}
+        isDangerous={confirmState.isDangerous}
+        confirmText="Eliminar"
+      />
     </div>
   );
 };

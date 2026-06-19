@@ -4,6 +4,7 @@ import { AdminLayout } from '@/components/templates/AdminLayout';
 import { SessionsTable } from '@/components/organisms/SessionsTable';
 import { Button } from '@/components/atoms/Button';
 import { getApiClient } from '@/services/api';
+import { ConfirmModal } from '@/components/atoms/ConfirmModal';
 
 interface Session {
   id: string;
@@ -40,6 +41,9 @@ export function SessionsContent() {
   const [filterActive, setFilterActive] = useState<boolean | null>(true);
   const [currentSessionId, setCurrentSessionId] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
+  const [confirmState, setConfirmState] = useState<{ isOpen: boolean; title: string; message: string; onConfirm: () => void; isDangerous: boolean }>({ isOpen: false, title: '', message: '', onConfirm: () => {}, isDangerous: false });
+  const confirmAction = (title: string, message: string, onConfirm: () => void, isDangerous = false) =>
+    setConfirmState({ isOpen: true, title, message, onConfirm, isDangerous });
   const queryClient = useQueryClient();
 
   // Get current session ID
@@ -127,20 +131,16 @@ export function SessionsContent() {
     },
   });
 
-  const handleEndSession = async (sessionId: string) => {
-    if (confirm('¿Estás seguro que deseas finalizar esta sesión?')) {
-      await endSessionMutation.mutateAsync(sessionId);
-    }
+  const handleEndSession = (sessionId: string) => {
+    confirmAction('Finalizar sesión', '¿Estás seguro que deseas finalizar esta sesión? El usuario será desconectado.', () => {
+      endSessionMutation.mutate(sessionId);
+    }, true);
   };
 
-  const handleCleanup = async () => {
-    if (
-      confirm(
-        'Esto finalizará todas las sesiones inactivas por más de 60 minutos. ¿Continuar?'
-      )
-    ) {
-      await cleanupMutation.mutateAsync();
-    }
+  const handleCleanup = () => {
+    confirmAction('Limpiar sesiones inactivas', 'Esto finalizará todas las sesiones inactivas por más de 60 minutos. ¿Continuar?', () => {
+      cleanupMutation.mutate();
+    }, false);
   };
 
   const totalPages = sessionsData
@@ -291,6 +291,16 @@ export function SessionsContent() {
           Error al finalizar sesión. Por favor, intenta de nuevo.
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={confirmState.isOpen}
+        title={confirmState.title}
+        message={confirmState.message}
+        onConfirm={() => { confirmState.onConfirm(); setConfirmState(s => ({ ...s, isOpen: false })); }}
+        onCancel={() => setConfirmState(s => ({ ...s, isOpen: false }))}
+        isDangerous={confirmState.isDangerous}
+        confirmText="Confirmar"
+      />
     </div>
   );
 }

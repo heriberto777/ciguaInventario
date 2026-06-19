@@ -28,7 +28,7 @@ export interface FieldMapping {
 export interface MappingConfig {
   id?: string;
   connectionId: string;
-  datasetType: 'ITEMS' | 'STOCK' | 'PRICES' | 'COST' | 'DESTINATION';
+  datasetType: 'ITEMS' | 'STOCK' | 'PRICE' | 'COST' | 'DESTINATION' | 'PENDING_INVOICES' | 'PICKING_LIST';
   mainTable: string;
   mainTableAlias?: string; // Alias de la tabla principal (ej: 'a', 'c')
   joins: TableJoin[];
@@ -43,9 +43,10 @@ export interface MappingConfig {
 
 interface SimpleMappingBuilderProps {
   connectionId: string;
-  datasetType: 'ITEMS' | 'STOCK' | 'PRICES' | 'COST' | 'DESTINATION';
+  datasetType: 'ITEMS' | 'STOCK' | 'PRICE' | 'COST' | 'DESTINATION' | 'PENDING_INVOICES' | 'PICKING_LIST';
   onSave: (config: MappingConfig) => Promise<void>;
   initialConfig?: Partial<MappingConfig>;
+  initialStep?: Step;
 }
 
 type Step = 1 | 2 | 3 | 4;
@@ -64,8 +65,9 @@ export const SimpleMappingBuilder: React.FC<SimpleMappingBuilderProps> = ({
   datasetType,
   onSave,
   initialConfig,
+  initialStep,
 }) => {
-  const [step, setStep] = useState<Step>(1);
+  const [step, setStep] = useState<Step>(initialStep || 1);
   // Normalizar initialConfig: cuando viene de la BD los campos que deben ser arrays
   // pueden llegar como objetos JSON. Garantizamos que siempre sean arrays.
   function normalizeArrayField<T>(value: any, fallback: T[]): T[] {
@@ -249,14 +251,27 @@ export const SimpleMappingBuilder: React.FC<SimpleMappingBuilderProps> = ({
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-gray-800">{getStepTitle(step)}</h2>
         <p className="text-gray-600 mt-2">
-          Paso {step} de 4 - {config.datasetType}
+          Paso {step} de 4 — <span className="font-mono text-blue-600">{config.datasetType}</span>
+          {config.id && <span className="ml-2 text-xs text-gray-400">(editando)</span>}
         </p>
-        {/* Progress Bar */}
-        <div className="mt-4 w-full bg-gray-200 rounded-full h-2">
-          <div
-            className="bg-blue-500 h-2 rounded-full transition-all duration-300"
-            style={{ width: `${(step / 4) * 100}%` }}
-          ></div>
+        {/* Navegación de pasos clickeable */}
+        <div className="mt-4 flex gap-1">
+          {([1, 2, 3, 4] as Step[]).map((s) => (
+            <button
+              key={s}
+              onClick={() => { setStep(s); setError(null); }}
+              className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all border ${
+                step === s
+                  ? 'bg-blue-500 text-white border-blue-500 shadow'
+                  : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-300'
+              }`}
+            >
+              {s === 1 && '📋 Tablas'}
+              {s === 2 && '🔍 Filtros'}
+              {s === 3 && '✓ Columnas'}
+              {s === 4 && '🔗 Campos'}
+            </button>
+          ))}
         </div>
       </div>
 

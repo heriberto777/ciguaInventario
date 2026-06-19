@@ -6,14 +6,20 @@ import { TestMappingRequest } from '@shared/schemas/api';
 // si se llamara a nivel de módulo, podría ejecutarse antes de que
 // initializeApiClient() sea invocado en App.tsx, devolviendo undefined.
 
+// Helpers para normalizar la respuesta del módulo /mapping-configs
+// que puede devolver array directo o { data: array }
+const normalizeMappingList = (res: any): any[] => {
+  const raw = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+  return raw.map((c: any) => ({ ...c, connectionId: c.erpConnectionId || c.connectionId }));
+};
+
 export function useMappingConfigs(datasetType?: string) {
   return useQuery({
     queryKey: ['mappings', datasetType],
     queryFn: async () => {
-      const response = await getApiClient().get('/config/mapping', {
-        params: { ...(datasetType && { datasetType }) },
-      });
-      return response.data.data;
+      const response = await getApiClient().get('/mapping-configs');
+      const all = normalizeMappingList(response);
+      return datasetType ? all.filter((c: any) => c.datasetType === datasetType) : all;
     },
     enabled: true,
     staleTime: 30000,
@@ -24,8 +30,9 @@ export function useMappingConfig(mappingId: string) {
   return useQuery({
     queryKey: ['mapping', mappingId],
     queryFn: async () => {
-      const response = await getApiClient().get(`/config/mapping/${mappingId}`);
-      return response.data.data;
+      const response = await getApiClient().get('/mapping-configs');
+      const all = normalizeMappingList(response);
+      return all.find((c: any) => c.id === mappingId) || null;
     },
     enabled: !!mappingId,
     staleTime: 30000,
@@ -37,8 +44,8 @@ export function useCreateMapping() {
 
   return useMutation({
     mutationFn: async (data: any) => {
-      const response = await getApiClient().post('/config/mapping', data);
-      return response.data.data;
+      const response = await getApiClient().post('/mapping-configs', data);
+      return Array.isArray(response.data) ? response.data : response.data?.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mappings'] });
@@ -49,6 +56,7 @@ export function useCreateMapping() {
 export function useTestMapping() {
   return useMutation({
     mutationFn: async (data: TestMappingRequest) => {
+      // El módulo nuevo no tiene endpoint de test — mantiene el viejo por compatibilidad
       const response = await getApiClient().post('/config/mapping/test', data);
       return response.data.data;
     },

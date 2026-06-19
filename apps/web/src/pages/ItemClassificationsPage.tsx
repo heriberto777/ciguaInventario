@@ -3,6 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as XLSX from 'xlsx';
 import { getApiClient } from '@/services/api';
 import { usePermissions } from '@/hooks/usePermissions';
+import { NotificationModal } from '@/components/atoms/NotificationModal';
+import { ConfirmModal } from '@/components/atoms/ConfirmModal';
 
 const apiClient = getApiClient();
 
@@ -389,6 +391,12 @@ export default function ItemClassificationsPage() {
     const [deleteId, setDeleteId] = useState<string | null>(null);
     const [importResult, setImportResult] = useState<any>(null);
     const [showImportModal, setShowImportModal] = useState(false);
+    const [notification, setNotification] = useState({ isOpen: false, type: 'info' as 'success' | 'error' | 'warning' | 'info', title: '', message: '' });
+    const showNotification = (type: 'success' | 'error' | 'warning' | 'info', title: string, message: string) =>
+        setNotification({ isOpen: true, type, title, message });
+    const [confirmState, setConfirmState] = useState<{ isOpen: boolean; title: string; message: string; onConfirm: () => void; isDangerous: boolean }>({ isOpen: false, title: '', message: '', onConfirm: () => {}, isDangerous: false });
+    const confirmAction = (title: string, message: string, onConfirm: () => void, isDangerous = false) =>
+        setConfirmState({ isOpen: true, title, message, onConfirm, isDangerous });
     const fileRef = useRef<HTMLInputElement>(null);
 
     const groupFilter = activeTab === 'ALL' ? undefined : activeTab;
@@ -435,7 +443,7 @@ export default function ItemClassificationsPage() {
             .filter((i): i is { code: string; description: string; groupNumber: number } => i !== null);
 
         if (parsed.length === 0) {
-            alert('No se encontraron filas válidas. Asegúrate de que el Excel tenga columnas CLASIFICACION, DESCRIPCION, AGRUPACION.');
+            showNotification('warning', 'Sin filas válidas', 'Asegúrate de que el Excel tenga columnas CLASIFICACION, DESCRIPCION, AGRUPACION.');
             return;
         }
 
@@ -444,7 +452,7 @@ export default function ItemClassificationsPage() {
             setImportResult(res.data.data);
             setShowImportModal(false);
         } catch (e: any) {
-            alert('Error al importar: ' + (e.response?.data?.message ?? e.message));
+            showNotification('error', 'Error al importar', e.response?.data?.message ?? e.message);
         }
 
         // Reset el input para permitir reimportar el mismo archivo
@@ -463,7 +471,7 @@ export default function ItemClassificationsPage() {
             link.remove();
         } catch (error) {
             console.error('Error downloading template:', error);
-            alert('Error al descargar la plantilla');
+            showNotification('error', 'Error', 'Error al descargar la plantilla.');
         }
     };
 
@@ -520,15 +528,15 @@ export default function ItemClassificationsPage() {
                                 📥 Cargar Excel
                             </button>
                             <button
-                                onClick={async () => {
-                                    if (confirm('¿Deseas extraer clasificaciones únicas de los artículos existentes?')) {
+                                onClick={() => {
+                                    confirmAction('Sincronizar clasificaciones', '¿Deseas extraer clasificaciones únicas de los artículos existentes?', async () => {
                                         try {
                                             const res = await syncMutation.mutateAsync();
                                             setImportResult(res.data.data);
                                         } catch (e: any) {
-                                            alert('Error al sincronizar: ' + (e.response?.data?.message ?? e.message));
+                                            showNotification('error', 'Error al sincronizar', e.response?.data?.message ?? e.message);
                                         }
-                                    }
+                                    });
                                 }}
                                 disabled={syncMutation.isPending}
                                 style={{ ...styles.btnSecondary, display: 'flex', alignItems: 'center', gap: 6 }}
@@ -716,7 +724,7 @@ export default function ItemClassificationsPage() {
                             setImportResult(res.data.data);
                             setShowImportModal(false);
                         } catch (e: any) {
-                            alert('Error al importar: ' + (e.response?.data?.message ?? e.message));
+                            showNotification('error', 'Error al importar', e.response?.data?.message ?? e.message);
                         }
                     }}
                     isImporting={bulkMutation.isPending}
@@ -727,6 +735,23 @@ export default function ItemClassificationsPage() {
             {importResult && (
                 <ImportResultModal result={importResult} onClose={() => setImportResult(null)} />
             )}
+
+            <NotificationModal
+                isOpen={notification.isOpen}
+                onClose={() => setNotification(n => ({ ...n, isOpen: false }))}
+                type={notification.type}
+                title={notification.title}
+                message={notification.message}
+            />
+            <ConfirmModal
+                isOpen={confirmState.isOpen}
+                title={confirmState.title}
+                message={confirmState.message}
+                onConfirm={() => { confirmState.onConfirm(); setConfirmState(s => ({ ...s, isOpen: false })); }}
+                onCancel={() => setConfirmState(s => ({ ...s, isOpen: false }))}
+                isDangerous={confirmState.isDangerous}
+                confirmText="Confirmar"
+            />
         </div>
     );
 }

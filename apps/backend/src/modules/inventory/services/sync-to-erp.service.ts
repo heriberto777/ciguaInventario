@@ -124,10 +124,10 @@ export class SyncToERPService {
                     const sysQty = Number(countItem.systemQty);
                     const countQty = Number(countItem.countedQty || 0);
                     const code = countItem.itemCode.trim().toUpperCase();
-                    
-                    // Only subtract reservations that are still in the aisle (Pasillo)
-                    // because those are the ones the auditor would have counted on the shelf.
-                    const inAisleVal = reservedInAisleMap.get(code) || 0;
+                    const provCode = (countItem as any).itemProv ? (countItem as any).itemProv.trim().toUpperCase() : null;
+
+                    // Fallback a itemProv para resolver mismatch código interno vs código ERP
+                    const inAisleVal = reservedInAisleMap.get(code) ?? (provCode ? reservedInAisleMap.get(provCode) ?? 0 : 0);
                     const physicalReal = countQty - inAisleVal;
                     
                     const variance = physicalReal - sysQty;

@@ -1,0 +1,46 @@
+# Dependencies — se instalan dentro del contenedor
+node_modules/
+.pnpm-store/
+
+# Build outputs — se generan dentro del contenedor
+apps/*/dist/
+packages/*/dist/
+
+# Git
+.git/
+.gitignore
+
+# Entornos locales — nunca van al contenedor
+.env
+.env.local
+
+# Mobile — no se usa en backend/web
+apps/mobile/
+
+# Archivos de desarrollo/IDE
+.vscode/
+.agents/
+tmp/
+
+# Documentación y scripts de setup
+docs/
+scripts/
+
+# Debug scripts del backend (no son parte del src/)
+apps/backend/check_*.ts
+apps/backend/check-*.ts
+apps/backend/list*.ts
+apps/backend/list*.js
+apps/backend/debug-*.ts
+apps/backend/query*.js
+apps/backend/build_errors.txt
+apps/backend/errors.txt
+apps/backend/prisma_keys.json
+apps/backend/pm2-production.config.cjs
+apps/backend/count-users.ts
+
+# Nginx de producción (solo para el host, no para el contenedor)
+nginx-cigua-production.conf
+
+# Logs
+*.log

@@ -90,10 +90,14 @@ export class ReportsService {
             const countedQty = item.countedQty || new Decimal(0);
 
             // Lógica de Matching de Reservas
+            // Lookup por itemCode; fallback por itemProv para resolver mismatch código interno vs código ERP
             const itemCodeNorm = item.itemCode.trim().toUpperCase();
-            
-            const reservedSeparated = reservedSeparatedByCode.get(itemCodeNorm) || 0;
-            const reservedInAisle = reservedInAisleByCode.get(itemCodeNorm) || 0;
+            const provCodeNorm = item.itemProv ? item.itemProv.trim().toUpperCase() : null;
+
+            const reservedSeparated = reservedSeparatedByCode.get(itemCodeNorm)
+                ?? (provCodeNorm ? reservedSeparatedByCode.get(provCodeNorm) ?? 0 : 0);
+            const reservedInAisle = reservedInAisleByCode.get(itemCodeNorm)
+                ?? (provCodeNorm ? reservedInAisleByCode.get(provCodeNorm) ?? 0 : 0);
 
             // FORMULA MAESTRA UNIFICADA: 
             // Stock Esperado = ERP - Separado + Pasillo
@@ -108,6 +112,7 @@ export class ReportsService {
 
             return {
                 itemCode: item.itemCode,
+                itemProv: item.itemProv || inferredProvByCode.get(itemCodeNorm) || null,
                 itemName: item.itemName,
                 category: item.category,
                 categoryName: categoryDesc ? `${categoryDesc} (${item.category})` : item.category,
@@ -207,8 +212,11 @@ export class ReportsService {
 
         items.forEach(item => {
             const code = item.itemCode.trim().toUpperCase();
-            const separatedQty = separatedMap.get(code) || 0;
-            const inAisleQty = inAisleMap.get(code) || 0;
+            const provCode = (item as any).itemProv ? (item as any).itemProv.trim().toUpperCase() : null;
+
+            // Fallback a itemProv para resolver mismatch código interno vs código ERP
+            const separatedQty = separatedMap.get(code) ?? (provCode ? separatedMap.get(provCode) ?? 0 : 0);
+            const inAisleQty   = inAisleMap.get(code)   ?? (provCode ? inAisleMap.get(provCode)   ?? 0 : 0);
 
             const systemQty = item.systemQty || new Decimal(0);
             const countedQty = item.countedQty || new Decimal(0);

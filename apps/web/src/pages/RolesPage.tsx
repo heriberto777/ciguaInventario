@@ -6,6 +6,7 @@ import { RolesTable } from '@/components/organisms/RolesTable';
 import { Button } from '@/components/atoms/Button';
 import { getApiClient } from '@/services/api';
 import { usePermissions } from '@/hooks/usePermissions';
+import { ConfirmModal } from '@/components/atoms/ConfirmModal';
 
 interface Role {
   id: string;
@@ -46,6 +47,9 @@ export const RolesContent: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [confirmState, setConfirmState] = useState<{ isOpen: boolean; title: string; message: string; onConfirm: () => void; isDangerous: boolean }>({ isOpen: false, title: '', message: '', onConfirm: () => {}, isDangerous: false });
+  const confirmAction = (title: string, message: string, onConfirm: () => void, isDangerous = false) =>
+    setConfirmState({ isOpen: true, title, message, onConfirm, isDangerous });
   const queryClient = useQueryClient();
   const { hasPermission } = usePermissions();
   const canManage = hasPermission('roles:manage');
@@ -158,10 +162,10 @@ export const RolesContent: React.FC = () => {
     });
   };
 
-  const handleDeleteRole = async (roleId: string) => {
-    if (confirm('Are you sure you want to delete this role?')) {
-      await deleteRoleMutation.mutateAsync(roleId);
-    }
+  const handleDeleteRole = (roleId: string) => {
+    confirmAction('Eliminar rol', '¿Estás seguro de que deseas eliminar este rol? Los usuarios asignados perderán sus permisos.', () => {
+      deleteRoleMutation.mutate(roleId);
+    }, true);
   };
 
   const totalPages = rolesData
@@ -308,6 +312,16 @@ export const RolesContent: React.FC = () => {
           Error deleting role. Please try again.
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={confirmState.isOpen}
+        title={confirmState.title}
+        message={confirmState.message}
+        onConfirm={() => { confirmState.onConfirm(); setConfirmState(s => ({ ...s, isOpen: false })); }}
+        onCancel={() => setConfirmState(s => ({ ...s, isOpen: false }))}
+        isDangerous={confirmState.isDangerous}
+        confirmText="Eliminar"
+      />
     </div>
   );
 };

@@ -124,8 +124,12 @@ export class CountStateService {
             const countedVal = item.countedQty ? Number(item.countedQty) : 0;
             const systemVal = Number(item.systemQty);
             const code = item.itemCode.trim().toUpperCase();
-            const separatedVal = separatedMap.get(code) || 0;
-            const inAisleVal = inAisleMap.get(code) || 0;
+
+            // Lookup directo por itemCode; si no encuentra, busca por itemProv (código ERP del proveedor)
+            // Esto resuelve el caso donde la reserva usa código ERP (ej: '2898') y el ítem usa código interno (ej: '100')
+            const provCode = item.itemProv ? item.itemProv.trim().toUpperCase() : null;
+            const separatedVal = separatedMap.get(code) || (provCode ? separatedMap.get(provCode) || 0 : 0);
+            const inAisleVal   = inAisleMap.get(code)   || (provCode ? inAisleMap.get(provCode)   || 0 : 0);
 
             // Fórmula unificada: Stock Esperado = ERP - Separado + Pasillo
             const expectedStock = systemVal - separatedVal + inAisleVal;
@@ -319,10 +323,8 @@ export class CountStateService {
     }
 
     private generateCountCode(): string {
-        const date = new Date();
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const uniqueSuffix = String(date.getDate()).padStart(2, '0') + String(date.getHours()).padStart(2, '0');
-        return `INV-${year}-${month}-${uniqueSuffix}`;
+        const d = new Date();
+        const pad = (n: number) => String(n).padStart(2, '0');
+        return `INV-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
     }
 }

@@ -176,20 +176,39 @@ export class ReservedInvoicesService {
         try {
             const loadService = new LoadInventoryFromERPService(this.repository, this.logger);
             
-            // Buscamos campos de fecha y vendedor en el mapeo (Mapeo de Catelli usa invoiceDate y sellerCode)
             const fieldMappings = (mapping.fieldMappings as any) || [];
-            const dateField = fieldMappings.find((m: any) => 
-                m.target === 'date' || 
-                m.target === 'createdAt' || 
-                m.target === 'invoiceDate' || 
-                m.target === 'invoice_date'
-            )?.source || 'date';
+            // selectedColumns del mapping para búsqueda de respaldo por nombre de columna
+            const mappingFilters = (mapping.filters as any) || {};
+            const selectedColumns: string[] = Array.isArray(mappingFilters.selectedColumns)
+                ? mappingFilters.selectedColumns
+                : [];
 
-            const sellerField = fieldMappings.find((m: any) => 
-                m.target === 'seller' || 
-                m.target === 'sellerCode' || 
-                m.target === 'seller_code'
-            )?.source || 'seller';
+            // Helper: busca un campo primero en fieldMappings (por nombre de target),
+            // luego en selectedColumns (por patrón del nombre de columna fuente).
+            // Soporta ambos formatos: {source, target} y {sourceField, targetField}
+            const findMappingField = (targetNames: string[], colPattern: RegExp): string | null => {
+                const fromMappings = fieldMappings.find((m: any) =>
+                    targetNames.includes(m.target) || targetNames.includes(m.targetField)
+                );
+                if (fromMappings) return fromMappings.source || fromMappings.sourceField || null;
+
+                // Buscar en selectedColumns: el nombre de columna (sin alias) que coincida con el patrón
+                const fromCols = selectedColumns.find(col => {
+                    const colName = col.split('.').pop() || col;
+                    return colPattern.test(colName);
+                });
+                return fromCols || null;
+            };
+
+            const dateField = findMappingField(
+                ['date', 'createdAt', 'invoiceDate', 'invoice_date', 'fecha'],
+                /^(FECHA|DATE|INVOICE_DATE|FECHA_FAC|FECHA_FACTURA|DT_DOC)$/i
+            ) || 'FECHA';
+
+            const sellerField = findMappingField(
+                ['seller', 'sellerCode', 'seller_code', 'vendedor'],
+                /^(VENDEDOR|SELLER|SALESPERSON|VEND|SELLER_CODE|COD_VEND)$/i
+            ) || 'VENDEDOR';
 
             if (this.logger) {
                 this.logger.info(`🔍 [reservePickingList] Mapping detected - DateField: ${dateField}, SellerField: ${sellerField}`);
@@ -218,38 +237,76 @@ export class ReservedInvoicesService {
                 throw new AppError(404, `No data found in ERP for the selected picking list range`);
             }
 
-            const items = loadService.transformData(erpData, customMapping);
-            
+            // Auto-detectar columnas clave del raw ERP data por patrón de nombre.
+            // Esto resuelve el caso donde fieldMappings no incluye invoiceNumber/clientName/itemCode/qty.
+            const firstRow = erpData[0] || {};
+            const allCols = Object.keys(firstRow);
+            const findCol = (pattern: RegExp) => allCols.find(c => pattern.test(c)) || null;
+
+            const invoiceCol  = findCol(/^(FACTURA|INVOICE|NUMERO|DOC|DOCUMENTO|FOLIO|DOCUMENT_NUMBER|INVOICE_NUMBER)$/i);
+            const clientCol   = findCol(/^(NOMBRE_CLIENTE|CLIENTE|CLIENT|CUSTOMER|NOMBRE|RAZON_SOCIAL)$/i);
+            const articuloCol = findCol(/^(ARTICULO|ARTICLE|ITEM_CODE|COD_ART|CODIGO_ART|SKU)$/i);
+            const qtyCol      = findCol(/^(CANTIDAD|QTY|QUANTITY|CANT|AMOUNT)$/i);
+
+            if (this.logger) {
+                this.logger.info(`🔍 [reservePickingList] Auto-detected columns - Invoice: ${invoiceCol}, Client: ${clientCol}, Article: ${articuloCol}, Qty: ${qtyCol}`);
+            }
+
             if (dryRun) {
-                // Agrupamos por factura para que el frontend pueda mostrarlas en la tabla
-                const uniqueInvoices = Array.from(new Set(items.map((i: any) => i.invoiceNumber)))
-                    .map(invNum => {
-                        const firstItem = items.find((i: any) => i.invoiceNumber === invNum);
-                        return {
+                // Agrupar por factura directamente del raw ERP data — no depende de fieldMappings
+                const rawInvoiceMap = new Map<string, { invoiceNumber: string; clientName: string }>();
+                for (const row of erpData) {
+                    const invNum = invoiceCol ? String(row[invoiceCol] ?? '').trim() : null;
+                    if (invNum) {
+                        rawInvoiceMap.set(invNum, {
                             invoiceNumber: invNum,
-                            clientName: firstItem?.clientName || '---',
-                            alreadyReserved: false
-                        };
-                    });
+                            clientName: clientCol ? String(row[clientCol] ?? '---').trim() : '---',
+                        });
+                    }
+                }
+
+                const uniqueInvoices = Array.from(rawInvoiceMap.values()).map(inv => ({
+                    ...inv,
+                    alreadyReserved: false,
+                }));
 
                 return {
                     preview: true,
-                    invoices: uniqueInvoices.slice(0, 50), // Muestra las primeras 50 facturas
-                    itemsCount: items.length,
+                    invoices: uniqueInvoices.slice(0, 100),
+                    itemsCount: erpData.length,
                     sql
                 };
             }
 
-            // Consolidamos (sumamos) los items por código antes de guardar
-            const consolidatedItems: any[] = [];
-            const itemMap = new Map<string, any>();
+            // Consolidar items para reserva — usar transformData con fallback a columnas auto-detectadas
+            const items = loadService.transformData(erpData, customMapping);
 
-            for (const item of items) {
-                if (itemMap.has(item.itemCode)) {
-                    const existing = itemMap.get(item.itemCode);
-                    existing.systemQty += (item.systemQty || 0);
+            // Si itemCode quedó vacío por falta de fieldMappings, poblarlo desde raw data
+            const itemMap = new Map<string, any>();
+            for (let i = 0; i < erpData.length; i++) {
+                const row = erpData[i];
+                const transformedItem = items[i] as any;
+
+                const itemCode = (transformedItem?.itemCode && transformedItem.itemCode !== '')
+                    ? transformedItem.itemCode
+                    : articuloCol ? String(row[articuloCol] ?? '').trim() : '';
+
+                if (!itemCode) continue;
+
+                const qty = (transformedItem?.systemQty && transformedItem.systemQty > 0)
+                    ? transformedItem.systemQty
+                    : qtyCol ? parseFloat(String(row[qtyCol] ?? '0')) : 0;
+
+                if (itemMap.has(itemCode)) {
+                    itemMap.get(itemCode).systemQty += qty;
                 } else {
-                    itemMap.set(item.itemCode, { ...item });
+                    itemMap.set(itemCode, {
+                        itemCode,
+                        itemName: transformedItem?.itemName || String(row['DESCRIPCION'] ?? row['DESCRIPTION'] ?? '').trim(),
+                        itemProv: transformedItem?.itemProv || null,
+                        systemQty: qty,
+                        uom: transformedItem?.uom || 'PZ',
+                    });
                 }
             }
 

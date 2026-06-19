@@ -208,6 +208,12 @@ Error: ${errorMessage}`;
               className="w-full px-4 py-2 border border-[var(--border-default)] rounded-lg bg-[var(--bg-app)] text-[var(--text-primary)] text-sm focus:ring-2 focus:ring-blue-500 outline-none min-h-[120px]"
             >
               <option value="">-- Selecciona una tabla --</option>
+              {/* Si el valor guardado no coincide con ninguna opción cargada, mostrarlo igual */}
+              {config.mainTable && !filteredMainTables.find(t => t.name === config.mainTable) && (
+                <option value={config.mainTable}>
+                  ✓ {config.mainTable} (guardado)
+                </option>
+              )}
               {filteredMainTables.slice(0, 100).map((table) => (
                 <option key={table.name} value={table.name}>
                   {table.label || table.name} ({table.columnCount} cols)
@@ -339,6 +345,9 @@ Error: ${errorMessage}`;
                             className="w-full px-3 py-2 border border-[var(--border-default)] bg-[var(--bg-app)] text-[var(--text-primary)] rounded text-sm outline-none"
                           >
                             <option value="">-- Selecciona tabla --</option>
+                            {join.table && !availableTables.find(t => t.name === join.table) && (
+                              <option value={join.table}>✓ {join.table} (guardado)</option>
+                            )}
                             {availableTables
                               .filter((t) => t.name !== config.mainTable)
                               .filter((t) => {

@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { getApiClient } from '@/services/api';
 import { CountItem } from '@/services/inventory.types';
 
@@ -96,6 +97,24 @@ export const useInventoryProcess = (countId: string | undefined) => {
     });
   }, [countItems, searchTerm, filters]);
 
+  // Fetch classification descriptions to show names instead of codes in filters
+  const { data: classificationData } = useQuery({
+    queryKey: ['item-classifications-all'],
+    queryFn: async () => {
+      const res = await getApiClient().get('/item-classifications');
+      return (res.data?.data || res.data || []) as Array<{ code: string; description: string; groupType: string }>;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const descriptionMap = useMemo(() => {
+    const map = new Map<string, string>();
+    if (classificationData) {
+      classificationData.forEach(c => map.set(c.code, c.description));
+    }
+    return map;
+  }, [classificationData]);
+
   const classifications = useMemo(() => {
     const cats = new Set<string>();
     const subcats = new Set<string>();
@@ -107,15 +126,18 @@ export const useInventoryProcess = (countId: string | undefined) => {
       if (item.brand) brands.add(item.brand);
     });
 
-    const mapToOptions = (set: Set<string>) => 
-      Array.from(set).sort().map(val => ({ label: val, value: val }));
+    const mapToOptions = (set: Set<string>) =>
+      Array.from(set).sort().map(val => ({
+        value: val,
+        label: descriptionMap.get(val) ? `${descriptionMap.get(val)} (${val})` : val,
+      }));
 
     return {
       categories: mapToOptions(cats),
       subcategories: mapToOptions(subcats),
       brands: mapToOptions(brands)
     };
-  }, [countItems]);
+  }, [countItems, descriptionMap]);
 
   return {
     countItems,

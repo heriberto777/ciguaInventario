@@ -13,6 +13,7 @@ const apiClient = getApiClient();
 // --- Types ---
 interface ReportItem {
   itemCode: string;
+  itemProv?: string | null;
   itemName: string;
   category: string;
   categoryName?: string;
@@ -160,12 +161,13 @@ export function ReportsPage() {
     const wsSummary = XLSX.utils.json_to_sheet(summaryRows);
     
     // Build detail sheet with brand grouping
-    const detailSheetData: any[][] = [['Código', 'Descripción', 'Costo', 'Sistema', 'Sep.', 'Físico', 'Diferencia', 'Costo Dif.']];
+    const detailSheetData: any[][] = [['Código', 'Art. Prov.', 'Descripción', 'Costo', 'Sistema', 'Sep.', 'Físico', 'Diferencia', 'Costo Dif.']];
     for (const group of reportItems) {
-      detailSheetData.push([group.brand, '', '', '', '', '', '', '']);
+      detailSheetData.push([group.brand, '', '', '', '', '', '', '', '']);
       for (const item of group.items) {
         detailSheetData.push([
           item.itemCode,
+          item.itemProv || '',
           `   ${item.itemName}`,
           item.costPrice,
           item.systemQty,
@@ -248,6 +250,7 @@ export function ReportsPage() {
       for (const item of group.items) {
         tableBody.push([
           item.itemCode,
+          item.itemProv || '',
           `   ${item.itemName}`,
           item.costPrice.toFixed(2),
           Number(item.systemQty).toLocaleString('en', { minimumFractionDigits: 2 }),
@@ -261,20 +264,21 @@ export function ReportsPage() {
 
     autoTable(doc, {
       startY: (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 8 : 60,
-      head: [['Código', 'Descripción', 'Costo', 'Sistema', 'Sep.', 'Físico', 'Dif.', 'Costo Dif.']],
+      head: [['Código', 'Art. Prov.', 'Descripción', 'Costo', 'Sistema', 'Sep.', 'Físico', 'Dif.', 'Costo Dif.']],
       body: tableBody,
       theme: 'plain',
       headStyles: { fillColor: [40, 40, 40], textColor: [255, 255, 255], fontSize: 7 },
       styles: { fontSize: 7, cellPadding: 1.5 },
       columnStyles: {
         0: { cellWidth: 14 },
-        1: { cellWidth: 60 },
-        2: { halign: 'right', cellWidth: 16 },
-        3: { halign: 'right', cellWidth: 22 },
-        4: { halign: 'right', cellWidth: 14 },
-        5: { halign: 'right', cellWidth: 22 },
-        6: { halign: 'right', cellWidth: 18 },
-        7: { halign: 'right', cellWidth: 22 }
+        1: { cellWidth: 18 },
+        2: { cellWidth: 45 },
+        3: { halign: 'right', cellWidth: 16 },
+        4: { halign: 'right', cellWidth: 22 },
+        5: { halign: 'right', cellWidth: 14 },
+        6: { halign: 'right', cellWidth: 22 },
+        7: { halign: 'right', cellWidth: 18 },
+        8: { halign: 'right', cellWidth: 22 }
       }
     });
 
@@ -463,6 +467,7 @@ export function ReportsPage() {
                   <thead className="bg-gray-50 text-gray-600 sticky top-0 uppercase text-[10px] font-bold">
                     <tr>
                       <th className="px-4 py-3">Artículo</th>
+                      <th className="px-4 py-3">Art. Prov.</th>
                       <th className="px-4 py-3">Descripción</th>
                       <th className="px-4 py-3">Categoría</th>
                       <th className="px-4 py-3 text-right">Sistema</th>
@@ -477,7 +482,7 @@ export function ReportsPage() {
                     {reportData.map((group) => (
                       <React.Fragment key={group.brand}>
                         <tr className="bg-blue-50/30">
-                          <td colSpan={9} className="px-4 py-2 font-bold text-blue-700">
+                          <td colSpan={10} className="px-4 py-2 font-bold text-blue-700">
                             📦 MARCA: {group.brand}
                             <span className="ml-4 text-[10px] text-gray-500">
                               (Impacto: ${group.totalVarianceCost.toLocaleString()} | Sep: {group.totalReservedSeparated} | Pas: {group.totalReservedInAisle})
@@ -487,6 +492,7 @@ export function ReportsPage() {
                         {group.items.map((item) => (
                           <tr key={item.itemCode} className="border-b border-gray-50 hover:bg-gray-50">
                             <td className="px-4 py-2 font-mono text-gray-600">{item.itemCode}</td>
+                            <td className="px-4 py-2 font-mono text-gray-400 text-[11px]">{item.itemProv || '–'}</td>
                             <td className="px-4 py-2 text-gray-800">{item.itemName}</td>
                             <td className="px-4 py-2 text-gray-600 text-[10px] uppercase font-bold tracking-tighter">{item.categoryName || item.category}</td>
                             <td className="px-4 py-2 text-right">{item.systemQty}</td>

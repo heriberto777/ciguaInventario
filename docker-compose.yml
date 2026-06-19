@@ -1,20 +1,57 @@
-services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: cigua_postgres
-    environment:
-      POSTGRES_DB: cigua_inv
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: eli112910
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user -d cigua_inv"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+name: ciguainv
 
-volumes:
-  postgres_data:
+services:
+
+  # ── Backend: Fastify + Prisma ──────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    container_name: cigua_backend
+    env_file: .env.docker
+    environment:
+      # Sobrescribe DATABASE_URL para apuntar a clinic_postgres por red Docker
+      DATABASE_URL: "postgresql://postgres:postgres123@clinic_postgres:5432/cigua_inv"
+      NODE_ENV: production
+      PORT: 3000
+      HOST: 0.0.0.0
+    ports:
+      - "3990:3000"      # Host:3990 → Contenedor:3000
+    networks:
+      - clinic_default   # Para llegar a clinic_postgres y clinic_redis
+      - cigua_internal   # Para comunicarse con el contenedor web
+    restart: unless-stopped
+    healthcheck:
+      # Usa node (siempre disponible) con IPv4 explícito para evitar
+      # problemas de resolución IPv6 en Alpine
+      test: ["CMD", "node", "-e",
+        "require('http').get({host:'127.0.0.1',port:3000,path:'/health'},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      # Las migraciones pueden tardar — 90s antes de empezar a contar fallos
+      start_period: 90s
+
+  # ── Frontend: React + Nginx ────────────────────────────────────────────────
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: cigua_web
+    ports:
+      - "8285:80"        # Host:8285 → Contenedor:80
+    networks:
+      - cigua_internal   # Solo necesita hablar con el backend
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+# ── Redes ──────────────────────────────────────────────────────────────────────
+networks:
+  # Red existente donde viven clinic_postgres y clinic_redis
+  clinic_default:
+    external: true
+
+  # Red interna exclusiva de esta app (backend ↔ web)
+  cigua_internal:
+    driver: bridge

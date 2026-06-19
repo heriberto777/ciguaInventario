@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { getApiClient } from '@/services/api';
+import { NotificationModal } from '@/components/atoms/NotificationModal';
 
 interface QueryBuilderColumn {
   table: string;
@@ -32,6 +33,9 @@ interface QueryBuilderFilter {
 export const QueryBuilderPage: React.FC = () => {
   const apiClient = getApiClient();
   const [step, setStep] = useState<'builder' | 'preview'>('builder');
+  const [notification, setNotification] = useState({ isOpen: false, type: 'info' as 'success' | 'error' | 'warning' | 'info', title: '', message: '' });
+  const showNotification = (type: 'success' | 'error' | 'warning' | 'info', title: string, message: string) =>
+    setNotification({ isOpen: true, type, title, message });
   const [tableName, setTableName] = useState('articulo');
   const [columns, setColumns] = useState<QueryBuilderColumn[]>([]);
   const [joins, setJoins] = useState<QueryBuilderJoin[]>([]);
@@ -103,7 +107,7 @@ export const QueryBuilderPage: React.FC = () => {
 
   const addJoin = () => {
     if (!joinRightTable || !joinCondition) {
-      alert('Por favor completa todos los campos del JOIN');
+      showNotification('warning', 'Campos incompletos', 'Por favor completa todos los campos del JOIN');
       return;
     }
     setJoins([
@@ -123,7 +127,7 @@ export const QueryBuilderPage: React.FC = () => {
 
   const addFilter = () => {
     if (!filterColumn || !filterValue) {
-      alert('Por favor completa todos los campos del FILTRO');
+      showNotification('warning', 'Campos incompletos', 'Por favor completa todos los campos del FILTRO');
       return;
     }
     setFilters([
@@ -361,7 +365,7 @@ export const QueryBuilderPage: React.FC = () => {
             <button
               onClick={() => {
                 navigator.clipboard.writeText(generatedSQL);
-                alert('SQL copiado al portapapeles');
+                showNotification('success', 'Copiado', 'SQL copiado al portapapeles.');
               }}
               className="mt-2 bg-gray-600 text-white px-3 py-1 rounded text-sm hover:bg-gray-700"
             >
@@ -420,6 +424,15 @@ export const QueryBuilderPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      <NotificationModal
+        isOpen={notification.isOpen}
+        onClose={() => setNotification(n => ({ ...n, isOpen: false }))}
+        type={notification.type}
+        title={notification.title}
+        message={notification.message}
+        autoClose={notification.type === 'success' ? 2500 : undefined}
+      />
     </div>
   );
 };

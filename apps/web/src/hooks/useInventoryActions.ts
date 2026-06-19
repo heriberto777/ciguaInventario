@@ -3,12 +3,18 @@ import { getApiClient } from '@/services/api';
 import { InventoryCount } from '@/services/inventory.types';
 
 const extractErrorMessage = (error: any): string => {
-  const axiosMessage = error?.response?.data?.message || error?.response?.data?.error;
-  if (axiosMessage) return axiosMessage;
+  // Backend devuelve: { error: { code: '...', message: '...' } }
+  const backendMsg = error?.response?.data?.error?.message;
+  if (backendMsg) return backendMsg;
+  // Algunos endpoints devuelven: { message: '...' }
+  const directMsg = error?.response?.data?.message;
+  if (directMsg && typeof directMsg === 'string') return directMsg;
   return error?.message || 'Error desconocido';
 };
 
-export const useInventoryActions = () => {
+type NotifyFn = (type: 'success' | 'error' | 'warning' | 'info', title: string, message: string) => void;
+
+export const useInventoryActions = (onNotify?: NotifyFn) => {
   const apiClient = getApiClient();
   const queryClient = useQueryClient();
 
@@ -17,10 +23,11 @@ export const useInventoryActions = () => {
       const response = await apiClient.post(`/inventory-counts/${countId}/start`, {});
       return response.data.count as InventoryCount;
     },
-    onSuccess: () => {
+    onSuccess: (_, countId) => {
       queryClient.invalidateQueries({ queryKey: ['inventory-counts'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory-count', countId] });
     },
-    onError: (error: any) => alert(`Error al iniciar conteo: ${extractErrorMessage(error)}`),
+    onError: (error: any) => onNotify?.('error', 'Error al iniciar conteo', extractErrorMessage(error)),
   });
 
   const completeCountMutation = useMutation({
@@ -28,10 +35,11 @@ export const useInventoryActions = () => {
       const response = await apiClient.post(`/inventory-counts/${countId}/complete`, {});
       return response.data.count as InventoryCount;
     },
-    onSuccess: () => {
+    onSuccess: (_, countId) => {
       queryClient.invalidateQueries({ queryKey: ['inventory-counts'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory-count', countId] });
     },
-    onError: (error: any) => alert(`Error al completar conteo: ${extractErrorMessage(error)}`),
+    onError: (error: any) => onNotify?.('error', 'Error al completar conteo', extractErrorMessage(error)),
   });
 
   const finalizeCountMutation = useMutation({
@@ -39,10 +47,11 @@ export const useInventoryActions = () => {
       const response = await apiClient.post(`/inventory-counts/${countId}/finalize`, {});
       return response.data as InventoryCount;
     },
-    onSuccess: () => {
+    onSuccess: (_, countId) => {
       queryClient.invalidateQueries({ queryKey: ['inventory-counts'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory-count', countId] });
     },
-    onError: (error: any) => alert(`Error al finalizar conteo: ${extractErrorMessage(error)}`),
+    onError: (error: any) => onNotify?.('error', 'Error al finalizar conteo', extractErrorMessage(error)),
   });
 
   const createVersionMutation = useMutation({
@@ -51,10 +60,11 @@ export const useInventoryActions = () => {
       const getResponse = await apiClient.get(`/inventory-counts/${countId}`);
       return getResponse.data as InventoryCount;
     },
-    onSuccess: () => {
+    onSuccess: (_, countId) => {
       queryClient.invalidateQueries({ queryKey: ['inventory-counts'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory-count', countId] });
     },
-    onError: (error: any) => alert(`Error al crear versión: ${extractErrorMessage(error)}`),
+    onError: (error: any) => onNotify?.('error', 'Error al crear versión', extractErrorMessage(error)),
   });
 
   const sendToERPMutation = useMutation({
@@ -62,21 +72,23 @@ export const useInventoryActions = () => {
       const response = await apiClient.post(`/inventory-counts/${countId}/send-to-erp`, {});
       return response.data;
     },
-    onSuccess: () => {
+    onSuccess: (_, countId) => {
       queryClient.invalidateQueries({ queryKey: ['inventory-counts'] });
-      alert('✅ Datos enviados al ERP exitosamente.');
+      queryClient.invalidateQueries({ queryKey: ['inventory-count', countId] });
+      onNotify?.('success', 'ERP sincronizado', 'Datos enviados al ERP exitosamente.');
     },
-    onError: (error: any) => alert(`Error al enviar a ERP: ${extractErrorMessage(error)}`),
+    onError: (error: any) => onNotify?.('error', 'Error al enviar a ERP', extractErrorMessage(error)),
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (countId: string) => {
       await apiClient.delete(`/inventory-counts/${countId}/delete`);
     },
-    onSuccess: () => {
+    onSuccess: (_, countId) => {
       queryClient.invalidateQueries({ queryKey: ['inventory-counts'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory-count', countId] });
     },
-    onError: (error: any) => alert(`Error al eliminar conteo: ${extractErrorMessage(error)}`),
+    onError: (error: any) => onNotify?.('error', 'Error al eliminar conteo', extractErrorMessage(error)),
   });
 
   const reserveInvoiceMutation = useMutation({
@@ -92,7 +104,7 @@ export const useInventoryActions = () => {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['inventory-count', variables.countId] });
     },
-    onError: (error: any) => alert(`Error al reservar factura: ${extractErrorMessage(error)}`),
+    onError: (error: any) => onNotify?.('error', 'Error al reservar factura', extractErrorMessage(error)),
   });
 
   const reservePickingListMutation = useMutation({
@@ -110,7 +122,7 @@ export const useInventoryActions = () => {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['inventory-count', variables.countId] });
     },
-    onError: (error: any) => alert(`Error al reservar picking list: ${extractErrorMessage(error)}`),
+    onError: (error: any) => onNotify?.('error', 'Error al reservar picking list', extractErrorMessage(error)),
   });
 
   const reserveExcelMutation = useMutation({
@@ -125,7 +137,7 @@ export const useInventoryActions = () => {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['inventory-count', variables.countId] });
     },
-    onError: (error: any) => alert(`Error al cargar reservas desde Excel: ${extractErrorMessage(error)}`),
+    onError: (error: any) => onNotify?.('error', 'Error al cargar desde Excel', extractErrorMessage(error)),
   });
 
   const deleteReservationMutation = useMutation({
@@ -135,7 +147,7 @@ export const useInventoryActions = () => {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['inventory-count', variables.id] });
     },
-    onError: (error: any) => alert(`Error al eliminar reserva: ${extractErrorMessage(error)}`),
+    onError: (error: any) => onNotify?.('error', 'Error al eliminar reserva', extractErrorMessage(error)),
   });
 
   const refreshSKUMutation = useMutation({
@@ -151,7 +163,7 @@ export const useInventoryActions = () => {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['inventory-count', variables.countId] });
     },
-    onError: (error: any) => alert(`Error al refrescar datos: ${extractErrorMessage(error)}`),
+    onError: (error: any) => onNotify?.('error', 'Error al refrescar datos', extractErrorMessage(error)),
   });
 
   return {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { MappingConfig, FieldMapping } from '../index';
 
 interface FieldMappingStepProps {
@@ -46,10 +46,20 @@ const STANDARD_FIELDS: Record<string, Array<{ name: string; dataType: string; re
     { name: 'lot', dataType: 'string', required: false },
     { name: 'lastUpdate', dataType: 'date', required: false },
   ],
-  PRICES: [
+  PRICE: [
     { name: 'itemCode', dataType: 'string', required: true },
     { name: 'salePrice', dataType: 'number', required: true },
     { name: 'currency', dataType: 'string', required: false },
+  ],
+  PICKING_LIST: [
+    { name: 'invoiceNumber', dataType: 'string', required: true },
+    { name: 'itemCode', dataType: 'string', required: true },
+    { name: 'itemName', dataType: 'string', required: false },
+    { name: 'systemQty', dataType: 'number', required: true },
+    { name: 'uom', dataType: 'string', required: false },
+    { name: 'itemProv', dataType: 'string', required: false },
+    { name: 'clientName', dataType: 'string', required: false },
+    { name: 'sellerCode', dataType: 'string', required: false },
   ],
   COST: [
     { name: 'itemCode', dataType: 'string', required: true },
@@ -79,6 +89,8 @@ export const FieldMappingStep: React.FC<FieldMappingStepProps> = ({
   onChange,
 }) => {
   const [draggedSource, setDraggedSource] = useState<string | null>(null);
+  const [constantModal, setConstantModal] = useState<{ open: boolean; fieldName: string; value: string }>({ open: false, fieldName: '', value: '' });
+  const constantInputRef = useRef<HTMLInputElement>(null);
   const standardFields = STANDARD_FIELDS[config.datasetType] || STANDARD_FIELDS.ITEMS;
 
   const getSourceFieldsNotMapped = () => {
@@ -309,10 +321,7 @@ export const FieldMappingStep: React.FC<FieldMappingStepProps> = ({
                       <div className="flex gap-1">
                         <button
                           className="flex-1 text-[10px] bg-[var(--bg-app)] text-[var(--text-primary)] px-2 py-1.5 rounded-lg hover:bg-blue-600 hover:text-white transition-colors border border-[var(--border-default)] font-bold"
-                          onClick={() => {
-                            const val = prompt(`Ingrese valor constante para "${field.name}":`);
-                            if (val !== null) handleAddCustomMapping(field.name, 'CONSTANT', val);
-                          }}
+                          onClick={() => setConstantModal({ open: true, fieldName: field.name, value: '' })}
                         >
                           + Constante
                         </button>
@@ -365,6 +374,55 @@ export const FieldMappingStep: React.FC<FieldMappingStepProps> = ({
                 </button>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Modal para valor constante — reemplaza prompt() */}
+      {constantModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setConstantModal(m => ({ ...m, open: false }))} />
+          <div className="relative bg-[var(--bg-card)] border border-[var(--border-default)] rounded-2xl shadow-xl w-full max-w-sm mx-4 p-6">
+            <h2 className="text-base font-bold text-[var(--text-primary)] mb-1">Valor constante</h2>
+            <p className="text-xs text-[var(--text-muted)] mb-4">
+              Campo: <span className="font-mono font-bold">{constantModal.fieldName}</span>
+            </p>
+            <input
+              ref={constantInputRef}
+              autoFocus
+              type="text"
+              value={constantModal.value}
+              onChange={(e) => setConstantModal(m => ({ ...m, value: e.target.value }))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && constantModal.value.trim()) {
+                  handleAddCustomMapping(constantModal.fieldName, 'CONSTANT', constantModal.value.trim());
+                  setConstantModal({ open: false, fieldName: '', value: '' });
+                }
+                if (e.key === 'Escape') setConstantModal(m => ({ ...m, open: false }));
+              }}
+              placeholder="Ingrese el valor..."
+              className="w-full h-10 px-3 rounded-lg bg-[var(--bg-app)] border border-[var(--border-default)] text-sm text-[var(--text-primary)] outline-none focus:ring-2 focus:ring-blue-500/30 mb-4"
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setConstantModal(m => ({ ...m, open: false }))}
+                className="px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider bg-[var(--bg-hover)] text-[var(--text-primary)]"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  if (constantModal.value.trim()) {
+                    handleAddCustomMapping(constantModal.fieldName, 'CONSTANT', constantModal.value.trim());
+                    setConstantModal({ open: false, fieldName: '', value: '' });
+                  }
+                }}
+                disabled={!constantModal.value.trim()}
+                className="px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40"
+              >
+                Agregar
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -32,13 +32,17 @@ export class VersionService {
 
         // Ajustar el systemQty de cada item
         const adjustedItems = items.map((item: any) => {
-            const separated = separatedMap.get(item.itemCode) || 0;
-            const inAisle = inAisleMap.get(item.itemCode) || 0;
+            const code = (item.itemCode || '').trim().toUpperCase();
+            const provCode = item.itemProv ? item.itemProv.trim().toUpperCase() : null;
+
+            // Lookup por itemCode; fallback por itemProv para resolver mismatch de códigos internos vs ERP
+            const separated = separatedMap.get(code) || (provCode ? separatedMap.get(provCode) || 0 : 0);
+            const inAisle   = inAisleMap.get(code)   || (provCode ? inAisleMap.get(provCode)   || 0 : 0);
             const originalSystemQty = Number(item.systemQty);
-            
+
             // El stock que el auditor DEBE encontrar es: ERP - Lo que ya se llevaron (Separado)
             const adjustedSystemQty = Math.max(0, originalSystemQty - separated);
-            
+
             return {
                 ...item,
                 originalSystemQty,

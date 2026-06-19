@@ -148,7 +148,7 @@ export class ConfigMappingRepository {
       // Incluir la relación para que el Frontend pueda mostrar el nombre
       erpConnection: mapping.erpConnection ? {
         id: mapping.erpConnection.id,
-        name: mapping.erpConnection.name,
+        name: `${mapping.erpConnection.host}/${mapping.erpConnection.database}`,
         erpType: mapping.erpConnection.erpType,
       } : undefined,
     } as any;

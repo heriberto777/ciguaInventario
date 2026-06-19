@@ -57,6 +57,7 @@ export class MappingConfigRepository {
           fieldMappings: data.fieldMappings,
           filters: {
             mainTable: data.mainTable,
+            mainTableAlias: (data as any).mainTableAlias,
             joins: data.joins,
             filters: data.filters,
             selectedColumns: data.selectedColumns,
@@ -124,7 +125,9 @@ export class MappingConfigRepository {
       sourceTables: data.mainTable ? [data.mainTable] : config.sourceTables,
       sourceQuery: (data as any).customQuery !== undefined ? (data as any).customQuery : config.sourceQuery,
       fieldMappings: (data.fieldMappings || config.fieldMappings) as any,
-      filters: (data.filters !== undefined ? { mainTable: data.mainTable, joins: (data as any).joins, filters: data.filters, selectedColumns: (data as any).selectedColumns } : config.filters) as any,
+      filters: (data.filters !== undefined || (data as any).mainTable !== undefined
+        ? { mainTable: (data as any).mainTable ?? (config.filters as any)?.mainTable, mainTableAlias: (data as any).mainTableAlias ?? (config.filters as any)?.mainTableAlias, joins: (data as any).joins ?? (config.filters as any)?.joins, filters: data.filters ?? (config.filters as any)?.filters, selectedColumns: (data as any).selectedColumns ?? (config.filters as any)?.selectedColumns }
+        : config.filters) as any,
       isActive: data.isActive !== undefined ? data.isActive : config.isActive,
     };
 

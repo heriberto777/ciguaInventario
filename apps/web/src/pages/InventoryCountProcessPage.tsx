@@ -54,7 +54,6 @@ export default function InventoryCountProcessPage() {
   });
 
   const processHook = useInventoryProcess(id);
-  const actionsHook = useInventoryActions();
 
   // Preview state for Picking List
   const [pickingPreview, setPickingPreview] = useState<any>(null);
@@ -84,6 +83,9 @@ export default function InventoryCountProcessPage() {
   });
 
   const [notification, setNotification] = useState({ isOpen: false, type: 'info' as any, title: '', message: '' });
+  const showNotification = (type: 'success' | 'error' | 'warning' | 'info', title: string, message: string) =>
+    setNotification({ isOpen: true, type, title, message });
+  const actionsHook = useInventoryActions(showNotification);
   const [actionConfirm, setActionConfirm] = useState({ isOpen: false, title: '', message: '', onConfirm: () => {}, isDangerous: false });
   const [selectedMappingId, setSelectedMappingId] = useState('');
   const [refreshingItemCodes, setRefreshingItemCodes] = useState<Set<string>>(new Set());
@@ -94,14 +96,13 @@ export default function InventoryCountProcessPage() {
     queryKey: ['mapping-configs', 'all'], // Removed 'inventory' to broaden search
     queryFn: async () => {
       console.log('🔍 [InventoryCountProcessPage] Fetching all mappings...');
-      const response = await apiClient.get('/config/mapping'); // No params
-      const rawData = response.data.data || response.data;
-      console.log('🔍 [InventoryCountProcessPage] Mappings raw data:', rawData);
-      
+      const response = await apiClient.get('/mapping-configs');
+      const rawData = Array.isArray(response.data) ? response.data : (response.data?.data || []);
       if (Array.isArray(rawData)) {
         return rawData.map((m: any) => ({
           ...m,
-          displayName: `${(m.datasetType || 'CONFIG').toUpperCase()} - v${m.version} (${m.erpConnection?.name || 'ERP'})`
+          connectionId: m.erpConnectionId || m.connectionId,
+          displayName: `${(m.datasetType || 'CONFIG').toUpperCase()} - v${m.version}`
         }));
       }
       return [];

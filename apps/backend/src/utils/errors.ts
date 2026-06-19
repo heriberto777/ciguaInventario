@@ -65,6 +65,29 @@ export async function errorHandler(error: Error, request: FastifyRequest, reply:
     });
   }
 
+  // Prisma P2002 — unique constraint: responder 409 en lugar de 500
+  if ((error as any).code === 'P2002') {
+    const fields = (error as any).meta?.target?.join(', ') || 'unknown field';
+    logger.warn({ err: error }, 'Unique constraint violation');
+    return reply.status(409).send({
+      error: {
+        code: 'CONFLICT',
+        message: `Ya existe un registro con el mismo valor en: ${fields}`,
+      },
+    });
+  }
+
+  // Prisma P2022 — columna no existe en la DB: error de schema drift
+  if ((error as any).code === 'P2022') {
+    logger.error({ err: error }, 'Schema drift: column missing in DB — run prisma migrate deploy');
+    return reply.status(500).send({
+      error: {
+        code: 'SCHEMA_DRIFT',
+        message: 'Error de base de datos: columna faltante. Ejecuta las migraciones pendientes.',
+      },
+    });
+  }
+
   logger.error({ err: error }, 'Unhandled error');
   return reply.status((error as any).statusCode || 500).send({
     error: {
