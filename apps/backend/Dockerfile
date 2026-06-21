@@ -24,7 +24,7 @@ RUN pnpm install --frozen-lockfile
 # Build: prisma generate (descarga binarios para linux-musl) + tsc
 RUN pnpm -F @cigua-inv/backend build
 
-EXPOSE 3000
+EXPOSE 3981
 
 # 1. Aplicar migraciones pendientes contra la DB de producción
 # 2. Arrancar el servidor

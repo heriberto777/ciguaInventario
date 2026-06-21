@@ -1,0 +1,40 @@
+name: ciguainv-prod
+services:
+  backend:
+    image: ghcr.io/heriberto777/ciguainv-backend:latest
+    container_name: ciguainv-backend
+    restart: always
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: 3981
+      HOST: 0.0.0.0
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+        reservations:
+          memory: 128M
+    expose:
+      - "3981"
+    healthcheck:
+      test: ["CMD", "node", "-e",
+        "require('http').get({host:'127.0.0.1',port:3981,path:'/health'},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+
+  web:
+    image: ghcr.io/heriberto777/ciguainv-web:latest
+    container_name: ciguainv-web
+    restart: always
+    ports:
+      - "8084:80"
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+    depends_on:
+      - backend
