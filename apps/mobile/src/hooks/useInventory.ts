@@ -9,13 +9,13 @@ export interface CountItem {
   itemName: string;
   systemQty: number;
   countedQty?: number;
+  myQty?: number | null;
   version: number;
   packQty: number;
   uom: string;
   baseUom: string;
   costPrice?: number;
   salePrice?: number;
-  // Clasificación
   category?: string;
   subcategory?: string;
   brand?: string;
@@ -24,6 +24,8 @@ export interface CountItem {
   status: 'PENDING' | 'COMPLETED' | 'IN_PROGRESS';
   hasVariance: boolean;
   reservedQty?: number;
+  reservedInAisle?: number;
+  reservedSeparated?: number;
 }
 
 export interface InventoryCount {

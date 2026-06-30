@@ -34,7 +34,7 @@ export class InventoryController {
             include: { warehouse: true }
         });
 
-        reply.send(counts.map((c: any) => this.maskCountData(c, user.permissions)));
+        reply.send(counts.map((c: any) => this.maskCountData(c, user.permissions, user.id)));
     }
 
     async createCount(request: FastifyRequest, reply: FastifyReply) {
@@ -49,7 +49,7 @@ export class InventoryController {
             user.id
         );
 
-        reply.code(201).send(this.maskCountData(count, user.permissions));
+        reply.code(201).send(this.maskCountData(count, user.permissions, user.id));
     }
 
     async getCount(request: FastifyRequest, reply: FastifyReply) {
@@ -61,7 +61,7 @@ export class InventoryController {
             throw new AppError(404, 'Conteo no encontrado');
         }
 
-        reply.send(this.maskCountData(count, user.permissions));
+        reply.send(this.maskCountData(count, user.permissions, user.id));
     }
 
     async deleteCount(request: FastifyRequest, reply: FastifyReply) {
@@ -78,56 +78,56 @@ export class InventoryController {
         const user = (request as any).user;
         const { id } = request.params as { id: string };
         const result = await this.countStateService.startInventoryCount(id, user.companyId, user.id);
-        reply.send(this.maskCountData(result, user.permissions));
+        reply.send(this.maskCountData(result, user.permissions, user.id));
     }
 
     async completeCount(request: FastifyRequest, reply: FastifyReply) {
         const user = (request as any).user;
         const { id } = request.params as { id: string };
         const result = await this.countStateService.completeInventoryCount(id, user.companyId, user.id);
-        reply.send(this.maskCountData(result, user.permissions));
+        reply.send(this.maskCountData(result, user.permissions, user.id));
     }
 
     async pauseCount(request: FastifyRequest, reply: FastifyReply) {
         const user = (request as any).user;
         const { id } = request.params as { id: string };
         const result = await this.countStateService.pauseInventoryCount(id, user.companyId);
-        reply.send(this.maskCountData(result, user.permissions));
+        reply.send(this.maskCountData(result, user.permissions, user.id));
     }
 
     async resumeCount(request: FastifyRequest, reply: FastifyReply) {
         const user = (request as any).user;
         const { id } = request.params as { id: string };
         const result = await this.countStateService.resumeInventoryCount(id, user.companyId);
-        reply.send(this.maskCountData(result, user.permissions));
+        reply.send(this.maskCountData(result, user.permissions, user.id));
     }
 
     async finalizeCount(request: FastifyRequest, reply: FastifyReply) {
         const user = (request as any).user;
         const { id } = request.params as { id: string };
         const result = await this.countStateService.finalizePhysicalCount(id, user.companyId, user.id);
-        reply.send(this.maskCountData(result, user.permissions));
+        reply.send(this.maskCountData(result, user.permissions, user.id));
     }
 
     async reactivateCount(request: FastifyRequest, reply: FastifyReply) {
         const user = (request as any).user;
         const { id } = request.params as { id: string };
         const result = await this.countStateService.reactivateInventoryCount(id, user.companyId, user.id);
-        reply.send(this.maskCountData(result, user.permissions));
+        reply.send(this.maskCountData(result, user.permissions, user.id));
     }
 
     async closeCount(request: FastifyRequest, reply: FastifyReply) {
         const user = (request as any).user;
         const { id } = request.params as { id: string };
         const result = await this.countStateService.closeInventoryCount(id, user.companyId, user.id);
-        reply.send(this.maskCountData(result, user.permissions));
+        reply.send(this.maskCountData(result, user.permissions, user.id));
     }
 
     async cancelCount(request: FastifyRequest, reply: FastifyReply) {
         const user = (request as any).user;
         const { id } = request.params as { id: string };
         const result = await this.countStateService.cancelInventoryCount(id, user.companyId, user.id);
-        reply.send(this.maskCountData(result, user.permissions));
+        reply.send(this.maskCountData(result, user.permissions, user.id));
     }
 
     // ── ERP Integration ──────────────────────────────────────────────────────
@@ -326,7 +326,7 @@ export class InventoryController {
         const item = await this.repository.findItemById(itemId);
         if (!item || item.countId !== id) throw new AppError(404, 'Item no encontrado');
 
-        const result = await this.repository.updateItemCount(itemId, body);
+        const result = await this.repository.updateItemCount(itemId, body, user.id);
         reply.send(result);
     }
 
@@ -343,9 +343,9 @@ export class InventoryController {
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    private maskCountData(count: any, permissions: string[] = []) {
+    private maskCountData(count: any, permissions: string[] = [], userId?: string) {
         if (!count) return null;
-        
+
         const canViewAll = permissions.includes('inv_counts:view_all') || permissions.includes('admin');
         const canViewQty = canViewAll || permissions.includes('inventory:view_qty');
         const canViewVariances = canViewAll || permissions.includes('inventory:view_variances');
@@ -393,11 +393,19 @@ export class InventoryController {
                     ?? (provCode ? reservedInAisleMap.get(provCode) ?? 0 : 0);
                 newItem.reservedSeparated = reservedSeparatedMap.get(code)
                     ?? (provCode ? reservedSeparatedMap.get(provCode) ?? 0 : 0);
-                
+
+                // Contribución del usuario actual — para pre-llenar el formulario del móvil
+                // sin que vea el total de otros equipos como si fuera su propio conteo.
+                if (userId && newItem.contributions) {
+                    const mine = newItem.contributions.find((c: any) => c.userId === userId);
+                    newItem.myQty = mine ? Number(mine.qty) : null;
+                }
+                delete newItem.contributions;
+
                 if (!canViewQty) {
                     delete newItem.systemQty;
                 }
-                
+
                 if (!canViewVariances) {
                     delete newItem.variance;
                     delete newItem.variancePercent;

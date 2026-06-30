@@ -50,8 +50,11 @@ function getItemRowColor(item: CountItem): string {
 
 function getVariance(item: CountItem): number | null {
   if (item.countedQty == null) return null;
-  const reserved = item.reservedQty || 0;
-  return item.countedQty - (item.systemQty - reserved);
+  // expectedStock = systemQty - SEPARATED + IN_AISLE
+  const separated = item.reservedSeparated ?? item.reservedQty ?? 0;
+  const inAisle = item.reservedInAisle ?? 0;
+  const expectedStock = item.systemQty - separated + inAisle;
+  return item.countedQty - expectedStock;
 }
 
 function formatVariance(v: number | null): string {
@@ -207,7 +210,9 @@ const ItemCountForm = React.memo(({
     );
   }
 
-  const systemQtyEff = selectedItem.systemQty - (selectedItem.reservedQty || 0);
+  const separated = selectedItem.reservedSeparated ?? selectedItem.reservedQty ?? 0;
+  const inAisle = selectedItem.reservedInAisle ?? 0;
+  const systemQtyEff = selectedItem.systemQty - separated + inAisle;
   const diff = totalUnidades() - systemQtyEff;
 
   return (
@@ -310,6 +315,118 @@ const ItemCountForm = React.memo(({
 });
 
 // ─────────────────────────────────────────────
+// Panel de resultado de escaneo (inline, bajo la barra de búsqueda)
+// ─────────────────────────────────────────────
+
+interface ScanResultPanelProps {
+  item: CountItem;
+  boxesQty: string;
+  unitsQty: string;
+  onBoxesChange: (v: string) => void;
+  onUnitsChange: (v: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+  isSaving: boolean;
+  canEditQuantity: boolean;
+  hasSystemView: boolean;
+}
+
+const ScanResultPanel = React.memo(({
+  item,
+  boxesQty,
+  unitsQty,
+  onBoxesChange,
+  onUnitsChange,
+  onSave,
+  onCancel,
+  isSaving,
+  canEditQuantity,
+  hasSystemView,
+}: ScanResultPanelProps) => {
+  const pack = item.packQty || 1;
+  const boxes = parseInt(boxesQty || '0', 10);
+  const loose = parseInt(unitsQty || '0', 10);
+  const total = (isNaN(boxes) ? 0 : boxes) * pack + (isNaN(loose) ? 0 : loose);
+  const separated = item.reservedSeparated ?? item.reservedQty ?? 0;
+  const inAisle = item.reservedInAisle ?? 0;
+  const expectedStock = item.systemQty - separated + inAisle;
+  const diff = total - expectedStock;
+
+  return (
+    <View style={styles.scanPanel}>
+      {/* Encabezado con código, nombre y botón cerrar */}
+      <View style={styles.scanPanelHeader}>
+        <View style={styles.scanPanelInfo}>
+          <Text style={styles.scanPanelCode}>🔖 {item.itemCode}</Text>
+          <Text style={styles.scanPanelName} numberOfLines={1}>{item.itemName}</Text>
+        </View>
+        <TouchableOpacity onPress={onCancel} style={styles.scanPanelClose}>
+          <Text style={styles.scanPanelCloseText}>✕</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Fila de inputs + total */}
+      <View style={styles.scanPanelInputRow}>
+        <View style={styles.scanPanelInputGroup}>
+          <Text style={styles.scanPanelInputLabel}>Cajas ×{pack}</Text>
+          <TextInput
+            style={styles.scanPanelInput}
+            keyboardType="numeric"
+            placeholder="0"
+            value={boxesQty}
+            onChangeText={onBoxesChange}
+            returnKeyType="next"
+            autoFocus
+            selectTextOnFocus
+          />
+        </View>
+
+        <Text style={styles.scanPanelPlus}>+</Text>
+
+        <View style={styles.scanPanelInputGroup}>
+          <Text style={styles.scanPanelInputLabel}>Sueltas ({item.uom})</Text>
+          <TextInput
+            style={styles.scanPanelInput}
+            keyboardType="numeric"
+            placeholder="0"
+            value={unitsQty}
+            onChangeText={onUnitsChange}
+            returnKeyType="done"
+            onSubmitEditing={onSave}
+            selectTextOnFocus
+          />
+        </View>
+
+        <View style={styles.scanPanelTotalGroup}>
+          <Text style={styles.scanPanelInputLabel}>Total</Text>
+          <Text style={styles.scanPanelTotal}>{total}</Text>
+          {hasSystemView && (
+            <Text style={[
+              styles.scanPanelDiff,
+              diff === 0 ? styles.varianceZero : (diff < 0 ? styles.varianceNeg : styles.variancePos)
+            ]}>
+              {diff === 0 ? '✓' : formatVariance(diff)}
+            </Text>
+          )}
+        </View>
+      </View>
+
+      {/* Botón guardar */}
+      <TouchableOpacity
+        style={[styles.scanPanelSaveBtn, (!canEditQuantity || isSaving) && styles.saveBtnDisabled]}
+        onPress={onSave}
+        disabled={!canEditQuantity || isSaving}
+      >
+        {isSaving
+          ? <ActivityIndicator color="#fff" size="small" />
+          : <Text style={styles.saveBtnText}>💾 Guardar</Text>
+        }
+      </TouchableOpacity>
+    </View>
+  );
+});
+
+// ─────────────────────────────────────────────
 // Componente Principal
 // ─────────────────────────────────────────────
 export default function CountDetailScreen() {
@@ -323,9 +440,17 @@ export default function CountDetailScreen() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
+
+  // Estados para el modal/form del item seleccionado desde la lista
   const [selectedItem, setSelectedItem] = useState<CountItem | null>(null);
   const [boxesQty, setBoxesQty] = useState('');
   const [unitsQty, setUnitsQty] = useState('');
+
+  // Estados para el panel inline del item escaneado por código de barras
+  const [scannedItem, setScannedItem] = useState<CountItem | null>(null);
+  const [scanBoxesQty, setScanBoxesQty] = useState('');
+  const [scanUnitsQty, setScanUnitsQty] = useState('');
+
   const [refreshing, setRefreshing] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [filterCategory, setFilterCategory] = useState('');
@@ -343,16 +468,26 @@ export default function CountDetailScreen() {
 
   const searchInputRef = useRef<TextInput>(null);
 
+  // ── Focus helpers ────────────────────────────────────────────────────────
+
+  const focusSearch = useCallback(() => {
+    setTimeout(() => searchInputRef.current?.focus(), 150);
+  }, []);
+
+  // Restaurar focus al entrar a la pantalla (navegación o volver)
   useFocusEffect(
     useCallback(() => {
       offlineSync.getClassifications().then(setGlobalClassifications);
       offlineSync.syncGlobalClassifications().then(() => {
         offlineSync.getClassifications().then(setGlobalClassifications);
       });
+      // Dar tiempo al layout para que monte antes de hacer focus
+      setTimeout(() => searchInputRef.current?.focus(), 350);
     }, [])
   );
 
-  // handlers estables
+  // ── Handlers del modal (item seleccionado desde la lista) ────────────────
+
   const handleBoxesChange = useCallback((value: string) => setBoxesQty(value), []);
   const handleUnitsChange = useCallback((value: string) => setUnitsQty(value), []);
 
@@ -360,8 +495,8 @@ export default function CountDetailScreen() {
     setSelectedItem(null);
     setBoxesQty('');
     setUnitsQty('');
-    setTimeout(() => searchInputRef.current?.focus(), 200);
-  }, []);
+    focusSearch();
+  }, [focusSearch]);
 
   const handleSaveCount = useCallback(async () => {
     if (!selectedItem) return;
@@ -371,7 +506,9 @@ export default function CountDetailScreen() {
     const finalQty = (boxes * pack) + units;
 
     if (isNaN(finalQty) || finalQty < 0) {
-      Alert.alert('Error', 'Cantidad inválida');
+      Alert.alert('Error', 'Cantidad inválida', [
+        { text: 'OK', onPress: focusSearch }
+      ]);
       return;
     }
 
@@ -384,35 +521,80 @@ export default function CountDetailScreen() {
       closeModal();
       await refetch();
     } catch {
-      Alert.alert('Error', 'No se pudo guardar');
+      Alert.alert('Error', 'No se pudo guardar', [
+        { text: 'OK', onPress: focusSearch }
+      ]);
     }
-  }, [selectedItem, boxesQty, unitsQty, countId, updateMutation, closeModal, refetch]);
+  }, [selectedItem, boxesQty, unitsQty, countId, updateMutation, closeModal, refetch, focusSearch]);
 
   const openItemModal = useCallback((item: CountItem) => {
+    setScannedItem(null); // Cerrar panel de escaneo si estaba abierto
     setSelectedItem(item);
     const pack = item.packQty || 1;
-    if (item.countedQty != null) {
-      setBoxesQty(String(Math.floor(item.countedQty / pack)));
-      setUnitsQty(String(item.countedQty % pack));
+    const refQty = item.myQty ?? null;
+    if (refQty != null) {
+      setBoxesQty(String(Math.floor(refQty / pack)));
+      setUnitsQty(String(refQty % pack));
     } else {
       setBoxesQty('');
       setUnitsQty('');
     }
   }, []);
 
-  // Sincronizar cantidades al cambiar item (especialmente para Tablet)
+  // Sincronizar cantidades al cambiar item seleccionado (tablet)
   useEffect(() => {
     if (isTablet && selectedItem) {
       const pack = selectedItem.packQty || 1;
-      if (selectedItem.countedQty != null) {
-        setBoxesQty(String(Math.floor(selectedItem.countedQty / pack)));
-        setUnitsQty(String(selectedItem.countedQty % pack));
+      const refQty = selectedItem.myQty ?? null;
+      if (refQty != null) {
+        setBoxesQty(String(Math.floor(refQty / pack)));
+        setUnitsQty(String(refQty % pack));
       } else {
         setBoxesQty('');
         setUnitsQty('');
       }
     }
   }, [selectedItem, isTablet]);
+
+  // ── Handlers del panel de escaneo (inline) ──────────────────────────────
+
+  const clearScan = useCallback(() => {
+    setScannedItem(null);
+    setScanBoxesQty('');
+    setScanUnitsQty('');
+    focusSearch();
+  }, [focusSearch]);
+
+  const handleSaveScan = useCallback(async () => {
+    if (!scannedItem) return;
+    const pack = scannedItem.packQty || 1;
+    const boxes = parseInt(scanBoxesQty || '0', 10);
+    const units = parseInt(scanUnitsQty || '0', 10);
+    const finalQty = (boxes * pack) + units;
+
+    if (isNaN(finalQty) || finalQty < 0) {
+      Alert.alert('Error', 'Cantidad inválida', [
+        { text: 'OK', onPress: focusSearch }
+      ]);
+      return;
+    }
+
+    try {
+      await updateMutation.mutateAsync({
+        countId: countId!,
+        itemId: scannedItem.id,
+        countedQty: finalQty,
+      });
+      clearScan();
+      await refetch();
+    } catch {
+      Alert.alert('Error', 'No se pudo guardar', [
+        { text: 'OK', onPress: focusSearch }
+      ]);
+    }
+  }, [scannedItem, scanBoxesQty, scanUnitsQty, countId, updateMutation, clearScan, refetch, focusSearch]);
+
+  // ── Búsqueda por código de barras ────────────────────────────────────────
 
   const handleBarcodeSearch = useCallback((code: string) => {
     const trimmed = code.trim();
@@ -424,12 +606,26 @@ export default function CountDetailScreen() {
     );
 
     if (found) {
-      openItemModal(found);
+      // Cerrar el modal si estaba abierto y mostrar el panel inline
+      setSelectedItem(null);
+      // Pre-llenar con la contribución propia del usuario (no el total)
+      const pack = found.packQty || 1;
+      const refQty = found.myQty ?? null;
+      if (refQty != null) {
+        setScanBoxesQty(String(Math.floor(refQty / pack)));
+        setScanUnitsQty(String(refQty % pack));
+      } else {
+        setScanBoxesQty('');
+        setScanUnitsQty('');
+      }
+      setScannedItem(found);
       setSearchQuery('');
     } else if (trimmed.length > 3) {
-      Alert.alert('No encontrado', `Código "${trimmed}" inexistente`);
+      Alert.alert('No encontrado', `Código "${trimmed}" no existe en este conteo`, [
+        { text: 'OK', onPress: focusSearch }
+      ]);
     }
-  }, [countData, isTablet, openItemModal]);
+  }, [countData, focusSearch]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -439,19 +635,24 @@ export default function CountDetailScreen() {
 
   const handleComplete = useCallback(() => {
     Alert.alert('Completar', '¿Confirmas completar el conteo?', [
-      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Cancelar', style: 'cancel', onPress: focusSearch },
       {
         text: 'Completar', onPress: async () => {
           try {
             await completeMutation.mutateAsync(countId!);
             refetch();
-          } catch { Alert.alert('Error', 'No se pudo completar'); }
+          } catch {
+            Alert.alert('Error', 'No se pudo completar', [
+              { text: 'OK', onPress: focusSearch }
+            ]);
+          }
         }
       }
     ]);
-  }, [countId, completeMutation, refetch]);
+  }, [countId, completeMutation, refetch, focusSearch]);
 
-  // filtrado de datos
+  // ── Filtrado de datos ────────────────────────────────────────────────────
+
   const allItems = countData?.countItems ?? [];
   const filteredItems = allItems.filter(item => {
     const q = searchQuery.toLowerCase();
@@ -474,9 +675,9 @@ export default function CountDetailScreen() {
     return [...new Set(loc)].map(s => ({ value: s, label: s }));
   };
 
-  const categoriesOptions = getUniqueOpts(globalClassifications.filter(c => c.groupType === 'CATEGORY'), allItems.map(i => i.category).filter(Boolean));
-  const subcatsOptions = getUniqueOpts(globalClassifications.filter(c => c.groupType === 'SUBCATEGORY'), allItems.map(i => i.subcategory).filter(Boolean));
-  const brandsOptions = getUniqueOpts(globalClassifications.filter(c => c.groupType === 'BRAND'), allItems.map(i => i.brand).filter(Boolean));
+  const categoriesOptions = getUniqueOpts(globalClassifications.filter(c => c.groupType === 'CATEGORY'), allItems.map(i => i.category).filter(Boolean) as string[]);
+  const subcatsOptions = getUniqueOpts(globalClassifications.filter(c => c.groupType === 'SUBCATEGORY'), allItems.map(i => i.subcategory).filter(Boolean) as string[]);
+  const brandsOptions = getUniqueOpts(globalClassifications.filter(c => c.groupType === 'BRAND'), allItems.map(i => i.brand).filter(Boolean) as string[]);
 
   if (isLoading) return <View style={styles.centered}><ActivityIndicator size="large" color="#3b82f6" /></View>;
   if (isError || !countData) return <View style={styles.centered}><Text style={styles.errorText}>Error cargando conteo</Text></View>;
@@ -487,6 +688,8 @@ export default function CountDetailScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }} edges={['top']}>
       <View style={{ flex: 1, backgroundColor: '#f3f4f6' }}>
+
+        {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}><Text style={styles.backBtnText}>←</Text></TouchableOpacity>
           <View style={styles.headerCenter}>
@@ -500,6 +703,7 @@ export default function CountDetailScreen() {
           )}
         </View>
 
+        {/* Estadísticas */}
         <View style={styles.statsContainer}>
           <StatCard label="Total" value={stats.total} icon="📋" color="#3b82f6" />
           <StatCard label="Contados" value={stats.counted} icon="✅" color="#10b981" />
@@ -507,7 +711,11 @@ export default function CountDetailScreen() {
         </View>
 
         <View style={isTablet ? { flex: 1, flexDirection: 'row' } : { flex: 1 }}>
+
+          {/* Panel izquierdo: búsqueda + panel escaneo + filtros + lista */}
           <View style={isTablet ? { width: masterWidth, borderRightWidth: 1, borderRightColor: '#e5e7eb' } : { flex: 1 }}>
+
+            {/* Barra de búsqueda */}
             <View style={styles.searchContainer}>
               <View style={styles.searchWrapper}>
                 <Text style={styles.searchIcon}>🔍</Text>
@@ -521,11 +729,34 @@ export default function CountDetailScreen() {
                   autoCorrect={false}
                   autoCapitalize="characters"
                 />
-                {searchQuery.length > 0 && <TouchableOpacity onPress={() => setSearchQuery('')}><Text style={styles.clearSearch}>✕</Text></TouchableOpacity>}
-                <TouchableOpacity onPress={() => setIsVisualScanning(true)} style={styles.cameraToggle}><Text style={{ fontSize: 18 }}>📷</Text></TouchableOpacity>
+                {searchQuery.length > 0 && (
+                  <TouchableOpacity onPress={() => { setSearchQuery(''); focusSearch(); }}>
+                    <Text style={styles.clearSearch}>✕</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity onPress={() => setIsVisualScanning(true)} style={styles.cameraToggle}>
+                  <Text style={{ fontSize: 18 }}>📷</Text>
+                </TouchableOpacity>
               </View>
             </View>
 
+            {/* Panel inline de resultado de escaneo */}
+            {scannedItem && (
+              <ScanResultPanel
+                item={scannedItem}
+                boxesQty={scanBoxesQty}
+                unitsQty={scanUnitsQty}
+                onBoxesChange={setScanBoxesQty}
+                onUnitsChange={setScanUnitsQty}
+                onSave={handleSaveScan}
+                onCancel={clearScan}
+                isSaving={updateMutation.isLoading}
+                canEditQuantity={canEditQuantity}
+                hasSystemView={hasSystemView}
+              />
+            )}
+
+            {/* Filtros por tipo */}
             <View style={[styles.filterRowContainer, { height: isTablet ? 72 : 56 }]}>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
                 <FilterTab label="Todos" icon="📋" active={activeFilter === 'all'} count={allItems.length} onPress={() => setActiveFilter('all')} isTablet={isTablet} />
@@ -535,6 +766,7 @@ export default function CountDetailScreen() {
               </ScrollView>
             </View>
 
+            {/* Filtros de clasificación */}
             {showFilters && (
               <View style={styles.classFiltersPanel}>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
@@ -555,14 +787,22 @@ export default function CountDetailScreen() {
               </View>
             )}
 
+            {/* Lista de artículos */}
             <FlatList
               data={filteredItems}
               keyExtractor={item => item.id}
               contentContainerStyle={styles.listContent}
+              keyboardShouldPersistTaps="handled"
               refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
               renderItem={({ item }) => (
                 <TouchableOpacity
-                  style={[styles.itemRow, { backgroundColor: getItemRowColor(item) }, !isActive && { opacity: 0.6 }, selectedItem?.id === item.id && isTablet && styles.itemRowSelected]}
+                  style={[
+                    styles.itemRow,
+                    { backgroundColor: getItemRowColor(item) },
+                    !isActive && { opacity: 0.6 },
+                    selectedItem?.id === item.id && isTablet && styles.itemRowSelected,
+                    scannedItem?.id === item.id && styles.itemRowScanned,
+                  ]}
                   onPress={() => isActive && (isTablet ? setSelectedItem(item) : openItemModal(item))}
                   activeOpacity={0.7}
                 >
@@ -584,6 +824,7 @@ export default function CountDetailScreen() {
             />
           </View>
 
+          {/* Panel derecho (tablet): formulario de item seleccionado desde la lista */}
           {isTablet && (
             <View style={{ flex: 1, backgroundColor: '#fff' }}>
               <ItemCountForm
@@ -603,6 +844,7 @@ export default function CountDetailScreen() {
           )}
         </View>
 
+        {/* Modal de conteo (teléfono: item seleccionado desde la lista) */}
         <Modal visible={selectedItem != null && !isTablet} animationType="slide" transparent>
           <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
             <View style={styles.modalContainer}>
@@ -630,17 +872,28 @@ export default function CountDetailScreen() {
           </KeyboardAvoidingView>
         </Modal>
 
+        {/* Scanner visual por cámara */}
         {isVisualScanning && (
           <BarcodeScanner
-            onBarcodeScan={(code: string) => { setIsVisualScanning(false); handleBarcodeSearch(code); }}
-            onClose={() => setIsVisualScanning(false)}
+            onBarcodeScan={(code: string) => {
+              setIsVisualScanning(false);
+              handleBarcodeSearch(code);
+            }}
+            onClose={() => {
+              setIsVisualScanning(false);
+              focusSearch();
+            }}
           />
         )}
 
+        {/* Modal de reservas */}
         {showReserveModal && countId && (
           <InvoiceReserveModal
             visible={showReserveModal}
-            onClose={() => setShowReserveModal(false)}
+            onClose={() => {
+              setShowReserveModal(false);
+              focusSearch();
+            }}
             countId={countId}
           />
         )}
@@ -666,12 +919,31 @@ const styles = StyleSheet.create({
   statIconContainer: { width: 32, height: 32, borderRadius: 6, justifyContent: 'center', alignItems: 'center' },
   statValue: { fontSize: 16, fontWeight: 'bold' },
   statLabel: { fontSize: 9, color: '#6b7280' },
+  // Barra de búsqueda
   searchContainer: { backgroundColor: '#fff', padding: 12 },
   searchWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f3f4f6', borderRadius: 10, paddingHorizontal: 12, height: 44, gap: 8 },
   searchIcon: { fontSize: 14 },
   searchInput: { flex: 1, fontSize: 16 },
   clearSearch: { fontSize: 14, color: '#9ca3af' },
   cameraToggle: { padding: 4 },
+  // Panel de escaneo inline
+  scanPanel: { backgroundColor: '#fffbeb', borderBottomWidth: 2, borderBottomColor: '#f59e0b', padding: 12, gap: 10 },
+  scanPanelHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  scanPanelInfo: { flex: 1 },
+  scanPanelCode: { fontSize: 14, fontWeight: 'bold', color: '#1f2937' },
+  scanPanelName: { fontSize: 12, color: '#6b7280' },
+  scanPanelClose: { padding: 6, backgroundColor: '#fef3c7', borderRadius: 14 },
+  scanPanelCloseText: { fontSize: 13, color: '#92400e', fontWeight: 'bold' },
+  scanPanelInputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
+  scanPanelInputGroup: { flex: 1, gap: 3 },
+  scanPanelInputLabel: { fontSize: 10, color: '#6b7280', fontWeight: '600', textAlign: 'center' },
+  scanPanelInput: { height: 46, borderWidth: 1.5, borderColor: '#f59e0b', borderRadius: 8, fontSize: 20, fontWeight: 'bold', textAlign: 'center', backgroundColor: '#fff' },
+  scanPanelPlus: { fontSize: 18, color: '#9ca3af', paddingBottom: 12 },
+  scanPanelTotalGroup: { alignItems: 'center', minWidth: 52, paddingBottom: 4, gap: 2 },
+  scanPanelTotal: { fontSize: 24, fontWeight: 'bold', color: '#1f2937' },
+  scanPanelDiff: { fontSize: 12, fontWeight: 'bold' },
+  scanPanelSaveBtn: { backgroundColor: '#3b82f6', height: 44, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+  // Filtros
   filterRowContainer: { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#e5e7eb' },
   filterRow: { alignItems: 'center', paddingHorizontal: 12, gap: 8 },
   filterTab: { flexDirection: 'row', alignItems: 'center', height: 40, paddingHorizontal: 12, borderRadius: 20, gap: 6 },
@@ -685,9 +957,11 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: '#4f46e5', borderColor: '#4f46e5' },
   chipText: { fontSize: 12, color: '#374151' },
   chipTextActive: { color: '#fff', fontWeight: 'bold' },
+  // Lista
   listContent: { paddingVertical: 8 },
   itemRow: { flexDirection: 'row', padding: 12, borderBottomWidth: 0.5, borderBottomColor: '#e5e7eb', gap: 8 },
   itemRowSelected: { borderLeftWidth: 4, borderLeftColor: '#3b82f6', backgroundColor: '#eff6ff' },
+  itemRowScanned: { borderLeftWidth: 4, borderLeftColor: '#f59e0b', backgroundColor: '#fffbeb' },
   itemMain: { flex: 1 },
   itemCode: { fontSize: 14, fontWeight: 'bold' },
   itemName: { fontSize: 12, color: '#6b7280' },
@@ -700,6 +974,8 @@ const styles = StyleSheet.create({
   qtyValueCounted: { color: '#111827' },
   varianceNeg: { color: '#dc2626' },
   variancePos: { color: '#059669' },
+  varianceZero: { color: '#10b981' },
+  // Modal (teléfono)
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalContainer: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '90%' },
   modalHeader: { flexDirection: 'row', padding: 16, borderBottomWidth: 1, borderBottomColor: '#e5e7eb' },

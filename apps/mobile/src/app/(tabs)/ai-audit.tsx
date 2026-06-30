@@ -220,7 +220,7 @@ const styles = StyleSheet.create({
     headerSubtitle: { fontSize: 13, color: '#64748b', fontWeight: '500' },
     scrollContent: { padding: 16 },
     chartsRow: { flexDirection: 'row', gap: 12, marginBottom: 20 },
-    chartCard: { flex: 1, backgroundColor: '#fff', borderRadius: 20, padding: 16, borderSize: 1, borderColor: '#e2e8f0', shadowColor: '#000', shadowOpacity: 0.05, elevation: 2 },
+    chartCard: { flex: 1, backgroundColor: '#fff', borderRadius: 20, padding: 16, borderWidth: 1, borderColor: '#e2e8f0', shadowColor: '#000', shadowOpacity: 0.05, elevation: 2 },
     chartLabel: { fontSize: 10, fontWeight: '900', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 15, letterSpacing: 1 },
     barChartContainer: { height: 80, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 4 },
     barWrapper: { flex: 1, alignItems: 'center' },

@@ -11,7 +11,8 @@ export interface InventoryRepository {
   findItemById(id: string): Promise<any>;
   findItemsByCountId(countId: string): Promise<any[]>;
   getCountItemsWithLocation(countId: string): Promise<any[]>;
-  updateItemCount(itemId: string, data: any): Promise<any>;
+  updateItemCount(itemId: string, data: any, userId?: string): Promise<any>;
+  getContributionsByItemId(itemId: string): Promise<any[]>;
   createInventoryCountItem(data: any): Promise<any>;
   upsertInventoryCountItem(countId: string, locationId: string, itemCode: string, version: number, data: any): Promise<any>;
   deleteItemsByCountId(countId: string): Promise<any>;
@@ -61,11 +62,11 @@ export class PrismaInventoryRepository implements InventoryRepository {
     
     return await this.prisma.inventoryCount.findUnique({
       where: { id },
-      include: { 
+      include: {
         warehouse: true,
         countItems: {
           where: { version: count?.currentVersion || 1 },
-          include: { location: true }
+          include: { location: true, contributions: true }
         },
         reservedInvoices: {
           include: { items: true }
@@ -86,7 +87,10 @@ export class PrismaInventoryRepository implements InventoryRepository {
     return await this.prisma.inventoryCount.findUnique({
       where: { id },
       include: {
-        countItems: { where: versionFilter },
+        countItems: {
+          where: versionFilter,
+          include: { contributions: true }
+        },
         reservedInvoices: {
           include: { items: true }
         }
@@ -181,10 +185,50 @@ export class PrismaInventoryRepository implements InventoryRepository {
     });
   }
 
-  async updateItemCount(itemId: string, data: any) {
+  async updateItemCount(itemId: string, data: any, userId?: string) {
+    const { countedQty, ...otherFields } = data;
+
+    if (userId && countedQty !== undefined) {
+      return await this.prisma.$transaction(async (tx: any) => {
+        // Registrar o actualizar la contribución de este usuario (atómico por unique constraint)
+        await tx.countItemContribution.upsert({
+          where: { itemId_userId: { itemId, userId } },
+          create: { itemId, userId, qty: countedQty },
+          update: { qty: countedQty },
+        });
+
+        // Sumar todas las contribuciones del item
+        const agg = await tx.countItemContribution.aggregate({
+          where: { itemId },
+          _sum: { qty: true },
+        });
+        const totalQty = agg._sum?.qty ?? countedQty;
+
+        // Actualizar el item con la suma y cualquier otro campo (notas, etc.)
+        return await tx.inventoryCount_Item.update({
+          where: { id: itemId },
+          data: {
+            countedQty: totalQty,
+            countedBy: userId,
+            countedAt: new Date(),
+            status: 'COMPLETED',
+            ...otherFields,
+          },
+        });
+      });
+    }
+
+    // Ruta legacy: actualización directa sin tracking por usuario
     return await this.prisma.inventoryCount_Item.update({
       where: { id: itemId },
-      data
+      data,
+    });
+  }
+
+  async getContributionsByItemId(itemId: string) {
+    return await this.prisma.countItemContribution.findMany({
+      where: { itemId },
+      orderBy: { countedAt: 'asc' },
     });
   }
 
