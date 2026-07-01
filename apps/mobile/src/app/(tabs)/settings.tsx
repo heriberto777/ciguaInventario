@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   ScrollView,
   TouchableOpacity,
-  TextInput,
   StyleSheet,
   Switch,
   ActivityIndicator,
@@ -14,40 +13,31 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { offlineSync } from '@/services/offline-sync';
+import { getApiBaseUrl } from '@/services/serverConfig';
 
 export default function SettingsScreen() {
-  const [apiUrl, setApiUrl] = useState('http://10.0.11.49:3000/api');
+  const [serverUrl, setServerUrl] = useState<string | null>(null);
   const [autoSync, setAutoSync] = useState(true);
   const [userEmail, setUserEmail] = useState('');
   const [pendingSyncs, setPendingSyncs] = useState(0);
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
-  const [permissions, setPermissions] = useState<string[]>([]);
-  const [roles, setRoles] = useState<string[]>([]);
   const router = useRouter();
 
   useFocusEffect(
     React.useCallback(() => {
       loadSettings();
       checkPendingSyncs();
-      loadPermissions();
     }, [])
   );
 
-  const loadPermissions = async () => {
-    const p = await AsyncStorage.getItem('user_permissions');
-    const r = await AsyncStorage.getItem('user_roles');
-    if (p) try { setPermissions(JSON.parse(p)); } catch { setPermissions([]); }
-    if (r) try { setRoles(JSON.parse(r)); } catch { setRoles([]); }
-  };
-
   const loadSettings = async () => {
-    const savedUrl = await AsyncStorage.getItem('api_url');
+    const url = await getApiBaseUrl();
     const savedEmail = await AsyncStorage.getItem('user_email');
     const savedAutoSync = await AsyncStorage.getItem('auto_sync');
     const lastSync = await AsyncStorage.getItem('last_sync_time');
 
-    if (savedUrl) setApiUrl(savedUrl);
+    setServerUrl(url);
     if (savedEmail) setUserEmail(savedEmail);
     if (savedAutoSync !== null) setAutoSync(JSON.parse(savedAutoSync));
     if (lastSync) setLastSyncTime(lastSync);
@@ -101,10 +91,9 @@ export default function SettingsScreen() {
     );
   };
 
-  const handleSaveSettings = async () => {
-    await AsyncStorage.setItem('api_url', apiUrl);
-    await AsyncStorage.setItem('auto_sync', JSON.stringify(autoSync));
-    Alert.alert('Configuración', 'Configuración guardada');
+  const handleSaveAutoSync = async (value: boolean) => {
+    setAutoSync(value);
+    await AsyncStorage.setItem('auto_sync', JSON.stringify(value));
   };
 
   const handleLogout = async () => {
@@ -113,26 +102,24 @@ export default function SettingsScreen() {
     router.replace('/auth/login');
   };
 
-  const canEditUrl = roles.includes('SuperAdmin') || roles.includes('Admin') || permissions.includes('inventory:edit_settings');
-
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Información del Servidor</Text>
-
-          <View style={styles.settingGroup}>
-            <Text style={styles.label}>URL del API</Text>
-            <TextInput
-              style={[styles.input, !canEditUrl && styles.inputDisabled]}
-              placeholder="http://10.0.11.49:3000/api"
-              value={apiUrl}
-              onChangeText={setApiUrl}
-              editable={canEditUrl}
-            />
-            <Text style={styles.helperText}>
-              URL base del servidor backend
-            </Text>
+          <Text style={styles.sectionTitle}>Servidor</Text>
+          <View style={styles.serverRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.label}>URL del API</Text>
+              <Text style={[styles.serverUrlText, !serverUrl && styles.serverUrlEmpty]}>
+                {serverUrl || 'No configurado'}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.editServerBtn}
+              onPress={() => router.push('/auth/server-setup')}
+            >
+              <Text style={styles.editServerBtnText}>⚙️ Cambiar</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -152,7 +139,7 @@ export default function SettingsScreen() {
             <Text style={styles.label}>Sincronización Automática</Text>
             <Switch
               value={autoSync}
-              onValueChange={setAutoSync}
+              onValueChange={handleSaveAutoSync}
               trackColor={{ false: '#d1d5db', true: '#a3e635' }}
               thumbColor={autoSync ? '#65a30d' : '#f3f4f6'}
             />
@@ -191,13 +178,6 @@ export default function SettingsScreen() {
         </View>
 
         <TouchableOpacity
-          style={styles.button}
-          onPress={handleSaveSettings}
-        >
-          <Text style={styles.buttonText}>Guardar Configuración</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
           style={[styles.button, styles.logoutButton]}
           onPress={handleLogout}
         >
@@ -234,6 +214,34 @@ const styles = StyleSheet.create({
   settingGroup: {
     marginBottom: 16,
   },
+  serverRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  serverUrlText: {
+    fontSize: 13,
+    color: '#1f2937',
+    fontWeight: '500',
+    paddingVertical: 4,
+  },
+  serverUrlEmpty: {
+    color: '#ef4444',
+    fontStyle: 'italic',
+  },
+  editServerBtn: {
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  editServerBtnText: {
+    color: '#2563eb',
+    fontSize: 13,
+    fontWeight: '600',
+  },
   switchGroup: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -245,21 +253,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#374151',
     marginBottom: 8,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    color: '#1f2937',
-    backgroundColor: '#f9fafb',
-  },
-  inputDisabled: {
-    backgroundColor: '#f3f4f6',
-    color: '#9ca3af',
-    borderColor: '#e5e7eb',
   },
   userEmail: {
     fontSize: 14,
