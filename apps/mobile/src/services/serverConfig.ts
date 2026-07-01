@@ -31,7 +31,12 @@ export function buildApiUrl(config: ServerConfig): string {
     const host = config.host.trim();
     const port = config.port.trim();
     const path = config.apiPath.startsWith('/') ? config.apiPath : `/${config.apiPath}`;
-    return `${config.protocol}://${host}:${port}${path}`;
+    const isStandardPort =
+        (config.protocol === 'http' && port === '80') ||
+        (config.protocol === 'https' && port === '443') ||
+        port === '';
+    const portStr = isStandardPort ? '' : `:${port}`;
+    return `${config.protocol}://${host}${portStr}${path}`;
 }
 
 export async function getServerConfig(): Promise<ServerConfig | null> {
