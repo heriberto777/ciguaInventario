@@ -14,8 +14,7 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useListInventoryCounts, InventoryCount } from '@/hooks/useInventory';
 import { useResponsive } from '@/hooks/useResponsive';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getApiBaseUrl } from '@/services/serverConfig';
+import { getApiClient } from '@/services/api';
 
 export default function ReportsScreen() {
     const router = useRouter();
@@ -31,7 +30,7 @@ export default function ReportsScreen() {
 
     // Filtrar conteos: Activos para monitoreo, y Completados para resultados
     const monitorCounts = allCounts.filter(count =>
-        ['ACTIVE', 'SUBMITTED', 'PAUSED'].includes(count.status)
+        ['ACTIVE', 'SUBMITTED', 'ON_HOLD'].includes(count.status)
     ).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 
     const finishedCounts = allCounts.filter(count =>
@@ -48,20 +47,13 @@ export default function ReportsScreen() {
         setSelectedReport(count);
         setLoadingDetails(true);
         try {
-            const baseUrl = await getApiBaseUrl();
-            const token = await AsyncStorage.getItem('auth_token');
-
+            const apiClient = getApiClient();
             const [detailsRes, summaryRes] = await Promise.all([
-                fetch(`${baseUrl}/reports/${count.id}/physical-inventory`, { headers: { 'Authorization': `Bearer ${token}` } }),
-                fetch(`${baseUrl}/reports/${count.id}/variance-summary`, { headers: { 'Authorization': `Bearer ${token}` } })
+                apiClient.get(`/reports/${count.id}/physical-inventory`),
+                apiClient.get(`/reports/${count.id}/variance-summary`),
             ]);
-
-            if (detailsRes.ok && summaryRes.ok) {
-                const detailsData = await detailsRes.json();
-                const summaryData = await summaryRes.json();
-                setReportDetails(detailsData.data || []);
-                setSummary(summaryData.data || null);
-            }
+            setReportDetails(detailsRes.data?.data || []);
+            setSummary(summaryRes.data?.data || null);
         } catch (error) {
             console.error('Error fetching report details:', error);
         } finally {
@@ -123,9 +115,11 @@ export default function ReportsScreen() {
     const getStatusColor = (status: string) => {
         switch (status) {
             case 'ACTIVE': return '#3b82f6';
-            case 'PAUSED': return '#f59e0b';
+            case 'ON_HOLD': return '#f59e0b';
+            case 'SUBMITTED': return '#8b5cf6';
             case 'COMPLETED': return '#10b981';
-            case 'CLOSED': return '#8b5cf6';
+            case 'FINALIZED': return '#10b981';
+            case 'CLOSED': return '#6b7280';
             default: return '#6b7280';
         }
     };

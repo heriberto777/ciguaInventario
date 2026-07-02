@@ -12,7 +12,7 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useListInventoryCounts, InventoryCount } from '@/hooks/useInventory';
-import { initializeApiClient } from '@/services/api';
+import { initializeApiClient, getApiClient } from '@/services/api';
 import { getApiBaseUrl } from '@/services/serverConfig';
 import { offlineSync } from '@/services/offline-sync';
 import { useFocusEffect } from 'expo-router';
@@ -24,7 +24,7 @@ export default function InventoryCountsScreen() {
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
-  const { data: allCounts = [], isLoading, refetch } = useListInventoryCounts();
+  const { data: allCounts = [], isLoading, isError, error, refetch } = useListInventoryCounts();
   const { numColumns, spacing, isTablet } = useResponsive();
   const { hasPermission } = usePermissions();
 
@@ -114,9 +114,36 @@ export default function InventoryCountsScreen() {
   );
 
   if (isLoading) {
+    const currentUrl = getApiClient().defaults.baseURL || '(sin URL)';
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
         <ActivityIndicator size="large" color="#3b82f6" />
+        <Text style={{ marginTop: 12, color: '#6b7280', fontSize: 12, textAlign: 'center', paddingHorizontal: 24 }}>
+          Conectando...{'\n'}{currentUrl}
+        </Text>
+      </View>
+    );
+  }
+
+  if (isError) {
+    const errMsg = (error as any)?.message || 'Error desconocido';
+    const errStatus = (error as any)?.response?.status;
+    const errUrl = (error as any)?.config?.baseURL || (error as any)?.config?.url || '';
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: 24 }]}>
+        <Text style={{ fontSize: 36, marginBottom: 16 }}>⚠️</Text>
+        <Text style={{ fontSize: 16, fontWeight: '700', color: '#dc2626', marginBottom: 8, textAlign: 'center' }}>
+          Error al cargar conteos
+        </Text>
+        {errStatus && <Text style={{ fontSize: 13, color: '#6b7280', marginBottom: 4 }}>Código: {errStatus}</Text>}
+        <Text style={{ fontSize: 13, color: '#374151', marginBottom: 4, textAlign: 'center' }}>{errMsg}</Text>
+        {errUrl ? <Text style={{ fontSize: 11, color: '#9ca3af', marginBottom: 20, textAlign: 'center' }}>URL: {errUrl}</Text> : null}
+        <TouchableOpacity
+          style={{ backgroundColor: '#3b82f6', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8 }}
+          onPress={() => refetch()}
+        >
+          <Text style={{ color: '#fff', fontWeight: '700' }}>🔄 Reintentar</Text>
+        </TouchableOpacity>
       </View>
     );
   }

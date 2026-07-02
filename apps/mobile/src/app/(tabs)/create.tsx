@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCreateCount, useWarehouses, Warehouse } from '@/hooks/useInventory';
 import { initializeApiClient } from '@/services/api';
+import { getApiBaseUrl } from '@/services/serverConfig';
 
 export default function CreateCountScreen() {
   const router = useRouter();
@@ -27,12 +28,12 @@ export default function CreateCountScreen() {
   const createMutation = useCreateCount();
   const { data: warehouses = [], isLoading: loadingWarehouses } = useWarehouses();
 
-  // Inicializar API client si aún no está
   useEffect(() => {
     const initAPI = async () => {
       const token = await AsyncStorage.getItem('auth_token');
-      if (token) {
-        await initializeApiClient('http://10.0.11.49:3000/api');
+      const baseUrl = await getApiBaseUrl();
+      if (token && baseUrl) {
+        await initializeApiClient(baseUrl);
       }
     };
     initAPI();

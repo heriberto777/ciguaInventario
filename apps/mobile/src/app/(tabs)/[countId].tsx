@@ -218,10 +218,12 @@ const ItemCountForm = React.memo(({
   return (
     <View style={isTablet ? styles.splitFormContainer : styles.modalBodyInner}>
       <ScrollView keyboardShouldPersistTaps="handled">
-        <View style={styles.formHeader}>
-          <Text style={styles.formCode}>{selectedItem.itemCode}</Text>
-          <Text style={styles.formName}>{selectedItem.itemName}</Text>
-        </View>
+        {isTablet && (
+          <View style={styles.formHeader}>
+            <Text style={styles.formCode}>{selectedItem.itemCode}</Text>
+            <Text style={styles.formName}>{selectedItem.itemName}</Text>
+          </View>
+        )}
 
         {hasSystemView && (
           <View style={styles.sysInfoCard}>
@@ -684,6 +686,7 @@ export default function CountDetailScreen() {
 
   const stats = computeStats(allItems);
   const isActive = ['ACTIVE', 'DRAFT', 'ON_HOLD'].includes(countData.status);
+  const canComplete = ['ACTIVE', 'ON_HOLD'].includes(countData.status);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }} edges={['top']}>
@@ -696,7 +699,7 @@ export default function CountDetailScreen() {
             <Text style={styles.headerTitle} numberOfLines={1}>{countData.code || `#${countData.sequenceNumber}`}</Text>
             <View style={[styles.statusPill, { backgroundColor: getStatusColor(countData.status) }]}><Text style={styles.statusPillText}>{countData.status}</Text></View>
           </View>
-          {isActive && (
+          {canComplete && (
             <TouchableOpacity style={styles.completeBtn} onPress={handleComplete} disabled={completeMutation.isLoading}>
               {completeMutation.isLoading ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.completeBtnText}>✓ Completar</Text>}
             </TouchableOpacity>
@@ -760,7 +763,7 @@ export default function CountDetailScreen() {
             <View style={[styles.filterRowContainer, { height: isTablet ? 72 : 56 }]}>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
                 <FilterTab label="Todos" icon="📋" active={activeFilter === 'all'} count={allItems.length} onPress={() => setActiveFilter('all')} isTablet={isTablet} />
-                {hasSystemView && <FilterTab label="Varianzas" icon="⚠️" active={activeFilter === 'variance'} count={allItems.filter(i => getVariance(i) !== 0).length} onPress={() => setActiveFilter('variance')} isTablet={isTablet} />}
+                {hasSystemView && <FilterTab label="Varianzas" icon="⚠️" active={activeFilter === 'variance'} count={allItems.filter(i => { const v = getVariance(i); return v !== null && v !== 0; }).length} onPress={() => setActiveFilter('variance')} isTablet={isTablet} />}
                 {(categoriesOptions.length > 0) && <FilterTab label="Filtros" icon="🏷️" active={showFilters} count={([filterCategory, filterSubcat, filterBrand].filter(Boolean).length) || undefined} onPress={() => setShowFilters(!showFilters)} activeBgColor="#4f46e5" isTablet={isTablet} />}
                 {isActive && hasPermission('inv_counts:reserved_invoices') && <FilterTab label="Despachos" icon="📦" active={showReserveModal} onPress={() => setShowReserveModal(true)} activeBgColor="#10b981" isTablet={isTablet} />}
               </ScrollView>

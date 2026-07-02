@@ -32,7 +32,7 @@ export interface InventoryCount {
   id: string;
   sequenceNumber: number;
   code: string;
-  status: 'DRAFT' | 'ACTIVE' | 'ON_HOLD' | 'SUBMITTED' | 'COMPLETED' | 'CANCELLED' | 'CLOSED';
+  status: 'DRAFT' | 'ACTIVE' | 'ON_HOLD' | 'SUBMITTED' | 'COMPLETED' | 'FINALIZED' | 'CANCELLED' | 'CLOSED';
   currentVersion: number;
   countItems: CountItem[];
   createdAt: string;
@@ -53,7 +53,32 @@ export function useInventoryCount(countId: string) {
         );
         const freshData = response.data;
 
-        // Actualizar caché SQLite con datos frescos
+        // Si hay syncs pendientes para este conteo, conservar el myQty local
+        // para los ítems afectados. Evita que el servidor devuelva myQty: null
+        // (antes de que el sync complete) y sobreescriba la cantidad digitada offline.
+        const pendingSyncs = await offlineSync.getPendingSyncs();
+        const pendingItemIds = new Set(
+          pendingSyncs
+            .filter(s => s.countId === countId && s.type === 'update-item' && s.itemId)
+            .map(s => s.itemId as string)
+        );
+
+        if (pendingItemIds.size > 0) {
+          const cached = await offlineSync.getCachedCount(countId);
+          if (cached) {
+            freshData.countItems = freshData.countItems.map(item => {
+              if (pendingItemIds.has(item.id) && (item.myQty == null)) {
+                const cachedItem = cached.countItems.find(ci => ci.id === item.id);
+                if (cachedItem?.myQty != null) {
+                  return { ...item, myQty: cachedItem.myQty };
+                }
+              }
+              return item;
+            });
+          }
+        }
+
+        // Actualizar caché SQLite con datos frescos (ya con myQty preservado si aplica)
         await offlineSync.cacheCount(freshData);
         return freshData;
       } catch (error) {
@@ -99,11 +124,12 @@ export function useUpdateCountItem() {
         // Guardar en cola de sincronización pendiente
         await offlineSync.addPendingSync('update-item', countId, updateData, itemId);
 
-        // Actualizar caché SQLite local para que la UI refleje el cambio de inmediato
+        // Actualizar caché SQLite local: guardar countedQty Y myQty
+        // para que al reabrir el app (sin conexión) el input se pre-llene con la cantidad digitada
         const cached = await offlineSync.getCachedCount(countId);
         if (cached) {
           const updatedItems = cached.countItems.map(item =>
-            item.id === itemId ? { ...item, countedQty } : item
+            item.id === itemId ? { ...item, countedQty, myQty: countedQty } : item
           );
           await offlineSync.cacheCount({ ...cached, countItems: updatedItems });
         }
@@ -119,7 +145,9 @@ export function useUpdateCountItem() {
           queryClient.setQueryData(['inventory-count', countId], {
             ...previousCount,
             countItems: previousCount.countItems.map(item =>
-              item.id === itemId ? { ...item, countedQty } : item
+              // myQty = la contribución de ESTE usuario = lo que acaba de digitar
+              // Esto garantiza que al re-abrir el item (incluso offline) el input se pre-llene
+              item.id === itemId ? { ...item, countedQty, myQty: countedQty } : item
             )
           });
         }
@@ -230,11 +258,26 @@ export function useListInventoryCounts() {
   return useQuery(
     'inventory-counts',
     async () => {
-      const apiClient = getApiClient();
-      const response = await apiClient.get<InventoryCount[]>(
-        '/inventory-counts'
-      );
-      return response.data;
+      try {
+        const apiClient = getApiClient();
+        const response = await apiClient.get<InventoryCount[]>('/inventory-counts');
+        const counts = response.data;
+
+        // Cachear cada conteo en SQLite para disponibilidad offline.
+        // Usamos cacheCountFromList (no cacheCount) para preservar myQty locales
+        // que aún no se han sincronizado — el listado no incluye contributions.
+        for (const count of counts) {
+          offlineSync.cacheCountFromList(count);
+        }
+
+        return counts;
+      } catch (error) {
+        // Offline: devolver conteos guardados en SQLite
+        console.warn('API error in useListInventoryCounts, falling back to cache:', error);
+        const cached = await offlineSync.getAllCachedCounts();
+        if (cached.length > 0) return cached;
+        throw error;
+      }
     }
   );
 }

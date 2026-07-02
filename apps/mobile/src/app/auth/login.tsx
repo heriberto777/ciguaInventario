@@ -7,6 +7,7 @@ import { useRouter } from 'expo-router';
 import { useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
+import { initializeApiClient, notifyLogin } from '@/services/api';
 import { getApiBaseUrl } from '@/services/serverConfig';
 
 export default function LoginScreen() {
@@ -55,10 +56,10 @@ export default function LoginScreen() {
       await AsyncStorage.setItem('user_permissions', JSON.stringify(data.user.permissions || []));
 
       // Inicializar el cliente de API con el nuevo token inmediatamente
-      const { initializeApiClient } = await import('@/services/api');
       await initializeApiClient(serverUrl);
+      notifyLogin();
 
-      router.replace('/(tabs)');
+      router.replace('/(tabs)/inventory-counts');
     } catch (err: any) {
       const code = err.response?.data?.error?.code;
       if (code === 'INVALID_CREDENTIALS') {

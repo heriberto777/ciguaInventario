@@ -1,10 +1,11 @@
-import { useEffect, useState, useCallback } from 'react';
-import { Stack } from 'expo-router';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { AppState, AppStateStatus } from 'react-native';
 import { QueryClient, QueryClientProvider } from 'react-query';
 import { offlineSync } from '@/services/offline-sync';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { initializeApiClient, getApiClient } from '@/services/api';
+import { initializeApiClient, onLogout, onLogin } from '@/services/api';
 import { getApiBaseUrl } from '@/services/serverConfig';
 import { ThemeProvider, useTheme } from '@/theme/ThemeContext';
 
@@ -17,19 +18,53 @@ const queryClient = new QueryClient({
 
 export default function RootLayout() {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
+  const appState = useRef<AppStateStatus>(AppState.currentState);
+  const router = useRouter();
 
-
-  // Cierra sesión: limpia token y redirige a login
+  // Cierra sesión: limpia token, resetea estado y navega a login
   const handleLogout = useCallback(async () => {
-    await AsyncStorage.removeItem('auth_token');
+    await AsyncStorage.multiRemove(['auth_token', 'refresh_token', 'user_email']);
     setIsLoggedIn(false);
     queryClient.clear();
+    router.replace('/auth/login');
+  }, [router]);
+
+  // Ejecuta sync offline y luego invalida el cache de React Query para los conteos afectados,
+  // garantizando que la UI refleje los totales correctos del servidor (suma de contribuciones).
+  const runSync = useCallback(async () => {
+    offlineSync.syncGlobalClassifications();
+    const { affectedCountIds } = await offlineSync.syncPending();
+    if (affectedCountIds.length > 0) {
+      queryClient.invalidateQueries('inventory-counts');
+      affectedCountIds.forEach(id => {
+        queryClient.invalidateQueries(['inventory-count', id]);
+      });
+    }
   }, []);
+
+  // Notificado por el login screen cuando login es exitoso
+  const handleLogin = useCallback(() => {
+    setIsLoggedIn(true);
+    setTimeout(runSync, 2000);
+  }, [runSync]);
 
   useEffect(() => {
     // Inicializar DB offline sin bloquear el arranque
     offlineSync.initDB().catch((err) => {
       console.error('Error initializing offline sync:', err);
+    });
+
+    // Registrar callbacks de login/logout
+    onLogout(handleLogout);
+    onLogin(handleLogin);
+
+    // Disparar sync cada vez que el app vuelve al primer plano
+    // (cubre el caso de que el dispositivo recuperó red mientras estaba en background)
+    const appStateSub = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+      if (appState.current.match(/inactive|background/) && nextState === 'active') {
+        runSync();
+      }
+      appState.current = nextState;
     });
 
     // Verificar token y levantar API client
@@ -41,19 +76,12 @@ export default function RootLayout() {
         // Inicializar cliente siempre (haya o no token inicial)
         await initializeApiClient(apiBaseUrl);
 
-        // Registrar qué hacer cuando el API detecte un 401
-        const { onLogout } = await import('@/services/api');
-        onLogout(handleLogout);
-
         const token = await AsyncStorage.getItem('auth_token');
         if (token) {
           setIsLoggedIn(true);
 
           // Sincronización en segundo plano después de cargar
-          setTimeout(() => {
-            offlineSync.syncGlobalClassifications();
-            offlineSync.syncPending();
-          }, 2000);
+          setTimeout(runSync, 2000);
         } else {
           setIsLoggedIn(false);
         }
@@ -62,7 +90,11 @@ export default function RootLayout() {
         setIsLoggedIn(false);
       }
     })();
-  }, [handleLogout]);
+
+    return () => {
+      appStateSub.remove();
+    };
+  }, [handleLogout, handleLogin, runSync]);
 
   return (
     <ThemeProvider>

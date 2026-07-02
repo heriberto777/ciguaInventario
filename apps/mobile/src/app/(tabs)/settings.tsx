@@ -12,8 +12,9 @@ import {
 import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { offlineSync } from '@/services/offline-sync';
+import { offlineSync, SyncLog } from '@/services/offline-sync';
 import { getApiBaseUrl } from '@/services/serverConfig';
+import { notifyLogout } from '@/services/api';
 
 export default function SettingsScreen() {
   const [serverUrl, setServerUrl] = useState<string | null>(null);
@@ -22,12 +23,15 @@ export default function SettingsScreen() {
   const [pendingSyncs, setPendingSyncs] = useState(0);
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
+  const [syncLogs, setSyncLogs] = useState<SyncLog[]>([]);
+  const [logsExpanded, setLogsExpanded] = useState(false);
   const router = useRouter();
 
   useFocusEffect(
     React.useCallback(() => {
       loadSettings();
       checkPendingSyncs();
+      loadSyncLogs();
     }, [])
   );
 
@@ -48,6 +52,11 @@ export default function SettingsScreen() {
     setPendingSyncs(syncs.length);
   };
 
+  const loadSyncLogs = async () => {
+    const logs = await offlineSync.getSyncLogs(30);
+    setSyncLogs(logs);
+  };
+
   const handleSyncNow = async () => {
     setIsSyncing(true);
     try {
@@ -66,11 +75,17 @@ export default function SettingsScreen() {
       }
 
       await checkPendingSyncs();
+      await loadSyncLogs();
     } catch (error) {
       Alert.alert('Error', 'Fallo la sincronización. Reintentaremos más tarde.');
     } finally {
       setIsSyncing(false);
     }
+  };
+
+  const handleClearLogs = async () => {
+    await offlineSync.clearSyncLogs();
+    setSyncLogs([]);
   };
 
   const handleClearCache = async () => {
@@ -97,9 +112,9 @@ export default function SettingsScreen() {
   };
 
   const handleLogout = async () => {
-    await AsyncStorage.removeItem('auth_token');
-    await AsyncStorage.removeItem('user_email');
-    router.replace('/auth/login');
+    // Usar el flujo global de logout para que _layout.tsx limpie el queryClient
+    // y reconfigure la navegación correctamente (sin router.replace manual)
+    notifyLogout();
   };
 
   return (
@@ -175,6 +190,62 @@ export default function SettingsScreen() {
           >
             <Text style={[styles.miniButtonText, { color: '#ef4444' }]}>🗑️ Limpiar caché de conteos</Text>
           </TouchableOpacity>
+        </View>
+
+        {/* Diagnóstico de Sync */}
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={styles.diagHeader}
+            onPress={() => setLogsExpanded(prev => !prev)}
+          >
+            <Text style={styles.sectionTitle}>
+              {logsExpanded ? '▼' : '▶'} Diagnóstico de Sync
+            </Text>
+            <Text style={styles.diagCount}>{syncLogs.length} registros</Text>
+          </TouchableOpacity>
+
+          {logsExpanded && (
+            <>
+              {syncLogs.length === 0 ? (
+                <Text style={styles.diagEmpty}>Sin registros de sincronización.</Text>
+              ) : (
+                syncLogs.map(log => (
+                  <View key={log.id} style={[
+                    styles.logRow,
+                    log.status === 'success' && styles.logSuccess,
+                    log.status === 'failed' && styles.logFailed,
+                    log.status === 'discarded' && styles.logDiscarded,
+                  ]}>
+                    <Text style={styles.logIcon}>
+                      {log.status === 'success' ? '✅' : log.status === 'discarded' ? '🗑️' : '❌'}
+                    </Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.logMeta}>
+                        {new Date(log.timestamp).toLocaleTimeString('es-MX')}
+                        {'  '}
+                        <Text style={styles.logType}>{log.type}</Text>
+                        {log.httpStatus ? `  HTTP ${log.httpStatus}` : ''}
+                        {log.retries > 0 ? `  (int. ${log.retries})` : ''}
+                      </Text>
+                      <Text style={styles.logCountId} numberOfLines={1}>
+                        Conteo: ...{log.countId.slice(-8)}
+                      </Text>
+                      {log.errorMessage ? (
+                        <Text style={styles.logError} numberOfLines={2}>{log.errorMessage}</Text>
+                      ) : null}
+                    </View>
+                  </View>
+                ))
+              )}
+
+              <TouchableOpacity
+                style={[styles.miniButton, { marginTop: 12, backgroundColor: '#f3f4f6' }]}
+                onPress={handleClearLogs}
+              >
+                <Text style={[styles.miniButtonText, { color: '#6b7280' }]}>🗑️ Limpiar registros</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
 
         <TouchableOpacity
@@ -351,5 +422,68 @@ const styles = StyleSheet.create({
   version: {
     fontSize: 12,
     color: '#9ca3af',
+  },
+
+  // Diagnóstico de Sync
+  diagHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  diagCount: {
+    fontSize: 12,
+    color: '#9ca3af',
+  },
+  diagEmpty: {
+    fontSize: 13,
+    color: '#9ca3af',
+    fontStyle: 'italic',
+    paddingVertical: 8,
+  },
+  logRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    marginBottom: 4,
+    borderLeftWidth: 3,
+    borderLeftColor: '#d1d5db',
+  },
+  logSuccess: {
+    backgroundColor: '#f0fdf4',
+    borderLeftColor: '#22c55e',
+  },
+  logFailed: {
+    backgroundColor: '#fef2f2',
+    borderLeftColor: '#ef4444',
+  },
+  logDiscarded: {
+    backgroundColor: '#fafafa',
+    borderLeftColor: '#9ca3af',
+  },
+  logIcon: {
+    fontSize: 14,
+    marginTop: 1,
+  },
+  logMeta: {
+    fontSize: 11,
+    color: '#6b7280',
+  },
+  logType: {
+    fontWeight: '700',
+    color: '#374151',
+  },
+  logCountId: {
+    fontSize: 11,
+    color: '#9ca3af',
+    marginTop: 1,
+  },
+  logError: {
+    fontSize: 11,
+    color: '#b91c1c',
+    marginTop: 2,
   },
 });

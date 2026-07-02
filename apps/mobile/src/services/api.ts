@@ -3,12 +3,22 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 let apiClient: AxiosInstance | null = null;
 let logoutCallback: (() => void) | null = null;
+let loginCallback: (() => void) | null = null;
 
-/**
- * Registra una función a llamar cuando ocurra un error 401 (Unauthorized)
- */
 export function onLogout(callback: () => void) {
   logoutCallback = callback;
+}
+
+export function onLogin(callback: () => void) {
+  loginCallback = callback;
+}
+
+export function notifyLogin() {
+  loginCallback?.();
+}
+
+export function notifyLogout() {
+  logoutCallback?.();
 }
 
 export async function initializeApiClient(baseURL: string) {
@@ -25,6 +35,7 @@ export async function initializeApiClient(baseURL: string) {
 
   apiClient = axios.create({
     baseURL,
+    timeout: 15000,
     headers: {
       'Content-Type': 'application/json',
       ...(token && { Authorization: `Bearer ${token}` }),
@@ -58,9 +69,9 @@ export async function initializeApiClient(baseURL: string) {
             throw new Error('No refresh token available');
           }
 
-          // Intentar refrescar el token
-          // Nota: Usamos axios directamente para evitar el interceptor circular
-          const refreshResponse = await axios.post(`${baseURL}/auth/refresh`, {
+          // Usar la URL actual del cliente (no la del closure, que puede ser stale)
+          const currentBase = apiClient?.defaults.baseURL || baseURL;
+          const refreshResponse = await axios.post(`${currentBase}/auth/refresh`, {
             refreshToken
           });
 
@@ -98,9 +109,8 @@ export async function initializeApiClient(baseURL: string) {
 
 export function getApiClient(): AxiosInstance {
   if (!apiClient) {
-    // Si se pide antes de init, creamos uno básico para no romper 
-    // pero idealmente siempre debe estar inicializado
     apiClient = axios.create({
+      timeout: 15000,
       headers: { 'Content-Type': 'application/json' }
     });
   }

@@ -6,6 +6,18 @@ const DB_NAME = 'cigua_inventory.db';
 
 export type SyncType = 'update-item' | 'complete-count' | 'add-item' | 'delete-item';
 
+export interface SyncLog {
+  id: string;
+  timestamp: number;
+  type: SyncType;
+  countId: string;
+  itemId?: string;
+  status: 'success' | 'failed' | 'discarded';
+  httpStatus?: number;
+  errorMessage?: string;
+  retries: number;
+}
+
 interface PendingSync {
   id: string;
   type: SyncType;
@@ -55,6 +67,18 @@ class OfflineSync {
             groupNumber INTEGER NOT NULL,
             timestamp INTEGER NOT NULL
           );
+
+          CREATE TABLE IF NOT EXISTS sync_logs (
+            id TEXT PRIMARY KEY,
+            timestamp INTEGER NOT NULL,
+            type TEXT NOT NULL,
+            countId TEXT NOT NULL,
+            itemId TEXT,
+            status TEXT NOT NULL,
+            httpStatus INTEGER,
+            errorMessage TEXT,
+            retries INTEGER DEFAULT 0
+          );
         `);
 
         console.log('📦 Database initialized successfully');
@@ -91,12 +115,48 @@ class OfflineSync {
     }
   }
 
+  // Cachea un conteo proveniente del listado (sin myQty/contributions).
+  // Si ya existe una entrada en SQLite, preserva los myQty locales de los ítems
+  // para no sobreescribir cantidades digitadas offline que aún no se han sincronizado.
+  async cacheCountFromList(count: InventoryCount) {
+    try {
+      const existing = await this.getCachedCount(count.id);
+      if (existing) {
+        const mergedItems = count.countItems.map(item => {
+          const cachedItem = existing.countItems.find(ci => ci.id === item.id);
+          return {
+            ...item,
+            myQty: item.myQty ?? cachedItem?.myQty ?? null,
+          };
+        });
+        await this.cacheCount({ ...count, countItems: mergedItems });
+      } else {
+        await this.cacheCount(count);
+      }
+    } catch (error) {
+      console.error('Error in cacheCountFromList:', error);
+    }
+  }
+
   async clearCachedCount(countId: string) {
     try {
       const db = await this.ensureDB();
       await db.runAsync('DELETE FROM cached_counts WHERE id = ?', [countId]);
     } catch (error) {
       console.error('Error clearing cached count:', error);
+    }
+  }
+
+  async getAllCachedCounts(): Promise<InventoryCount[]> {
+    try {
+      const db = await this.ensureDB();
+      const results = await db.getAllAsync<{ data: string }>(
+        'SELECT data FROM cached_counts ORDER BY timestamp DESC'
+      );
+      return results.map(r => JSON.parse(r.data));
+    } catch (error) {
+      console.error('Error getting all cached counts:', error);
+      return [];
     }
   }
 
@@ -242,17 +302,92 @@ class OfflineSync {
     }
   }
 
-  async syncPending(): Promise<{ success: number; failed: number }> {
+  // ─── Sync Logs ────────────────────────────────────────────────────────────
+
+  async addSyncLog(entry: Omit<SyncLog, 'id' | 'timestamp'>) {
+    try {
+      const db = await this.ensureDB();
+      const id = `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      await db.runAsync(
+        `INSERT INTO sync_logs (id, timestamp, type, countId, itemId, status, httpStatus, errorMessage, retries)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id,
+          Date.now(),
+          entry.type,
+          entry.countId,
+          entry.itemId ?? null,
+          entry.status,
+          entry.httpStatus ?? null,
+          entry.errorMessage ?? null,
+          entry.retries,
+        ]
+      );
+      // Retener solo los últimos 100 registros
+      await db.runAsync(
+        `DELETE FROM sync_logs WHERE id NOT IN (
+           SELECT id FROM sync_logs ORDER BY timestamp DESC LIMIT 100
+         )`
+      );
+    } catch (error) {
+      console.error('Error adding sync log:', error);
+    }
+  }
+
+  async getSyncLogs(limit = 50): Promise<SyncLog[]> {
+    try {
+      const db = await this.ensureDB();
+      const results = await db.getAllAsync<any>(
+        'SELECT * FROM sync_logs ORDER BY timestamp DESC LIMIT ?',
+        [limit]
+      );
+      return results.map(row => ({
+        id: row.id,
+        timestamp: row.timestamp,
+        type: row.type as SyncType,
+        countId: row.countId,
+        itemId: row.itemId ?? undefined,
+        status: row.status as SyncLog['status'],
+        httpStatus: row.httpStatus ?? undefined,
+        errorMessage: row.errorMessage ?? undefined,
+        retries: row.retries,
+      }));
+    } catch (error) {
+      console.error('Error getting sync logs:', error);
+      return [];
+    }
+  }
+
+  async clearSyncLogs() {
+    try {
+      const db = await this.ensureDB();
+      await db.runAsync('DELETE FROM sync_logs');
+    } catch (error) {
+      console.error('Error clearing sync logs:', error);
+    }
+  }
+
+  // ─── Sync ─────────────────────────────────────────────────────────────────
+
+  async syncPending(): Promise<{ success: number; failed: number; affectedCountIds: string[] }> {
     const pendingSyncs = await this.getPendingSyncs();
     let success = 0;
     let failed = 0;
+    const affectedCountIds = new Set<string>();
 
     const apiClient = getApiClient();
 
     for (const sync of pendingSyncs) {
       if (sync.retries > 3) {
-        // Descartar después de 3 intentos
         await this.removePendingSync(sync.id);
+        await this.addSyncLog({
+          type: sync.type,
+          countId: sync.countId,
+          itemId: sync.itemId,
+          status: 'discarded',
+          errorMessage: `Descartado tras ${sync.retries} intentos fallidos`,
+          retries: sync.retries,
+        });
         failed++;
         continue;
       }
@@ -285,29 +420,53 @@ class OfflineSync {
         }
 
         await this.removePendingSync(sync.id);
+        await this.addSyncLog({
+          type: sync.type,
+          countId: sync.countId,
+          itemId: sync.itemId,
+          status: 'success',
+          retries: sync.retries,
+        });
+        affectedCountIds.add(sync.countId);
         success++;
       } catch (error: any) {
         console.error(`Error syncing ${sync.id}:`, error);
 
-        const status = error.response?.status;
+        const httpStatus: number | undefined = error.response?.status;
+        const serverMessage: string | undefined =
+          error.response?.data?.error?.message ||
+          error.response?.data?.message ||
+          error.message;
 
-        // Si el ítem ya no existe (404), eliminamos la tarea
-        if (status === 404) {
-          console.warn(`Item not found (404) for sync ${sync.id}, removing task.`);
+        if (httpStatus === 404) {
           await this.removePendingSync(sync.id);
+          await this.addSyncLog({
+            type: sync.type,
+            countId: sync.countId,
+            itemId: sync.itemId,
+            status: 'discarded',
+            httpStatus,
+            errorMessage: serverMessage || 'Elemento no encontrado (404)',
+            retries: sync.retries,
+          });
           failed++;
         } else {
-          // Para cualquier otro error (incluyendo 403 Forbidden o 500), 
-          // incrementamos reintentos pero MANTENEMOS la tarea.
-          // Esto permite que si el error era por falta de permisos (como el que arreglamos),
-          // los datos no se pierdan y se suban en el siguiente intento exitoso.
           await this.incrementRetries(sync.id);
+          await this.addSyncLog({
+            type: sync.type,
+            countId: sync.countId,
+            itemId: sync.itemId,
+            status: 'failed',
+            httpStatus,
+            errorMessage: serverMessage || (httpStatus ? `HTTP ${httpStatus}` : 'Sin conexión'),
+            retries: sync.retries,
+          });
           failed++;
         }
       }
     }
 
-    return { success, failed };
+    return { success, failed, affectedCountIds: Array.from(affectedCountIds) };
   }
 
   async clearOldCache(olderThanHours: number = 24) {
