@@ -601,7 +601,11 @@ export default function CountDetailScreen() {
   const handleBarcodeSearch = useCallback((code: string) => {
     const trimmed = code.trim();
     if (!trimmed || !countData?.countItems) return;
-    const found = countData.countItems.find(i =>
+    // En reconteo solo buscar entre artículos pendientes de recontar
+    const searchPool = (countData.currentVersion ?? 1) > 1
+      ? countData.countItems.filter(i => i.status === 'PENDING')
+      : countData.countItems;
+    const found = searchPool.find(i =>
       i.itemCode.toLowerCase() === trimmed.toLowerCase() ||
       i.barCodeInv?.toLowerCase() === trimmed.toLowerCase() ||
       i.barCodeVt?.toLowerCase() === trimmed.toLowerCase()
@@ -656,7 +660,11 @@ export default function CountDetailScreen() {
   // ── Filtrado de datos ────────────────────────────────────────────────────
 
   const allItems = countData?.countItems ?? [];
-  const filteredItems = allItems.filter(item => {
+  // En reconteo (v2+) solo mostramos los artículos PENDING (con varianza, sin recontar)
+  const isRecount = (countData.currentVersion ?? 1) > 1;
+  const baseItems = isRecount ? allItems.filter(i => i.status === 'PENDING') : allItems;
+
+  const filteredItems = baseItems.filter(item => {
     const q = searchQuery.toLowerCase();
     const matchesSearch = !q || item.itemCode.toLowerCase().includes(q) || item.itemName.toLowerCase().includes(q);
     const matchesCat = !filterCategory || item.category === filterCategory;
@@ -677,14 +685,14 @@ export default function CountDetailScreen() {
     return [...new Set(loc)].map(s => ({ value: s, label: s }));
   };
 
-  const categoriesOptions = getUniqueOpts(globalClassifications.filter(c => c.groupType === 'CATEGORY'), allItems.map(i => i.category).filter(Boolean) as string[]);
-  const subcatsOptions = getUniqueOpts(globalClassifications.filter(c => c.groupType === 'SUBCATEGORY'), allItems.map(i => i.subcategory).filter(Boolean) as string[]);
-  const brandsOptions = getUniqueOpts(globalClassifications.filter(c => c.groupType === 'BRAND'), allItems.map(i => i.brand).filter(Boolean) as string[]);
+  const categoriesOptions = getUniqueOpts(globalClassifications.filter(c => c.groupType === 'CATEGORY'), baseItems.map(i => i.category).filter(Boolean) as string[]);
+  const subcatsOptions = getUniqueOpts(globalClassifications.filter(c => c.groupType === 'SUBCATEGORY'), baseItems.map(i => i.subcategory).filter(Boolean) as string[]);
+  const brandsOptions = getUniqueOpts(globalClassifications.filter(c => c.groupType === 'BRAND'), baseItems.map(i => i.brand).filter(Boolean) as string[]);
 
   if (isLoading) return <View style={styles.centered}><ActivityIndicator size="large" color="#3b82f6" /></View>;
   if (isError || !countData) return <View style={styles.centered}><Text style={styles.errorText}>Error cargando conteo</Text></View>;
 
-  const stats = computeStats(allItems);
+  const stats = computeStats(baseItems);
   const isActive = ['ACTIVE', 'DRAFT', 'ON_HOLD'].includes(countData.status);
   const canComplete = ['ACTIVE', 'ON_HOLD'].includes(countData.status);
 
@@ -706,9 +714,18 @@ export default function CountDetailScreen() {
           )}
         </View>
 
+        {/* Banner de reconteo */}
+        {isRecount && (
+          <View style={styles.recountBanner}>
+            <Text style={styles.recountBannerText}>
+              🔄 Reconteo V{countData.currentVersion} — {baseItems.length} artículo{baseItems.length !== 1 ? 's' : ''} pendiente{baseItems.length !== 1 ? 's' : ''} de verificar
+            </Text>
+          </View>
+        )}
+
         {/* Estadísticas */}
         <View style={styles.statsContainer}>
-          <StatCard label="Total" value={stats.total} icon="📋" color="#3b82f6" />
+          <StatCard label={isRecount ? 'A Recontar' : 'Total'} value={stats.total} icon="📋" color="#3b82f6" />
           <StatCard label="Contados" value={stats.counted} icon="✅" color="#10b981" />
           <StatCard label="Pend." value={stats.pending} icon="⏳" color="#f59e0b" />
         </View>
@@ -762,8 +779,8 @@ export default function CountDetailScreen() {
             {/* Filtros por tipo */}
             <View style={[styles.filterRowContainer, { height: isTablet ? 72 : 56 }]}>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
-                <FilterTab label="Todos" icon="📋" active={activeFilter === 'all'} count={allItems.length} onPress={() => setActiveFilter('all')} isTablet={isTablet} />
-                {hasSystemView && <FilterTab label="Varianzas" icon="⚠️" active={activeFilter === 'variance'} count={allItems.filter(i => { const v = getVariance(i); return v !== null && v !== 0; }).length} onPress={() => setActiveFilter('variance')} isTablet={isTablet} />}
+                <FilterTab label="Todos" icon="📋" active={activeFilter === 'all'} count={baseItems.length} onPress={() => setActiveFilter('all')} isTablet={isTablet} />
+                {hasSystemView && <FilterTab label="Varianzas" icon="⚠️" active={activeFilter === 'variance'} count={baseItems.filter(i => { const v = getVariance(i); return v !== null && v !== 0; }).length} onPress={() => setActiveFilter('variance')} isTablet={isTablet} />}
                 {(categoriesOptions.length > 0) && <FilterTab label="Filtros" icon="🏷️" active={showFilters} count={([filterCategory, filterSubcat, filterBrand].filter(Boolean).length) || undefined} onPress={() => setShowFilters(!showFilters)} activeBgColor="#4f46e5" isTablet={isTablet} />}
                 {isActive && hasPermission('inv_counts:reserved_invoices') && <FilterTab label="Despachos" icon="📦" active={showReserveModal} onPress={() => setShowReserveModal(true)} activeBgColor="#10b981" isTablet={isTablet} />}
               </ScrollView>
@@ -917,6 +934,8 @@ const styles = StyleSheet.create({
   statusPillText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
   completeBtn: { backgroundColor: '#10b981', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 },
   completeBtnText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
+  recountBanner: { backgroundColor: '#fef3c7', borderLeftWidth: 4, borderLeftColor: '#f59e0b', paddingHorizontal: 16, paddingVertical: 8 },
+  recountBannerText: { fontSize: 13, fontWeight: '700', color: '#92400e' },
   statsContainer: { flexDirection: 'row', padding: 12, gap: 8, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#e5e7eb' },
   statCard: { flex: 1, flexDirection: 'row', alignItems: 'center', padding: 8, backgroundColor: '#f9fafb', borderRadius: 8, gap: 8 },
   statIconContainer: { width: 32, height: 32, borderRadius: 6, justifyContent: 'center', alignItems: 'center' },
