@@ -168,19 +168,23 @@ export class VersionService {
             category: item.category,
             brand: item.brand,
             subcategory: item.subcategory,
+            itemProv: item.itemProv,
+            lot: item.lot,
             packQty: item.packQty,
             uom: item.uom,
             baseUom: item.baseUom,
             systemQty: item.systemQty,
-            countedQty: item.countedQty,
+            // Ítems con varianza se limpian para forzar reconteo real.
+            // Ítems sin varianza conservan su cantidad (pasan como COMPLETED).
+            countedQty: item.hasVariance ? null : item.countedQty,
+            countedBy: item.hasVariance ? null : item.countedBy,
+            countedAt: item.hasVariance ? null : item.countedAt,
             version: newVersion,
             status: item.hasVariance ? 'PENDING' : 'COMPLETED',
             hasVariance: item.hasVariance,
             costPrice: item.costPrice,
             salePrice: item.salePrice,
             notes: item.hasVariance ? `Reconteo V${newVersion}` : `Mantenido de V${count.currentVersion}`,
-            countedBy: item.countedBy,
-            countedAt: item.countedAt,
         }));
 
         await this.repository.createInventoryCountItems(itemsToCreate);
